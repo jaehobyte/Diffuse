@@ -77,7 +77,7 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `deps` = task ids that must
     - golden: `editor_shell_default`
   touches: feature/editor
 
-- [ ] T07 Bottom sheet component
+- [x] T07 Bottom sheet component
   spec: DESIGN.md §4 (Bottom sheet)
   deps: T02
   done when:

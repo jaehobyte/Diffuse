@@ -2,10 +2,12 @@
 
 ## Current
 
-T06 done. Next: T07 Bottom sheet component.
+T07 done. Next: T08 Non-destructive edit model.
 
 ## Done
 
+- T07 Bottom sheet component — `EditSheet` (24dp corners, handle, 45% cap, pinned
+  [Cancel | Apply]) plus `TertiaryPill`; 3 tests + goldens `sheet_collapsed`/`sheet_expanded`.
 - T06 Editor screen shell — top bar 56dp / canvas / tool strip 72dp, edge-to-edge,
   Korean strings in strings.xml; 6 tests + golden `editor_shell_default`.
 - T05 Canvas composable — `EditorCanvas` with fit/pinch/pan/double-tap, 8dp checkerboard,

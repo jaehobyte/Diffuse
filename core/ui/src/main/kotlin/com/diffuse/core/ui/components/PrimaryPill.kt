@@ -22,10 +22,10 @@ import com.diffuse.core.ui.theme.LocalAppColors
 import com.diffuse.core.ui.theme.Typography
 
 /** DESIGN.md §4: pills at radius 16dp, 40dp tall; disabled is 38% alpha, same colour. */
-private val PillRadius = 16.dp
-private val PillHeight = 40.dp
-private val PillHorizontalPadding = 16.dp
-private const val DISABLED_ALPHA = 0.38f
+internal val PillRadius = 16.dp
+internal val PillHeight = 40.dp
+internal val PillHorizontalPadding = 16.dp
+internal const val DISABLED_ALPHA = 0.38f
 
 /**
  * DESIGN.md §4 `primary`: accent fill, onAccent label. One per screen.
