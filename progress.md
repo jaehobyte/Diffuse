@@ -2,10 +2,12 @@
 
 ## Current
 
-T18 done. Working through T19–T21.
+T19 done. T20 Export, then T21 Navigation and polish.
 
 ## Done
 
+- T19 Import from Photo Picker — `BrowseImport`, `BrowseRoute` with `PickVisualMedia`,
+  40% scrim while decoding, `AppError` → Korean snackbar. 6 tests.
 - T18 Browse home — staggered 2/3-column masonry, long-press actions with a destructive
   confirmation, Korean relative times, empty state. 7 tests + 4 goldens.
 - T17 Project persistence — Room `projects` table with exported schema, atomic document

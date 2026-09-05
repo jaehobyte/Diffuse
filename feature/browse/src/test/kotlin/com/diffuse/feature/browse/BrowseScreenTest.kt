@@ -1,5 +1,7 @@
 package com.diffuse.feature.browse
 
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithTag
@@ -30,9 +32,13 @@ class BrowseScreenTest {
     private val deleted = mutableListOf<String>()
     private var newProjectClicks = 0
 
-    private fun showBrowse(projects: List<ProjectSummary> = sampleProjects) {
+    private fun showBrowse(
+        projects: List<ProjectSummary> = sampleProjects,
+        importing: Boolean = false,
+    ) {
         compose.setContent {
             BrowseScreen(
+                importing = importing,
                 projects = projects,
                 nowMillis = NOW,
                 onOpen = { opened += it },
@@ -117,6 +123,22 @@ class BrowseScreenTest {
         compose.onNodeWithTag(BrowseCtaTestTag).performClick()
 
         assertEquals(1, newProjectClicks)
+    }
+
+    @Test
+    fun `importing shows the progress overlay and disables the CTA`() {
+        showBrowse(importing = true)
+
+        compose.onNodeWithTag(BrowseImportOverlayTestTag).assertExists()
+        compose.onNodeWithTag(BrowseCtaTestTag).assertIsNotEnabled()
+    }
+
+    @Test
+    fun `the CTA is enabled when nothing is importing`() {
+        showBrowse()
+
+        compose.onNodeWithTag(BrowseCtaTestTag).assertIsEnabled()
+        compose.onNodeWithTag(BrowseImportOverlayTestTag).assertDoesNotExist()
     }
 
     @Test

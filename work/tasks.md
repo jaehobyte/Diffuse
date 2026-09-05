@@ -195,7 +195,7 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `deps` = task ids that must
     - goldens: `browse_grid`, `browse_empty`
   touches: feature/browse
 
-- [ ] T19 Import from Photo Picker
+- [x] T19 Import from Photo Picker
   spec: specs/browse.md
   deps: T18, T04
   done when:

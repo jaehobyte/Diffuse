@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.items
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -25,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -35,6 +37,7 @@ import com.diffuse.core.ui.components.PrimaryPill
 import com.diffuse.core.ui.theme.AppTheme
 import com.diffuse.core.ui.theme.LocalAppColors
 import com.diffuse.core.ui.theme.ThemeMode
+import com.diffuse.core.ui.theme.Tokens
 import com.diffuse.core.ui.theme.Typography
 
 /** DESIGN.md §5: 2 columns, 8dp gap, 16dp side padding; 3 columns from 600dp. */
@@ -50,6 +53,9 @@ const val BrowseGridTestTag = "BrowseGrid"
 const val BrowseEmptyTestTag = "BrowseEmpty"
 const val BrowseCtaTestTag = "BrowseCta"
 const val BrowseDeleteDialogTestTag = "BrowseDeleteDialog"
+const val BrowseImportOverlayTestTag = "BrowseImportOverlay"
+
+private const val IMPORT_SCRIM_ALPHA = 0.4f
 
 /**
  * specs/browse.md. Browse is the light half of DESIGN.md §1, so it fixes its own theme
@@ -64,6 +70,8 @@ fun BrowseScreen(
     onDelete: (String) -> Unit,
     onNewProject: () -> Unit,
     modifier: Modifier = Modifier,
+    /** specs/browse.md: a 40% scrim with progress while a pick is being decoded. */
+    importing: Boolean = false,
     thumbnail: @Composable BoxScope.(ProjectSummary) -> Unit = {},
 ) {
     AppTheme(mode = ThemeMode.Browse) {
@@ -75,7 +83,11 @@ fun BrowseScreen(
             Column(modifier = Modifier.fillMaxSize()) {
                 TopBar()
                 if (projects.isEmpty()) {
-                    EmptyState(modifier = Modifier.weight(1f), onNewProject = onNewProject)
+                    EmptyState(
+                        modifier = Modifier.weight(1f),
+                        enabled = !importing,
+                        onNewProject = onNewProject,
+                    )
                 } else {
                     Grid(
                         projects = projects,
@@ -94,6 +106,7 @@ fun BrowseScreen(
                 PrimaryPill(
                     text = stringResource(R.string.browse_new_project),
                     onClick = onNewProject,
+                    enabled = !importing,
                     modifier = Modifier
                         .testTag(BrowseCtaTestTag)
                         .align(Alignment.BottomCenter)
@@ -102,6 +115,8 @@ fun BrowseScreen(
                         .height(CtaHeight),
                 )
             }
+
+            if (importing) ImportOverlay()
         }
 
         // DESIGN.md §4: confirmation dialogs only for destructive actions.
@@ -179,7 +194,7 @@ private fun Grid(
 }
 
 @Composable
-private fun EmptyState(modifier: Modifier, onNewProject: () -> Unit) {
+private fun EmptyState(modifier: Modifier, enabled: Boolean, onNewProject: () -> Unit) {
     val colors = LocalAppColors.current
     Column(
         modifier = modifier
@@ -199,7 +214,30 @@ private fun EmptyState(modifier: Modifier, onNewProject: () -> Unit) {
         PrimaryPill(
             text = stringResource(R.string.browse_new_project),
             onClick = onNewProject,
+            enabled = enabled,
             modifier = Modifier.testTag(BrowseCtaTestTag).height(CtaHeight),
+        )
+    }
+}
+
+/** DESIGN.md §4 (State display): 40% scrim, accent circular progress, one line of text. */
+@Composable
+private fun BoxScope.ImportOverlay() {
+    val colors = LocalAppColors.current
+    Column(
+        modifier = Modifier
+            .testTag(BrowseImportOverlayTestTag)
+            .matchParentSize()
+            .background(Color.Black.copy(alpha = IMPORT_SCRIM_ALPHA)),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        CircularProgressIndicator(color = Tokens.accent)
+        Box(modifier = Modifier.height(GridGap))
+        Text(
+            text = stringResource(R.string.browse_importing),
+            style = Typography.bodyMd,
+            color = Tokens.onAccent,
         )
     }
 }
