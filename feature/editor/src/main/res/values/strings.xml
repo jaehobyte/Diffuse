@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="editor_back">뒤로</string>
+    <string name="editor_undo">실행 취소</string>
+    <string name="editor_redo">다시 실행</string>
+    <string name="editor_compare">원본과 비교</string>
+    <string name="editor_export">내보내기</string>
+
+    <string name="editor_tool_light">라이트</string>
+    <string name="editor_tool_color">색상</string>
+    <string name="editor_tool_crop">자르기</string>
+    <string name="editor_tool_detail">디테일</string>
+</resources>

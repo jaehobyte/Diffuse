@@ -2,10 +2,12 @@
 
 ## Current
 
-T05 done. Next: T06 Editor screen shell.
+T06 done. Next: T07 Bottom sheet component.
 
 ## Done
 
+- T06 Editor screen shell — top bar 56dp / canvas / tool strip 72dp, edge-to-edge,
+  Korean strings in strings.xml; 6 tests + golden `editor_shell_default`.
 - T05 Canvas composable — `EditorCanvas` with fit/pinch/pan/double-tap, 8dp checkerboard,
   `LocalCanvasTransform`; 10 tests + goldens `canvas_fit`/`canvas_zoomed`/`canvas_transparent`.
 - T04 Image loading pipeline — `ImageLoader.load(uri)` + `SourceImage`; 4096px bound,
@@ -130,6 +132,12 @@ T13 blocks on the still-missing `specs/adjust_light.md`.
 _(none)_
 
 ## Open issues for a human
+
+- **DESIGN.md contradicts itself on accent placement.** §1 says the accent appears in
+  exactly one place per screen — "the primary action or the active-tab indicator". But §4
+  requires the Export button to be a primary (accent) pill *and* the selected tool to be
+  accent with a 2dp indicator. `editor_shell_default` therefore shows two accents. Needs a
+  human ruling: either Export drops to a secondary pill in Edit mode, or §1 is relaxed.
 
 - **Seven specs are still missing**, blocking T13 onward: `adjust_light`, `adjust_color`,
   `adjust_detail`, `crop`, `persistence`, `browse`, `export`. T04–T12 can run today.

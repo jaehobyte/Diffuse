@@ -66,7 +66,7 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `deps` = task ids that must
     - goldens: `canvas_fit`, `canvas_zoomed`, `canvas_transparent`
   touches: feature/editor/canvas
 
-- [ ] T06 Editor screen shell
+- [x] T06 Editor screen shell
   spec: specs/editor_shell.md, DESIGN.md §4 (Top bar, Tool strip)
   deps: T05
   done when:
