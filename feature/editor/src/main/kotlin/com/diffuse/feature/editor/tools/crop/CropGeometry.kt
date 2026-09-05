@@ -20,9 +20,9 @@ private const val NINE_SIXTEEN_RATIO = 0.5625f
 private const val SIXTEEN_NINE_RATIO = 1.7777778f
 
 /**
- * specs/crop.md geometry. All rects are normalised 0..1 against the canvas; the canvas
- * aspect is passed in because a normalised rect is only square on screen if it accounts
- * for it.
+ * specs/crop.md geometry. All rects are normalised 0..1 against the image being cropped;
+ * `imageAspect` (width ÷ height of that image in pixels) is passed in because a normalised
+ * rect only maps back to a pixel ratio through it.
  */
 object CropGeometry {
 
@@ -38,22 +38,22 @@ object CropGeometry {
      * Bisection rather than a closed form: the rect is not necessarily centred, so the
      * exact bound depends on which corner escapes first.
      */
-    fun shrinkToFit(rect: RectF, angleDeg: Float, canvasAspect: Float): RectF {
-        if (contains(rect, angleDeg, canvasAspect)) return RectF(rect)
+    fun shrinkToFit(rect: RectF, angleDeg: Float, imageAspect: Float): RectF {
+        if (contains(rect, angleDeg, imageAspect)) return RectF(rect)
         var low = 0f
         var high = 1f
         repeat(SHRINK_STEPS) {
             val mid = (low + high) * HALF
-            if (contains(scaled(rect, mid), angleDeg, canvasAspect)) low = mid else high = mid
+            if (contains(scaled(rect, mid), angleDeg, imageAspect)) low = mid else high = mid
         }
         return scaled(rect, low)
     }
 
     /** Fits the largest centred rect of [preset] inside [bounds], keeping its centre. */
-    fun applyPreset(rect: RectF, preset: AspectPreset, canvasAspect: Float): RectF {
+    fun applyPreset(rect: RectF, preset: AspectPreset, imageAspect: Float): RectF {
         val ratio = preset.ratio ?: return RectF(rect)
-        // A width:height ratio in screen space is ratio/canvasAspect in normalised space.
-        val normalisedRatio = ratio / canvasAspect
+        // A width:height ratio in pixels is ratio/imageAspect in normalised space.
+        val normalisedRatio = ratio / imageAspect
         val centerX = rect.centerX()
         val centerY = rect.centerY()
         var width = rect.width()
@@ -69,7 +69,7 @@ object CropGeometry {
     }
 
     /** Every corner of [rect] must map back inside the unrotated canvas. */
-    fun contains(rect: RectF, angleDeg: Float, canvasAspect: Float): Boolean {
+    fun contains(rect: RectF, angleDeg: Float, imageAspect: Float): Boolean {
         val radians = Math.toRadians(-angleDeg.toDouble())
         val cos = cos(radians).toFloat()
         val sin = sin(radians).toFloat()
@@ -80,12 +80,12 @@ object CropGeometry {
             rect.left to rect.bottom,
         )
         return corners.all { (x, y) ->
-            // Work in screen-proportional space so the rotation is not skewed.
-            val dx = (x - HALF) * canvasAspect
+            // Work in pixel-proportional space so the rotation is not skewed.
+            val dx = (x - HALF) * imageAspect
             val dy = y - HALF
             val rotatedX = dx * cos - dy * sin
             val rotatedY = dx * sin + dy * cos
-            abs(rotatedX) <= canvasAspect * HALF + EPSILON && abs(rotatedY) <= HALF + EPSILON
+            abs(rotatedX) <= imageAspect * HALF + EPSILON && abs(rotatedY) <= HALF + EPSILON
         }
     }
 

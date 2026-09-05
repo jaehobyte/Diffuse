@@ -21,7 +21,7 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `[H]` human-only, loop must
     - UI test: reset then undo restores every operation; golden `editor_shell_default` updated (it is named here, so re-recording is allowed)
   touches: feature/editor, specs/editor_shell.md (append the one new row to the Top bar table only)
 
-- [ ] T23 Crop preset aspect is wrong (16:9 renders as ~1:1)
+- [x] T23 Crop preset aspect is wrong (16:9 renders as ~1:1)
   spec: specs/crop.md §Interaction, §Model
   deps: —
   done when:

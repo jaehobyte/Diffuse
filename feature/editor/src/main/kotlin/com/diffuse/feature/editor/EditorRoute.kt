@@ -85,13 +85,12 @@ private fun CropToolSheet(state: EditorUiState, viewModel: EditorViewModel) {
         preset = state.cropState.preset,
         straightenDeg = state.cropState.straightenDeg,
         onPresetChange = { preset ->
-            viewModel.onCropChange(state.cropState.withPreset(preset, CANVAS_ASPECT))
+            viewModel.onCropChange(state.cropState.withPreset(preset))
         },
         onStraightenChange = { degrees ->
             viewModel.onCropChange(
                 state.cropState.straightened(
                     degrees.coerceIn(-STRAIGHTEN_MAX_DEG, STRAIGHTEN_MAX_DEG),
-                    CANVAS_ASPECT,
                 ),
             )
         },
@@ -101,9 +100,3 @@ private fun CropToolSheet(state: EditorUiState, viewModel: EditorViewModel) {
         onApply = viewModel::applySheet,
     )
 }
-
-/**
- * The crop geometry needs the canvas aspect. Until the overlay reports its measured size
- * back, the fitted canvas of a 4:3 preview is the working assumption.
- */
-private const val CANVAS_ASPECT = 4f / 3f

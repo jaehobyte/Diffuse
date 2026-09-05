@@ -2,9 +2,13 @@
 
 ## Current
 
-**T23 Crop preset aspect is wrong (16:9 renders as ~1:1)** — next.
+**T24 Live rotate / straighten preview in the crop tool** — next.
 
 ## Done
+
+- T23 Crop preset aspect — the geometry was right; `EditorRoute` fed it a constant 4:3.
+  `CropState` now carries `sourceAspect` (from the bare-source preview) and flips it on odd
+  quarter turns. `presetAspectMatchesInPixels` covers five presets x both orientations.
 
 - T22 Reset to original — `RestartAlt` icon between Redo and Compare, `resetToOriginal()`
   as one uncoalesced history step, viewport zeroed so the canvas refits. 1 test +
@@ -60,6 +64,25 @@ T04 Image loading pipeline — unblocked. The loop can run **T04 through T12**;
 T13 blocks on the still-missing `specs/adjust_light.md`.
 
 ## Decisions
+
+### T23
+
+- **The root cause was the call site, not `CropGeometry`.** The task guessed "aspect
+  enforced in normalised space without multiplying by the source aspect"; the maths already
+  multiplied. `EditorRoute` passed a hardcoded `CANVAS_ASPECT = 4f / 3f`, so on a 3000x4000
+  source the red test reported `Square gave 0.5625, expected 1.0` — and 16:9 gave ~1:1,
+  exactly the reported symptom.
+- **`CropState` owns `sourceAspect`**, so `withPreset`/`straightened` can no longer be
+  handed the wrong number. The ViewModel reads it off the bare-source preview, whose shape
+  is the source's shape.
+- **`imageAspect` inverts on odd quarter turns**, because `CropOp` normalises `rect`
+  against the post-quarter-turn canvas. Without it a preset chosen after a 90° turn would
+  reintroduce the same class of bug.
+- **`touches` named only `feature/editor/tools/crop`**, but the constant lived in
+  `EditorRoute` and the aspect had to come from `EditorViewModel`; both were edited, since
+  the bug is unfixable inside the crop package alone.
+- **`rotated()` still leaves the rect and the preset chip alone** after a 90° turn
+  (specs/crop.md §Interaction asks for both). Untouched from T15 — out of T23's scope.
 
 ### T22
 
@@ -183,10 +206,6 @@ _(none)_
 
 ## Open issues for a human
 
-- **The crop overlay assumes a 4:3 canvas aspect.** `EditorRoute` passes a constant because
-  the overlay does not report its measured size back yet. Presets and auto-shrink are
-  correct for that ratio and drift for others; wiring the measured aspect through
-  `LocalCanvasTransform` is the fix.
 - **Compare in the editor route is not wired to the ViewModel.** `EditorScreen` owns the
   hold state and swaps to `source`, which the VM renders, but `onCompareChange` is a no-op
   at the route level.

@@ -122,9 +122,20 @@ class EditorViewModel @Inject constructor(
             sheetBaseline = state.document
             _uiState.value = state.copy(
                 selectedTool = tool,
-                cropState = state.document?.let(CropState::from) ?: CropState(),
+                cropState = state.document
+                    ?.let { CropState.from(it, sourceAspect()) }
+                    ?: CropState(),
             )
         }
+    }
+
+    /**
+     * T23: the crop geometry is normalised, so it needs the source's pixel aspect to hold a
+     * preset. The bare-source preview has the source's shape, which is all the tool needs.
+     */
+    private fun sourceAspect(): Float {
+        val source = _uiState.value.source ?: return 1f
+        return if (source.height > 0) source.width.toFloat() / source.height else 1f
     }
 
     fun onAdjust(kind: AdjustKind, value: Float) {

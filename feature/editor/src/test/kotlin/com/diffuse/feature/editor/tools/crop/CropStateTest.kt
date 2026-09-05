@@ -16,7 +16,7 @@ import org.junit.runner.RunWith
 class CropStateTest {
 
     private val document = EditDocument("d", ImageRef("/p.jpg"), createdAt = 0L, updatedAt = 0L)
-    private val canvasAspect = 4f / 3f
+    private val imageAspect = 4f / 3f
     private val imageRect = Rect(0f, 0f, 400f, 300f)
 
     @Test
@@ -36,18 +36,18 @@ class CropStateTest {
 
     @Test
     fun `angle combines quarter turns and straighten`() {
-        val state = CropState().rotated(1).straightened(15f, canvasAspect)
+        val state = CropState().rotated(1).straightened(15f)
 
         assertEquals(105f, state.angleDeg, 0.001f)
     }
 
     @Test
     fun `straightening shrinks the rect so it stays inside`() {
-        val state = CropState().straightened(20f, canvasAspect)
+        val state = CropState(sourceAspect = imageAspect).straightened(20f)
 
         assertTrue(
             "rect escaped: ${state.rect}",
-            CropGeometry.contains(state.rect, 20f, canvasAspect),
+            CropGeometry.contains(state.rect, 20f, imageAspect),
         )
         assertTrue("expected a shrink", state.rect.width() < 1f)
     }
@@ -56,7 +56,7 @@ class CropStateTest {
     fun `re-opening the tool restores the stored crop`() {
         val stored = document.withCrop(RectF(0.2f, 0.25f, 0.8f, 0.75f), 105f)
 
-        val state = CropState.from(stored)
+        val state = CropState.from(stored, sourceAspect = 4f / 3f)
 
         assertEquals(1, state.quarterTurns)
         assertEquals(15f, state.straightenDeg, 0.001f)
