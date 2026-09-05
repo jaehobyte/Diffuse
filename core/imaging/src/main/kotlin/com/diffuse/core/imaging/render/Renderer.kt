@@ -46,7 +46,11 @@ class CpuRenderer(
     private val ops: OpRegistry = Ops,
 ) : Renderer {
 
-    private data class PreviewKey(val operations: List<Operation>, val targetLongEdgePx: Int)
+    private data class PreviewKey(
+        val source: ImageRef,
+        val operations: List<Operation>,
+        val targetLongEdgePx: Int,
+    )
     private data class BaseKey(val source: ImageRef, val targetLongEdgePx: Int)
 
     private val previewCache = LruCache<PreviewKey, Bitmap>(PREVIEW_CACHE_ENTRIES)
@@ -57,7 +61,7 @@ class CpuRenderer(
         document: EditDocument,
         targetLongEdgePx: Int,
     ): Result<Bitmap> = lock.withLock {
-        val key = PreviewKey(document.operations, targetLongEdgePx)
+        val key = PreviewKey(document.source, document.operations, targetLongEdgePx)
         previewCache[key]?.let { return@withLock Result.Success(it) }
 
         when (val rendered = render(document, targetLongEdgePx) {}) {

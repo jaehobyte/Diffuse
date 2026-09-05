@@ -18,6 +18,7 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -96,6 +97,20 @@ class RendererTest {
 
         assertSame(first, second)
         assertEquals(1, decodes.get())
+    }
+
+    @Test
+    fun `two documents with the same operations keep their own previews`() = runTest {
+        val renderer = renderer()
+        val first = document(source())
+        val second = document(
+            ImageRef(Fixtures.copyTo("transparent_256.png", temp.newFolder()).absolutePath),
+        )
+
+        val a = bitmap(renderer.preview(first, 256))
+        val b = bitmap(renderer.preview(second, 256))
+
+        assertNotEquals("the second source must not be served the first one's preview", a, b)
     }
 
     @Test

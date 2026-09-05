@@ -2,7 +2,6 @@ package com.diffuse.feature.editor
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -32,10 +31,13 @@ import com.diffuse.core.ui.theme.LocalAppColors
 private val TopBarHeight = 56.dp
 private val TopBarPadding = 8.dp
 private val IconSize = 24.dp
+/** DESIGN.md §5: 48dp touch target around the 24dp icon, which is what `IconButton` uses. */
+private val IconButtonSize = 48.dp
 private const val DISABLED_ALPHA = 0.38f
 
 const val TopBarTestTag = "EditorTopBar"
 const val CompareTestTag = "EditorCompare"
+const val ExportTestTag = "EditorExport"
 
 @Composable
 fun EditorTopBar(
@@ -61,19 +63,24 @@ fun EditorTopBar(
             .height(TopBarHeight)
             .padding(horizontal = TopBarPadding),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(TopBarPadding),
     ) {
-        BarIcon(Icons.AutoMirrored.Rounded.ArrowBack, R.string.editor_back, true, onBack)
-        BarIcon(Icons.AutoMirrored.Rounded.Undo, R.string.editor_undo, canUndo, onUndo)
-        BarIcon(Icons.AutoMirrored.Rounded.Redo, R.string.editor_redo, canRedo, onRedo)
-        BarIcon(Icons.Rounded.RestartAlt, R.string.editor_reset, canReset, onReset)
-
-        androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+        // The icons carry the weight so the export pill is measured at its own width first:
+        // a Korean label squeezed into whatever is left over is what "내보내기" was getting.
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            BarIcon(Icons.AutoMirrored.Rounded.ArrowBack, R.string.editor_back, true, onBack)
+            BarIcon(Icons.AutoMirrored.Rounded.Undo, R.string.editor_undo, canUndo, onUndo)
+            BarIcon(Icons.AutoMirrored.Rounded.Redo, R.string.editor_redo, canRedo, onRedo)
+            BarIcon(Icons.Rounded.RestartAlt, R.string.editor_reset, canReset, onReset)
+        }
 
         CompareButton(enabled = canCompare, onCompareChange = onCompareChange)
         PrimaryPill(
             text = stringResource(R.string.editor_export),
             onClick = onExport,
+            modifier = Modifier.testTag(ExportTestTag),
         )
     }
 }
@@ -108,8 +115,8 @@ private fun CompareButton(enabled: Boolean, onCompareChange: (Boolean) -> Unit) 
         tint = colors.ink.copy(alpha = if (enabled) 1f else DISABLED_ALPHA),
         modifier = Modifier
             .testTag(CompareTestTag)
-            .size(TopBarHeight)
-            .padding(TopBarPadding * 2)
+            .size(IconButtonSize)
+            .padding((IconButtonSize - IconSize) / 2)
             .pointerInput(enabled) {
                 if (!enabled) return@pointerInput
                 detectTapGestures(

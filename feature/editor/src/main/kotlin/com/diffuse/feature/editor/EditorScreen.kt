@@ -6,8 +6,10 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -17,8 +19,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import com.diffuse.core.ui.theme.AppTheme
 import com.diffuse.core.ui.theme.ThemeMode
 import com.diffuse.core.ui.theme.Tokens
@@ -62,6 +68,9 @@ fun EditorScreen(
         }
         // DESIGN.md §7: hold to compare with the original is the single comparison gesture.
         var comparing by remember { mutableStateOf(false) }
+        var sheetHeightPx by remember { mutableIntStateOf(0) }
+        var toolStripHeightPx by remember { mutableIntStateOf(0) }
+        val sheetInset = canvasInset(sheet != null, sheetHeightPx, toolStripHeightPx)
         Box(modifier = modifier.testTag(EditorScreenTestTag).fillMaxSize()) {
         Column(
             modifier = Modifier
@@ -91,7 +100,7 @@ fun EditorScreen(
                 bitmap = if (comparing) source ?: preview else preview,
                 viewport = viewport,
                 onViewportChange = { viewport = it },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).padding(bottom = sheetInset),
                 contentDescription = stringResource(
                     if (comparing) R.string.editor_canvas_source else R.string.editor_canvas_edited,
                 ),
@@ -101,15 +110,32 @@ fun EditorScreen(
             EditorToolStrip(
                 selectedTool = selectedTool,
                 onToolClick = onToolClick,
-                modifier = Modifier.navigationBarsPadding(),
+                modifier = Modifier.navigationBarsPadding().onSizeChanged { toolStripHeightPx = it.height },
             )
         }
-        if (sheet != null) {
-            Box(modifier = Modifier.align(Alignment.BottomCenter)) { sheet() }
-        }
+        if (sheet != null) SheetOverlay(sheet) { sheetHeightPx = it }
         }
     }
 }
+
+/** DESIGN.md §4: the sheet rises above the tool strip rather than pushing it off screen. */
+@Composable
+private fun BoxScope.SheetOverlay(sheet: @Composable () -> Unit, onHeight: (Int) -> Unit) {
+    Box(
+        modifier = Modifier.align(Alignment.BottomCenter).onSizeChanged { onHeight(it.height) },
+    ) { sheet() }
+}
+
+/**
+ * A sheet floats over the tool strip and eats into the canvas below it. Handing the canvas
+ * that overlap as an inset is what makes it refit into the space that is left, instead of
+ * leaving the photo behind the sheet for the user to pinch out.
+ */
+@Composable
+private fun canvasInset(sheetOpen: Boolean, sheetHeightPx: Int, toolStripHeightPx: Int): Dp =
+    with(LocalDensity.current) {
+        if (!sheetOpen) 0.dp else (sheetHeightPx - toolStripHeightPx).coerceAtLeast(0).toDp()
+    }
 
 /** specs/editor_shell.md edge case: the viewport survives a configuration change. */
 private val ViewportSaver = listSaver<CanvasViewport, Float>(
