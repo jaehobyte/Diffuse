@@ -8,6 +8,11 @@ android {
     namespace = "com.diffuse.core.data"
 }
 
+// specs/persistence.md: export the schema so v2 has something to migrate from.
+ksp {
+    arg("room.schemaLocation", layout.projectDirectory.dir("schemas").asFile.path)
+}
+
 dependencies {
     implementation(projects.core.common)
     implementation(projects.core.imaging)

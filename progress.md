@@ -2,10 +2,12 @@
 
 ## Current
 
-T16 done. Working through T17–T21.
+T17 done. Working through T18–T21.
 
 ## Done
 
+- T17 Project persistence — Room `projects` table with exported schema, atomic document
+  writes, thumbnails, `ProjectAutosave` with a 2s debounce. 14 tests.
 - T16 Detail adjustments — Sharpen (separable unsharp mask) and Vignette, `DetailSheet`;
   6 tests + 2 render goldens + `detail_sheet_open`. Every `AdjustKind` now has real maths.
 - T15 Crop and rotate — rotate-then-crop render, `CropGeometry` auto-shrink, overlay with

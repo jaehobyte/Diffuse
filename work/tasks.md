@@ -174,7 +174,7 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `deps` = task ids that must
 
 ## Phase 4 — Browse, persistence, export
 
-- [ ] T17 Project persistence
+- [x] T17 Project persistence
   spec: specs/persistence.md
   deps: T08
   done when:
