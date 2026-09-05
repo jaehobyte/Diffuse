@@ -34,7 +34,10 @@ Both run on `Dispatchers.Default` and check cancellation between operations.
 Every op clamps to `[0, 1]` per channel. GPU (AGSL) is Deferred D03; keep the math in `Ops.kt` so it can be ported.
 
 ## Caching
-- Preview cache keyed by `(doc.operations, targetLongEdgePx)`, 3 entries.
+- Preview cache keyed by `(doc.source, doc.operations, targetLongEdgePx)`, 3 entries.
+  The source belongs in the key: the `Renderer` is a singleton shared by every
+  project, and two documents with the same operations — an empty list, for every
+  freshly imported project — otherwise collide and serve each other's pixels.
 - Base decode cache keyed by `(source, size)`, 2 entries.
 - A new preview request cancels the in-flight one for the same document.
 
