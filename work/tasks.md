@@ -1,239 +1,137 @@
-# tasks.md — Ralph loop task queue (v1: traditional editor, no AI)
+# tasks.md — Ralph loop task queue (v1.1 fixes + v2 on-device selection)
 
-Rules for the agent:
-- Work top to bottom. Pick the first unchecked task whose dependencies are all checked.
-- One task per iteration. Do not start the next task in the same iteration.
-- A task is done only when every line under `done when` is true and `scripts/check.sh` exits 0.
-- Commit with message `T<NN>: <title>` on success. On failure, revert uncommitted changes.
-- Only modify paths listed under `touches`. If you need to change something else, stop and write to `blocked.md`.
-- After each iteration, update `progress.md`.
-- If the same task fails 3 iterations in a row, mark it `[!]`, log it in `blocked.md`, and move to the next task.
-- Only the checkbox of a task may be edited in this file. Never edit task text.
+Completed v1 tasks (T01–T21) live in `tasks/v1_done.md`. Read it once per iteration to know what already exists; never re-implement anything listed there.
 
-Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `deps` = task ids that must be `[x]` first
+Rules for the agent: unchanged — see CLAUDE.md "Ralph loop rules". One task per iteration, `scripts/check.sh` is the only verdict, only edit checkboxes in this file.
+
+Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `[H]` human-only, loop must skip
 
 ---
 
-## Phase 0 — Scaffold & safety net (done by a human before the loop starts)
+## Phase 5 — v1.1 fixes (start immediately)
 
-- [x] T01 Project skeleton compiles
-  spec: specs/architecture.md
+- [ ] T22 Reset to original
+  spec: specs/editor_shell.md §Top bar (amend), history.md
   deps: —
   done when:
-    - modules exist: `app`, `core:ui`, `core:imaging`, `core:data`, `feature:browse`, `feature:editor`, `feature:export`
-    - `scripts/check.sh` exits 0
-    - `app` launches to an empty Compose screen
-  touches: root gradle files, all module `build.gradle.kts`, `settings.gradle.kts`
+    - top bar gains a reset icon button between Redo and Compare (Material Symbols `history` or `restart_alt`)
+    - tap → `history.push(doc.copy(operations = emptyList()))` with no coalesce key, so it is a single undoable step; **no confirmation dialog** (undo covers it)
+    - disabled when `operations.isEmpty()`
+    - after reset the canvas refits (dimensions may change if a Crop was removed)
+    - UI test: reset then undo restores every operation; golden `editor_shell_default` updated (it is named here, so re-recording is allowed)
+  touches: feature/editor, specs/editor_shell.md (append the one new row to the Top bar table only)
 
-- [x] T02 Design tokens and theme
-  spec: DESIGN.md §2–3, §6
-  deps: T01
+- [ ] T23 Crop preset aspect is wrong (16:9 renders as ~1:1)
+  spec: specs/crop.md §Interaction, §Model
+  deps: —
   done when:
-    - `core/ui/theme/Tokens.kt` defines every token in DESIGN.md §2 as a `Color` and §3 as a `TextStyle`
-    - `AppTheme(mode = Browse | Edit)` switches light/dark palettes
-    - `TokensTest` asserts hex values match DESIGN.md
-  touches: core/ui
+    - **first** a failing test reproduces it: `CropGeometryTest.presetAspectMatchesInPixels` builds the preset rect on a 4000×3000 source and asserts `(rect.width × srcW) / (rect.height × srcH)` equals the preset within 0.5%, for all five presets and for both orientations
+    - root cause fixed (likely: aspect enforced in normalized 0…1 space without multiplying by the source aspect; verify before assuming)
+    - existing goldens `crop_1x1`, `crop_straighten_15`, `crop_overlay` still pass unchanged; if `crop_overlay` was recorded with the bug, it is named here and may be re-recorded once
+  touches: feature/editor/tools/crop, core/imaging/ops (only if the render side is also wrong)
 
-- [x] T03 Screenshot test harness
-  spec: specs/testing.md
-  deps: T02
+- [ ] T24 Live rotate / straighten preview in the crop tool
+  spec: specs/crop.md §Interaction (amend), canvas.md
+  deps: T23
   done when:
-    - Roborazzi configured; `verifyRoborazziDebug` runs inside `scripts/check.sh`
-    - one golden exists: `theme_swatches` rendering all tokens in both modes
-    - `scripts/check.sh` runs lint, detekt, unit tests, screenshot verification, exits non-zero on any failure
-  touches: core/ui, scripts/, root gradle
+    - while the crop sheet is open, moving the straighten slider or tapping 90° rotates the image **immediately on the canvas** — no Apply needed
+    - implementation: the canvas applies a rotation transform to the drawn bitmap about the image center (`overlayTransform` in `CanvasViewport`); **no re-render** through `Renderer` during the drag — this is a canvas-level transform for performance
+    - the crop rect stays screen-fixed and auto-shrinks per crop.md while the image rotates under it
+    - Apply commits `Crop(rect, angleDeg)` exactly as before; Cancel removes the transform
+    - `CanvasTransformTest` gains a case for the rotation transform; goldens `crop_live_rotate_15`, `crop_live_rotate_90`
+  touches: feature/editor/canvas, feature/editor/tools/crop, specs/crop.md (append to §Interaction only)
 
-## Phase 1 — Canvas
+## Phase 6 — v2 prerequisites
 
-- [x] T04 Image loading pipeline
-  spec: specs/imaging.md
-  deps: T01
+- [H] T25 Human decisions and assets (loop must skip this task)
+  - ADR-007: on-device segmentation with EdgeTAM via ExecuTorch (XNNPACK); Apache-2.0; add to architecture.md §10
+  - ADR-008: model delivery — choose one: (a) bundle both `.pte` in `assets/` and raise the APK budget to 50MB, or (b) download on first use into `filesDir/models/` with a progress UI. Write the choice into specs/segmentation.md §Delivery
+  - add `org.pytorch:executorch-android` to `libs.versions.toml`
+  - place `edgetam_encoder_xnnpack_fp32.pte` and `edgetam_decoder_xnnpack_fp16.pte` under `fixtures/models/` for tests (git-lfs) and, if (a), under `app/src/main/assets/models/`
+  - write `specs/ai_provider.md`, `specs/segmentation.md`, `specs/selection_tool.md`; extend `specs/edit_model.md` with `Operation.Mask` and `Operation.CutOut`
+  - run the loop again only after these exist
+
+## Phase 7 — Model layer
+
+- [ ] T26 `core:ai` module and `SegmentationProvider` interface
+  spec: specs/ai_provider.md, architecture.md §6
+  deps: T25
   done when:
-    - `ImageLoader.load(uri): Result<SourceImage>` decodes off the main thread, downsamples to max 4096px on the long edge
-    - EXIF orientation applied
-    - OOM path returns `Failure(TooLarge)` instead of crashing
-    - unit test with the 6000×4000 fixture verifies downsampling
-  touches: core/imaging/load
+    - new module `core:ai` (depends on `core:common`, `core:imaging` for `ImageRef` only); `feature:editor` depends on it; dependency-guard updated
+    - `interface SegmentationProvider { suspend fun prepare(image: Bitmap): Result<ImageEmbedding>; suspend fun segment(emb: ImageEmbedding, prompt: PointPrompt): Result<SegMask> }`
+    - `PointPrompt(points: List<Point>, labels: List<Boolean>)` in normalized image coords; `SegMask(bitmap: Bitmap /* ALPHA_8, image size */, score: Float)`
+    - `FakeSegmentationProvider`: returns a circle of radius 0.2 around the first point, deterministic
+    - tests for the fake; Hilt binding chooses fake in tests, real in app
+  touches: core/ai, settings.gradle.kts (only to add the module — this one exception is pre-approved), feature/editor build file
 
-- [x] T05 Canvas composable with fit/zoom/pan
-  spec: specs/canvas.md, DESIGN.md §5, §8
-  deps: T02, T04
+- [ ] T27 EdgeTAM runtime via ExecuTorch
+  spec: specs/segmentation.md
+  deps: T26
   done when:
-    - `EditorCanvas` renders a bitmap centered with ≥16dp `editBackground` margin
-    - pinch zoom (0.5×–8× of fit), one- or two-finger pan, double-tap toggles fit ↔ 2×
-    - transparency shown as 8dp checkerboard using `canvasCheckerA/B`
-    - `CanvasGestureTest` covers zoom clamp, pan clamp, double-tap
-    - goldens: `canvas_fit`, `canvas_zoomed`, `canvas_transparent`
-  touches: feature/editor/canvas
+    - `EdgeTamProvider : SegmentationProvider` loads the two `.pte` modules lazily on first `prepare`
+    - `prepare`: letterbox-resize to 1024×1024, RGB/255 + ImageNet mean/std normalize, run encoder, keep the three feature tensors in `ImageEmbedding` (≈ 30MB; only one embedding cached at a time)
+    - `segment`: map points to 1024-space pixel coords, run decoder, pick the mask with the highest IoU score, sigmoid > 0.5 → ALPHA_8, un-letterbox back to image size with bilinear upsample
+    - both run on `Dispatchers.Default`; cancellable between encoder and decoder
+    - `EdgeTamProviderTest` on Robolectric with the fixture models: a click on the red patch of `photo_512.png` yields a mask whose bounding box covers ≥ 80% of the patch and ≤ 5% of the gray patch
+    - `scripts/bench.sh` gains: encoder time and decoder time on the 12MP fixture (informational)
+  touches: core/ai/edgetam, scripts/bench.sh
 
-- [x] T06 Editor screen shell
-  spec: specs/editor_shell.md, DESIGN.md §4 (Top bar, Tool strip)
-  deps: T05
+- [ ] T28 Model delivery (per ADR-008)
+  spec: specs/segmentation.md §Delivery
+  deps: T27
   done when:
-    - layout: top bar 56dp / canvas / tool strip 72dp
-    - top bar: back, undo, redo, compare, export pill (wired to no-op or nav)
-    - tool strip with Light / Color / Crop / Detail, selected tool shows accent indicator
-    - edge-to-edge, status bar color = `editSurface`
-    - golden: `editor_shell_default`
-  touches: feature/editor
+    - (a) assets: models resolved from `assets/models/`; APK size check in `check.sh` updated to the new budget
+    - or (b) download: `ModelStore.ensure(): Flow<DownloadState>`; sheet shows progress and size before starting; verified by SHA-256 listed in the spec; failure → snackbar, tool stays disabled
+    - either way, `SegmentationProvider` is unavailable (tool greyed with a reason) until models are present
+  touches: core/ai, feature/editor/tools/select (availability state only)
 
-- [x] T07 Bottom sheet component
-  spec: DESIGN.md §4 (Bottom sheet)
-  deps: T02
+## Phase 8 — Selection tool
+
+- [ ] T29 `Operation.Mask` in the model and renderer
+  spec: specs/edit_model.md (amended in T25), render.md
+  deps: T25
   done when:
-    - `EditSheet(title, content, onCancel, onApply)` with 24dp top corners, drag handle, max height 45%
-    - Cancel/Apply pinned at the bottom, Apply is primary pill
-    - goldens: `sheet_expanded`, `sheet_collapsed`
-  touches: core/ui/components
+    - `Operation.Mask(id, maskRef: ImageRef /* ALPHA_8 PNG in project folder */, points: PointPrompt /* for re-editing */)`
+    - a `Mask` op alone changes no pixels; the renderer exposes `resolveMask(doc, maskId): Bitmap?` for consumers
+    - masks are saved by persistence as `mask_<id>.png`; round-trip test
+    - at most one **active** mask per document (`EditDocument.activeMaskId`); older masks stay for undo
+  touches: core/imaging/model, core/imaging/render, core/data
 
-## Phase 2 — Edit engine
-
-- [x] T08 Non-destructive edit model
-  spec: specs/edit_model.md
-  deps: T04
+- [ ] T30 "선택" tool: tap-to-segment with darkened preview
+  spec: specs/selection_tool.md, DESIGN.md §4
+  deps: T26, T29, T24
   done when:
-    - `EditDocument` = source + ordered `List<Operation>`
-    - `Operation` sealed interface with `Adjust(kind, value)` and `Crop(rect, angleDeg)`
-    - JSON round-trip test passes; unknown op types are dropped, not crashed
-  touches: core/imaging/model
+    - tool strip gains "선택" (icon `lasso_select` or similar) with the 6dp accent AI dot; opens a sheet with: [반전] [지우기] and Cancel/Apply
+    - on opening: `prepare()` runs once with the progress overlay ("이미지를 분석하는 중"); canvas one-finger tap becomes a **foreground point**, long-press becomes a **background point** (`gestureMode = SelectPoint`)
+    - every point → `segment()` → preview: outside the mask darkened (`#000000` 60% scrim), 1dp `accent` outline along the mask edge; points drawn as 8dp dots (accent fg, white bg)
+    - each point push is a history entry; undo removes the last point and re-segments
+    - Apply → writes `Operation.Mask` and sets `activeMaskId`; Cancel discards
+    - works fully with `FakeSegmentationProvider` in tests; UI test covers add fg, add bg, undo, invert, apply
+    - goldens: `select_sheet_open`, `select_mask_preview`
+  touches: feature/editor/tools/select, feature/editor/canvas (gesture mode + mask overlay draw only)
 
-- [x] T09 Undo / redo history
-  spec: specs/history.md
-  deps: T08
+- [ ] T31 Adjustments limited to the selection
+  spec: specs/adjust_light.md / adjust_color.md / adjust_detail.md (amend: masked mode), render.md
+  deps: T30
   done when:
-    - `HistoryStack` with push/undo/redo, capped at 50
-    - coalesces rapid pushes with the same key into one entry
-    - `HistoryStackTest` covers cap, coalesce, redo invalidation
-    - top bar undo/redo enabled state reflects the stack
-  touches: core/imaging/history, feature/editor
+    - when `activeMaskId != null`, every `AdjustSheet` shows a toggle "선택 영역에만" (default on); `Operation.Adjust` gains `maskId: String?`
+    - renderer blends `out = lerp(in, adjusted, mask)`
+    - goldens: `exposure_+0.5_masked` using a fixture mask covering the left half — right half must equal the input
+    - existing unmasked goldens unchanged
+  touches: core/imaging/ops, core/imaging/render, feature/editor/tools/*
 
-- [x] T10 Render pipeline with preview cache
-  spec: specs/render.md
-  deps: T08
+- [ ] T32 Background removal from the selection
+  spec: specs/selection_tool.md §CutOut
+  deps: T30
   done when:
-    - `Renderer.preview` at canvas resolution and `Renderer.full` at source resolution
-    - runs on `Dispatchers.Default`, cancellable between ops
-    - preview cache (3 entries) and base decode cache (2 entries)
-    - benchmark test present (excluded from `check`, run via `scripts/bench.sh`)
-  touches: core/imaging/render, scripts/
-
-- [x] T11 Compare gesture
-  spec: specs/editor_shell.md
-  deps: T09, T10
-  done when:
-    - holding the compare button shows the source; release returns to the preview
-    - disabled when the document has no operations
-    - UI test verifies both states
-  touches: feature/editor
-
-## Phase 3 — Adjustment tools
-
-- [x] T12 Slider component
-  spec: DESIGN.md §4 (Slider)
-  deps: T02
-  done when:
-    - `AdjustSlider(value, range, zeroCentered, onChange, onChangeFinished)`: 4dp track, 20dp thumb, value pinned right in mono, center tick when zero-centered
-    - double-tap resets to default
-    - goldens: `slider_default`, `slider_zero_centered`
-  touches: core/ui/components
-
-- [x] T13 Light adjustments
-  spec: specs/adjust_light.md, specs/render.md
-  deps: T07, T09, T10, T12
-  done when:
-    - Exposure, Contrast, Highlights, Shadows implemented as `Adjust` ops
-    - golden image test per kind at +0.5 and −0.5 (tolerance 2/255, 99.9% pixels)
-    - "Light" sheet with four sliders; slider drag coalesces into one history entry
-  touches: core/imaging/ops, feature/editor/tools/light
-
-- [x] T14 Color adjustments
-  spec: specs/adjust_color.md, specs/render.md
-  deps: T13
-  done when:
-    - Temperature, Tint, Saturation, Vibrance as `Adjust` ops with golden image tests
-    - "Color" sheet opens from the tool strip
-  touches: core/imaging/ops, feature/editor/tools/color
-
-- [x] T15 Crop and rotate
-  spec: specs/crop.md
-  deps: T07, T09, T10
-  done when:
-    - crop overlay with draggable corners/edges, aspect presets (Free, 1:1, 4:5, 9:16, 16:9)
-    - rotate 90° steps and straighten (−45°…45°) with a slider
-    - `Crop` op renders correctly; goldens for 1:1 crop and 15° straighten
-    - golden: `crop_overlay`
-  touches: core/imaging/ops, feature/editor/tools/crop
-
-- [x] T16 Detail adjustments
-  spec: specs/adjust_detail.md, specs/render.md
-  deps: T13
-  done when:
-    - Sharpen (0…1) and Vignette (0…1) as `Adjust` ops with golden image tests
-    - "Detail" sheet opens from the tool strip
-  touches: core/imaging/ops, feature/editor/tools/detail
-
-## Phase 4 — Browse, persistence, export
-
-- [x] T17 Project persistence
-  spec: specs/persistence.md
-  deps: T08
-  done when:
-    - `EditDocument` saved as JSON + copied source + 512px thumbnail in app storage
-    - Room table: id, createdAt, updatedAt, thumbnailPath
-    - autosave 2s after the last operation; leaving without changes creates no project
-    - DAO tests pass
-  touches: core/data
-
-- [x] T18 Browse home (masonry grid)
-  spec: specs/browse.md, DESIGN.md §4 (Image tile), §5
-  deps: T02, T17
-  done when:
-    - 2-column masonry of thumbnails, 8dp gap, 16dp side padding; 3 columns at 600dp+
-    - no text on tiles; updated-at below in `bodySm`
-    - long-press reveals delete / duplicate as `iconCircle`
-    - empty state uses `headingXl` and a primary pill
-    - goldens: `browse_grid`, `browse_empty`
-  touches: feature/browse
-
-- [x] T19 Import from Photo Picker
-  spec: specs/browse.md
-  deps: T18, T04
-  done when:
-    - `PickVisualMedia` opens from the primary CTA; result creates a project and navigates to the editor
-    - unsupported formats show a snackbar
-  touches: feature/browse, app/navigation
-
-- [x] T20 Export
-  spec: specs/export.md, DESIGN.md §4 (Bottom sheet)
-  deps: T10, T07
-  done when:
-    - export sheet: format (JPEG 92 / PNG), size (Original / 2048 / 1080), presets (4:5, 9:16)
-    - full-resolution render with progress overlay (40% scrim, accent circular progress, cancel)
-    - saved via MediaStore to Pictures/<AppName>; success snackbar with an "open" action
-    - UI test verifies a file with the expected dimensions is written
-  touches: feature/export, core/imaging/render
-
-- [x] T21 Navigation and polish
-  spec: specs/architecture.md
-  deps: T19, T20
-  done when:
-    - graph: Browse → Editor → Export sheet; back from editor autosaves
-    - back with an export running shows a destructive confirmation
-    - predictive back enabled
-    - all goldens re-verified, `scripts/check.sh` exits 0
-  touches: app/navigation, feature/*
+    - selection sheet gains a primary action "배경 지우기" (visible only when a mask exists)
+    - `Operation.CutOut(maskId)`: alpha outside the mask → 0; `hasAlpha` becomes true; checkerboard shows
+    - export auto-selects PNG (export.md rule already exists)
+    - golden `cutout_render`; UI test: cutout → undo restores alpha
+  touches: core/imaging/ops, feature/editor/tools/select, feature/export (only if the auto-PNG rule needs the new flag)
 
 ---
 
-## v2 — AI (do not start; needs specs and a human decision on on-device vs cloud)
-
-- V01 `AiProvider` interface + `FakeAiProvider`
-- V02 Mask brush tool (one-finger paint, feeds AI ops)
-- V03 AI job overlay (progress, cancel, failure snackbar)
-- V04 Background removal → `Operation.AiResult`
-- V05 Inpaint (mask + fill)
-- V06 Upscale 2×
-- V07 Remote provider behind `USE_REMOTE_AI` flag
-
 ## Deferred
-- D01 Layers panel · D02 Text tool · D03 GPU render (AGSL) · D04 Tablet layout · D05 Onboarding
+- D01 Layers · D02 Text · D03 GPU render (AGSL) · D04 Tablet · D05 Onboarding
+- D06 Box prompt for selection (drag a rectangle) · D07 Inpaint with a generative model · D08 Video (EdgeTAM tracking)
