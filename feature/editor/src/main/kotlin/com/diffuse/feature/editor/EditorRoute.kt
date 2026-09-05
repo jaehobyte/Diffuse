@@ -38,6 +38,7 @@ fun EditorRoute(
             canUndo = state.canUndo,
             canRedo = state.canRedo,
             canCompare = state.canCompare,
+            canReset = state.canReset,
             onBack = {
                 scope.launch {
                     viewModel.onLeave()
@@ -46,6 +47,7 @@ fun EditorRoute(
             },
             onUndo = viewModel::undo,
             onRedo = viewModel::redo,
+            onReset = viewModel::reset,
             onCompareChange = {},
             onExport = onExport,
             cropOverlay = if (state.selectedTool == Tool.Crop) {

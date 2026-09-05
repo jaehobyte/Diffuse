@@ -3,6 +3,7 @@
     <string name="editor_back">뒤로</string>
     <string name="editor_undo">실행 취소</string>
     <string name="editor_redo">다시 실행</string>
+    <string name="editor_reset">원본으로 되돌리기</string>
     <string name="editor_compare">원본과 비교</string>
     <string name="editor_export">내보내기</string>
 

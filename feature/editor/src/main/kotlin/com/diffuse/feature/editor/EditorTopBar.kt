@@ -14,6 +14,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Redo
 import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.rounded.Compare
+import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
@@ -40,10 +41,12 @@ const val CompareTestTag = "EditorCompare"
 fun EditorTopBar(
     canUndo: Boolean,
     canRedo: Boolean,
+    canReset: Boolean,
     canCompare: Boolean,
     onBack: () -> Unit,
     onUndo: () -> Unit,
     onRedo: () -> Unit,
+    onReset: () -> Unit,
     onCompareChange: (Boolean) -> Unit,
     onExport: () -> Unit,
     modifier: Modifier = Modifier,
@@ -63,6 +66,7 @@ fun EditorTopBar(
         BarIcon(Icons.AutoMirrored.Rounded.ArrowBack, R.string.editor_back, true, onBack)
         BarIcon(Icons.AutoMirrored.Rounded.Undo, R.string.editor_undo, canUndo, onUndo)
         BarIcon(Icons.AutoMirrored.Rounded.Redo, R.string.editor_redo, canRedo, onRedo)
+        BarIcon(Icons.Rounded.RestartAlt, R.string.editor_reset, canReset, onReset)
 
         androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
 

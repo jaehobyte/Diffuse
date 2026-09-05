@@ -30,6 +30,7 @@ data class EditorUiState(
     val canUndo: Boolean = false,
     val canRedo: Boolean = false,
     val canCompare: Boolean = false,
+    val canReset: Boolean = false,
     val selectedTool: Tool? = null,
     val cropState: CropState = CropState(),
     val document: EditDocument? = null,
@@ -82,6 +83,7 @@ class EditorViewModel @Inject constructor(
                     canUndo = stack.canUndo.value,
                     canRedo = stack.canRedo.value,
                     canCompare = document.canCompare(),
+                    canReset = document.operations.isNotEmpty(),
                 )
                 requestPreview(document)
             }
@@ -164,6 +166,8 @@ class EditorViewModel @Inject constructor(
         sheetBaseline = null
         _uiState.value = state.copy(selectedTool = null)
     }
+
+    fun reset() = history?.resetToOriginal() ?: Unit
 
     fun undo() = history?.undo() ?: Unit
 

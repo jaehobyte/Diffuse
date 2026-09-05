@@ -10,7 +10,7 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `[H]` human-only, loop must
 
 ## Phase 5 — v1.1 fixes (start immediately)
 
-- [ ] T22 Reset to original
+- [x] T22 Reset to original
   spec: specs/editor_shell.md §Top bar (amend), history.md
   deps: —
   done when:

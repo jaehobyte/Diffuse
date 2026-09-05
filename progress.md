@@ -2,10 +2,13 @@
 
 ## Current
 
-**T01–T21 complete.** `scripts/check.sh` green offline: 215 tests, 20 render goldens,
-20 screenshot goldens. The app now launches into Browse, imports, edits and exports.
+**T23 Crop preset aspect is wrong (16:9 renders as ~1:1)** — next.
 
 ## Done
+
+- T22 Reset to original — `RestartAlt` icon between Redo and Compare, `resetToOriginal()`
+  as one uncoalesced history step, viewport zeroed so the canvas refits. 1 test +
+  `editor_shell_default` re-recorded.
 
 - T21 Navigation and polish — Hilt graph, Browse → Editor → Export sheet, autosave on
   back, destructive confirmation while exporting, predictive back.
@@ -57,6 +60,22 @@ T04 Image loading pipeline — unblocked. The loop can run **T04 through T12**;
 T13 blocks on the still-missing `specs/adjust_light.md`.
 
 ## Decisions
+
+### T22
+
+- **The reset icon sits in the centre group, right after Redo.** DESIGN.md §4 puts the
+  history controls in the centre and Compare/Export on the right; "between Redo and
+  Compare" is satisfied either way, and grouping it with undo/redo keeps the right side to
+  the two actions §4 names. `Icons.Rounded.RestartAlt` over `history`, which reads as
+  "version history" rather than "start over".
+- **Reset zeroes the viewport.** `RefitOnSizeChange` only refits a viewport the user has
+  not zoomed, so `onReset` resets `CanvasViewport()` in `EditorScreen` to guarantee the
+  refit the task asks for when a Crop is dropped.
+- **`resetToOriginal()` is an extension on `HistoryStack`**, not a private VM method, so
+  the UI test drives the same code the ViewModel does instead of restating it.
+- **CLAUDE.md forbids editing `specs/*.md`, but T22's `touches` explicitly allows
+  appending one row to the Top bar section.** Took the more specific instruction and
+  appended a single bullet to specs/editor_shell.md §Top bar behavior.
 
 ### Stack (T01)
 

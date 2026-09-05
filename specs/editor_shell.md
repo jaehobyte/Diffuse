@@ -36,6 +36,7 @@ Single `EditorViewModel`, MVI-style: UI sends `EditorIntent`, VM reduces to `Edi
 ## Top bar behavior
 - Back: if a sheet is open → Cancel the sheet. Else if exporting → destructive confirmation. Else autosave (T17) and pop.
 - Undo/Redo: call `HistoryStack`. Disabled while a sheet is open (sheet has its own Cancel).
+- Reset: drops every operation in one undoable step (`history.push(doc.copy(operations = emptyList()))`, no coalesce key). No confirmation — undo covers it. Disabled when `operations.isEmpty()`. The canvas refits afterwards, since removing a Crop changes the dimensions.
 - Compare: press-and-hold. `comparing = true` on down, `false` on up/cancel. Shows `source` at preview size. Disabled when `operations.isEmpty()`.
 - Export pill: opens the export sheet (T20). Disabled while a tool sheet is open.
 

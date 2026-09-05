@@ -31,6 +31,7 @@ class EditorShellGoldenTest {
                 canUndo = true,
                 canRedo = false,
                 canCompare = true,
+                canReset = true,
                 onBack = {},
                 onUndo = {},
                 onRedo = {},
