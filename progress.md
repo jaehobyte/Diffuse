@@ -147,6 +147,12 @@ _(none)_
 
 ## Open issues for a human
 
+- **The release APK is 16.06 MB, over the 15 MB budget** (specs/architecture.md §8),
+  measured for the first time at T12. `isMinifyEnabled = false`, so R8 strips nothing:
+  material-icons-extended and unused Compose are shipped whole. The Pretendard variable
+  font is 2.81 MB of it. Enabling R8 is the obvious first move and belongs to T20/T21,
+  but the budget is already breached today.
+
 - **DESIGN.md contradicts itself on accent placement.** §1 says the accent appears in
   exactly one place per screen — "the primary action or the active-tab indicator". But §4
   requires the Export button to be a primary (accent) pill *and* the selected tool to be
