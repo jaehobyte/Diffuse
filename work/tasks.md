@@ -55,7 +55,7 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `deps` = task ids that must
     - unit test with the 6000×4000 fixture verifies downsampling
   touches: core/imaging/load
 
-- [ ] T05 Canvas composable with fit/zoom/pan
+- [x] T05 Canvas composable with fit/zoom/pan
   spec: specs/canvas.md, DESIGN.md §5, §8
   deps: T02, T04
   done when:

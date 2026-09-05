@@ -28,6 +28,12 @@ class ComposeConventionPlugin : Plugin<Project> {
         // input change, marks the test task UP-TO-DATE and skips it, so verifyRoborazzi
         // passes against a deleted or edited golden -- exactly what testing.md §5 forbids
         // ("a missing golden is a failure, not an auto-record").
+        // specs/testing.md §5 requires one shared screenshot configuration. Kotlin has no
+        // testFixtures compilation under AGP, so the helper is a source directory every
+        // Compose module's unit tests compile, rather than a published artifact.
+        android.sourceSets.getByName("test").java
+            .srcDir(rootProject.file("core/ui/src/testShared/kotlin"))
+
         val goldenImages = fileTree("src/test/screenshots") { include("**/*.png") }
         tasks.withType<Test>().configureEach {
             systemProperty("diffuse.roborazzi.changeThreshold", "0.01")

@@ -2,10 +2,12 @@
 
 ## Current
 
-T04 done. Next: T05 Canvas composable.
+T05 done. Next: T06 Editor screen shell.
 
 ## Done
 
+- T05 Canvas composable — `EditorCanvas` with fit/pinch/pan/double-tap, 8dp checkerboard,
+  `LocalCanvasTransform`; 10 tests + goldens `canvas_fit`/`canvas_zoomed`/`canvas_transparent`.
 - T04 Image loading pipeline — `ImageLoader.load(uri)` + `SourceImage`; 4096px bound,
   two-step downsample, EXIF applied to pixels, typed failures. 8 tests.
 - T03 Screenshot test harness — `theme_swatches` golden (all 21 colors + 8 text styles,
@@ -108,7 +110,22 @@ T13 blocks on the still-missing `specs/adjust_light.md`.
   Hilt-generated test classes in `:app` ("this is a bug in lint or one of the libraries
   it depends on"). Main-source detection is unaffected and was re-verified by injection.
 
-## Attempts
+### T05
+
+- **Kotlin has no `testFixtures` compilation under AGP 8.13**: enabling `testFixtures`
+  creates only `compileDebugTestFixturesJavaWithJavac`, so Kotlin sources there are never
+  compiled and consumers see an unresolved reference. `ScreenshotOptions` therefore lives
+  in `core/ui/src/testShared/kotlin`, which `ComposeConventionPlugin` adds to every
+  Compose module's unit-test source set. Still one definition, as testing.md §5 demands.
+- **`detectTransformGestures` cannot drive a hoisted viewport.** Every pointer event reads
+  the viewport as of the last *composition*, so a burst of events within one frame all
+  scale from the same stale value and most of the gesture is lost — a pinch of 15× landed
+  as 1.04×. `detectCanvasTransformGestures` seeds a working copy once per gesture and
+  accumulates locally. Touch slop still eats the opening of a gesture, so the clamp tests
+  pinch twice.
+- **`CanvasBounds` bundles the canvas and image sizes.** It started as a detekt
+  `LongParameterList` fix but reads better: every viewport calculation needs both.
+
 
 _(none)_
 

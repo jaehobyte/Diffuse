@@ -7,7 +7,7 @@ import com.github.takahirom.roborazzi.RoborazziOptions
  * not overridable per test. Roborazzi's Gradle extension exposes no threshold, so the
  * value is passed in as a system property and this is its only reader.
  */
-internal object ScreenshotOptions {
+object ScreenshotOptions {
 
     private const val THRESHOLD_PROPERTY = "diffuse.roborazzi.changeThreshold"
 
