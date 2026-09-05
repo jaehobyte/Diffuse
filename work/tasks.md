@@ -25,7 +25,7 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `deps` = task ids that must
     - `app` launches to an empty Compose screen
   touches: root gradle files, all module `build.gradle.kts`, `settings.gradle.kts`
 
-- [ ] T02 Design tokens and theme
+- [x] T02 Design tokens and theme
   spec: DESIGN.md §2–3, §6
   deps: T01
   done when:

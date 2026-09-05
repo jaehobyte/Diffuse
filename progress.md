@@ -2,19 +2,23 @@
 
 ## Current
 
-T01 Project skeleton compiles — **complete, uncommitted** (interactive Phase 0, not a loop iteration).
-Verified: `scripts/check.sh` exits 0 offline (~10s); `assembleDebug` produces app-debug.apk;
-3 tests execute and pass; `dependencyGuard` proven to fail on injected violations.
+T02 Design tokens and theme — **complete, uncommitted** (interactive Phase 0).
+Verified: `TokensTest` 34 assertions green; `scripts/check.sh` exits 0 offline;
+Pretendard variable font confirmed rendering Korean text under Robolectric
+(temporary test, since removed — T03's `theme_swatches` golden covers it).
 
 ## Done
 
+- T02 Design tokens and theme — `core/ui/theme/Tokens.kt` (21 colors, 8 text styles,
+  §6 elevation), `Theme.kt` (`AppTheme(mode)`, `AppColors`, `LocalAppColors`),
+  Pretendard + JetBrains Mono bundled. Not yet committed.
 - T01 Project skeleton compiles — modules `app`, `core:{common,imaging,ui,data}`,
   `feature:{browse,editor,export}`; Gradle 8.14.5 / AGP 8.13.2 / Kotlin 2.3.21;
   `scripts/check.sh` green offline. Not yet committed (awaiting review).
 
 ## Next
 
-T02 Design tokens and theme (deps: T01).
+T03 Screenshot test harness (deps: T02 — now satisfied).
 
 ## Decisions
 
@@ -82,6 +86,32 @@ T02 Design tokens and theme (deps: T01).
   `MainActivityLaunchTest` is also how T01's "app launches to an empty Compose screen" was
   verified: this machine has no device and no `/dev/kvm`, so no emulator is possible.
   Delete them if you would rather T02/T03 own the first tests.
+
+### T02
+
+- **Pretendard as a variable font.** DESIGN.md §3 mandates Pretendard and
+  specs/testing.md §5 requires it bundled for deterministic goldens, so it had to be
+  vendored (the loop is offline). Measured compressed-in-APK cost: variable **2.82 MB**
+  vs 4.06 MB for four static OTFs (400/500/600/700), so the single variable file wins on
+  both size and weight fidelity. Plus JetBrains Mono Medium at 127 KB for the `mono`
+  token. Total ≈ 2.95 MB against the 15 MB APK budget (ARCHITECTURE.md §8) — roughly 20%,
+  worth re-measuring at T20 when the release APK is real.
+- **`@OptIn(ExperimentalTextApi::class)`** is required for `FontVariation`. Acceptable
+  because the Compose version is pinned in a frozen catalog, so the API cannot shift
+  underneath us mid-loop.
+- **`mono` line height = 1.3 (16.9sp).** DESIGN.md §3 gives no line height for that row;
+  it follows `label`, the other small-text token.
+- **`letterSpacing = 0.sp` set explicitly** on the six styles where DESIGN.md §3 lists no
+  tracking. Left unset it resolves to `TextUnit.Unspecified` (NaN), which is neither
+  assertable nor deterministic for goldens.
+- **`AppColors` carries only the mode-dependent roles.** Brand and semantic colors are
+  identical in both modes per DESIGN.md §2, so they default to `Tokens` instead of being
+  duplicated per palette. Edit-mode `surfaceSecondary` maps to `editSurfaceRaised`, which
+  DESIGN.md §4 (Buttons) states directly.
+- **MaterialTheme gets a colorScheme but no typography.** DESIGN.md §2 says M3 is for
+  primitives only; the scheme exists solely to keep stock components off the default
+  purple. Components pass `Typography.*` explicitly, so mapping M3's type slots would be
+  speculative.
 
 ## Attempts
 
