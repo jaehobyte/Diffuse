@@ -31,6 +31,10 @@ internal fun Project.configureAndroid(ext: CommonExtension<*, *, *, *, *, *>) {
             abortOnError = true
             checkDependencies = false
             checkReleaseBuilds = false
+            // Lint's Kotlin analysis crashes on Hilt-generated test classes
+            // ("this is a bug in lint or one of the libraries it depends on").
+            // Test sources are not lint's job here; main sources still abort on error.
+            ignoreTestSources = true
         }
     }
 }

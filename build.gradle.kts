@@ -41,8 +41,8 @@ tasks.withType<Detekt>().configureEach {
 }
 
 // ---------------------------------------------------------------------------
-// dependencyGuard - enforces the module graph in ARCHITECTURE.md 3 and the
-// dependency rules in 4. Referenced by ARCHITECTURE.md 4 ("T01 sets it up")
+// dependencyGuard - enforces the module graph in specs/architecture.md 3 and the
+// dependency rules in 4. Referenced by specs/architecture.md 4 ("T01 sets it up")
 // and invoked by scripts/check.sh. Frozen: the Ralph loop may not edit this.
 // ---------------------------------------------------------------------------
 val allowedProjectDeps: Map<String, Set<String>> = mapOf(
@@ -59,7 +59,7 @@ val allowedProjectDeps: Map<String, Set<String>> = mapOf(
     ),
 )
 
-// ARCHITECTURE.md 4.2: core:imaging is plain Kotlin + android.graphics.
+// specs/architecture.md 4.2: core:imaging is plain Kotlin + android.graphics.
 val forbiddenGroupPrefixes: Map<String, Set<String>> = mapOf(
     ":core:imaging" to setOf("androidx.compose", "com.google.dagger", "androidx.hilt", "androidx.room"),
     // 4.3: core:ui knows nothing about documents or rendering.
@@ -73,7 +73,7 @@ val guardedConfigurations = setOf(
 
 tasks.register("dependencyGuard") {
     group = "verification"
-    description = "Fails the build if the module graph violates ARCHITECTURE.md 3/4."
+    description = "Fails the build if the module graph violates specs/architecture.md 3/4."
     notCompatibleWithConfigurationCache("Reads other projects' configurations at execution time.")
     doLast {
         val violations = mutableListOf<String>()
@@ -83,7 +83,7 @@ tasks.register("dependencyGuard") {
             .forEach { p ->
                 val allowed = allowedProjectDeps[p.path]
                 if (allowed == null) {
-                    violations += "${p.path}: not listed in ARCHITECTURE.md 3. " +
+                    violations += "${p.path}: not listed in specs/architecture.md 3. " +
                         "A new core module needs an ADR (rule 4.5)."
                     return@forEach
                 }
@@ -102,7 +102,7 @@ tasks.register("dependencyGuard") {
                                 violations += "${p.path} -> $dep violates rule 4.1 " +
                                     "(feature never depends on feature; go through app navigation)."
                             dep !in allowed ->
-                                violations += "${p.path} -> $dep is not in the ARCHITECTURE.md 3 module map."
+                                violations += "${p.path} -> $dep is not in the specs/architecture.md 3 module map."
                         }
                     }
 
@@ -114,7 +114,7 @@ tasks.register("dependencyGuard") {
                         .distinct()
                     if (hits.isNotEmpty()) {
                         violations += "${p.path} must not depend on '$prefix' " +
-                            "(ARCHITECTURE.md 4): ${hits.joinToString()}"
+                            "(specs/architecture.md 4): ${hits.joinToString()}"
                     }
                 }
             }

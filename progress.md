@@ -2,9 +2,9 @@
 
 ## Current
 
-T03 Screenshot test harness — **complete, uncommitted** (interactive Phase 0).
-Verified by injection: check.sh exits non-zero on a lint error, a detekt violation,
-a failing unit test, a missing golden and an edited golden; exits 0 when clean.
+Phase 0 follow-up — **complete, uncommitted**. Unblocks the loop:
+`specs/` now matches the paths tasks.md actually uses, `specs/imaging.md` is drafted,
+and `core:common` exists. check.sh green offline.
 
 ## Done
 
@@ -18,8 +18,8 @@ a failing unit test, a missing golden and an edited golden; exits 0 when clean.
 
 ## Next
 
-T04 Image loading pipeline — **BLOCKED**: `specs/imaging.md` does not exist.
-See "Open issues for a human".
+T04 Image loading pipeline — unblocked. The loop can run **T04 through T12**;
+T13 blocks on the still-missing `specs/adjust_light.md`.
 
 ## Decisions
 
@@ -28,7 +28,7 @@ See "Open issues for a human".
 - **AGP 8.13.2 / Kotlin 2.3.21 / Gradle 8.14.5 / compileSdk 36.** AGP 9 was rejected:
   its DSL changes are what an unattended loop gets wrong, and CLAUDE.md forbids the loop
   from editing root gradle files, so a mismatch forces a block rather than a fix.
-  `targetSdk 36` is a documented deviation from ARCHITECTURE.md §2 "latest stable" (37),
+  `targetSdk 36` is a documented deviation from specs/architecture.md §2 "latest stable" (37),
   which AGP 8.13.2 cannot compile against.
 - **Version ceilings this forces.** Each pin is the newest that works on this line:
   `hilt 2.58` (2.59+ demands AGP 9.0), `composeBom 2026.06.01` (2026.08.00 ships Compose
@@ -37,7 +37,7 @@ See "Open issues for a human".
 - **Tripwire: Kotlin 2.3.21 is exactly at Hilt 2.58's metadata ceiling.** Hilt 2.58 reads
   Kotlin metadata only up to 2.3. coil 3.5.0+ is built with Kotlin 2.4 and breaks the
   Hilt processor. Do not bump Kotlin to 2.4.x without also moving to AGP 9 + Hilt 2.59+.
-- **`core:common` is a pure JVM module** (ARCHITECTURE.md §3 allows it no Android deps),
+- **`core:common` is a pure JVM module** (specs/architecture.md §3 allows it no Android deps),
   so its Hilt bindings must live in a `@Module` in `app`. It registers a
   `testDebugUnitTest` alias, without which check.sh would silently skip its tests.
 - **`dependencyGuard` is a custom root task**, not the Dropbox plugin, because §4
@@ -67,7 +67,7 @@ See "Open issues for a human".
 - **Pretendard as a single variable font.** DESIGN.md §3 mandates it and testing.md §5
   needs it bundled for deterministic goldens. Measured compressed-in-APK: variable
   2.82 MB vs 4.06 MB for four static weights, plus JetBrains Mono Medium at 127 KB.
-  Total ≈ 2.95 MB of the 15 MB budget (ARCHITECTURE.md §8) — re-measure at T20.
+  Total ≈ 2.95 MB of the 15 MB budget (specs/architecture.md §8) — re-measure at T20.
   `FontVariation` needs `@OptIn(ExperimentalTextApi::class)`; safe because the Compose
   version is pinned in a frozen catalog.
 - **Where DESIGN.md is silent:** `mono` line height follows `label` at 1.3; the six
@@ -87,24 +87,49 @@ See "Open issues for a human".
   `transparent_256.png` and `corrupt.jpg` cannot come from kodim23 at all and are
   synthesised.
 
+### Phase 0 follow-up
+
+- **All specs moved to `specs/`**, and `ARCHITECTURE.md` became `specs/architecture.md`.
+  tasks.md cites `specs/...` for every task but the files lived in `docs/specs/`, and
+  CLAUDE.md forbids editing tasks.md text — so the filesystem had to move, not the task
+  list. Side effect, and a deliberate one: the specs are now covered by CLAUDE.md's
+  "never modify any `*.md` under `specs/`" hard limit.
+- **`core:common` was written as Phase 0 work.** specs/architecture.md §3 assigns it
+  `Result`, dispatchers, logging and ids, and §9 defines the `AppError` cases — but no
+  task in tasks.md lists `core/common` under `touches`, so no loop iteration may create
+  them. T04, T08, T10 and T17 all depend on those types; without this the loop blocks on
+  its first task. Contents kept to exactly the §3 list, nothing more.
+  `DispatcherProvider` deliberately has no `main`: §5.4 reserves the main thread for
+  Compose, and exposing it here would invite core modules to touch it.
+- **`core:common` exposes coroutines with `api`**, since `DispatcherProvider` returns
+  `CoroutineDispatcher`. The JVM convention now applies `java-library` for that, and
+  no longer picks dependencies for modules it does not know about.
+- **`lint { ignoreTestSources = true }`.** Lint's Kotlin analysis crashes on the
+  Hilt-generated test classes in `:app` ("this is a bug in lint or one of the libraries
+  it depends on"). Main-source detection is unaffected and was re-verified by injection.
+
 ## Attempts
 
 _(none)_
 
 ## Open issues for a human
 
-- **T04 is blocked.** `specs/imaging.md` does not exist. Neither do the specs for
-  T13–T20: `adjust_light`, `adjust_color`, `crop`, `adjust_detail`, `persistence`,
-  `browse`, `export`. Tasks also cite `specs/architecture.md` and `specs/testing.md`,
-  but the real paths are `ARCHITECTURE.md` at the root and `docs/specs/`.
+- **Seven specs are still missing**, blocking T13 onward: `adjust_light`, `adjust_color`,
+  `adjust_detail`, `crop`, `persistence`, `browse`, `export`. T04–T12 can run today.
+- **`specs/imaging.md` is a draft written by Claude, not reviewed.** It fixes
+  `MAX_LONG_EDGE_PX = 4096`, a two-step downsample, EXIF applied to pixels, and the
+  error mapping. Read it before starting the loop; it is frozen once T04 begins.
+- **specs/render.md and specs/architecture.md disagree on error style.** render.md throws
+  `RenderException.MissingSource`; §9 mandates `Result` + `AppError`. architecture.md
+  says it wins on conflict, and imaging.md follows it — render.md is left untouched.
 - **`photo_12mp.jpg` is 1.42 MB, not the "~3MB" testing.md §7 states.** It is 4000×3000
-  with EXIF orientation 6 as required; it simply compresses well because it is upscaled
-  from a 768×512 source. Say so if the byte size itself matters to a test.
+  with EXIF orientation 6 as required; it compresses well because it is upscaled from a
+  768×512 source. Say so if the byte size itself matters to a test.
 - **`ScreenshotOptions` lives in `core:ui/src/test`.** The first feature-module golden
   (T05) needs it too and cannot see it from there — promote it to `testFixtures` then.
 - **testing.md §4's golden-image machinery does not exist yet**: `GoldenAssert.kt`,
   `golden_manifest.txt`, `GoldenInventoryTest`. They belong in `core:imaging`, outside
   T03's `touches`. First needed by T13.
-- **`fixtures/` and `scripts/check.sh` were authored as Phase 0 human deliverables**,
-  matching tasks.md's "done by a human before the loop starts"; both sit outside the
-  `touches` lists of the tasks that specify them.
+- **`fixtures/`, `scripts/check.sh` and `core:common` were authored as Phase 0 human
+  deliverables**, matching tasks.md's "done by a human before the loop starts"; all sit
+  outside the `touches` lists of the tasks that specify them.
