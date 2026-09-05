@@ -8,6 +8,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.diffuse.feature.editor.canvas.OverlayTransform
 import com.diffuse.feature.editor.canvas.cropOverlaySlot
 import com.diffuse.feature.editor.tools.ToolSheetHost
 import com.diffuse.feature.editor.tools.crop.CropSheet
@@ -50,6 +51,7 @@ fun EditorRoute(
             onReset = viewModel::reset,
             onCompareChange = {},
             onExport = onExport,
+            overlayTransform = cropTransform(state),
             cropOverlay = if (state.selectedTool == Tool.Crop) {
                 cropOverlaySlot(
                     rect = state.cropState.rect,
@@ -78,6 +80,17 @@ fun EditorRoute(
         )
     }
 }
+
+/** tasks.md T24: Cancel closes the sheet, which removes the live rotation with it. */
+private fun cropTransform(state: EditorUiState): OverlayTransform =
+    if (state.selectedTool == Tool.Crop) {
+        OverlayTransform(
+            quarterTurns = state.cropState.quarterTurns,
+            straightenDeg = state.cropState.straightenDeg,
+        )
+    } else {
+        OverlayTransform.None
+    }
 
 @Composable
 private fun CropToolSheet(state: EditorUiState, viewModel: EditorViewModel) {

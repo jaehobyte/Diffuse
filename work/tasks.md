@@ -30,7 +30,7 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `[H]` human-only, loop must
     - existing goldens `crop_1x1`, `crop_straighten_15`, `crop_overlay` still pass unchanged; if `crop_overlay` was recorded with the bug, it is named here and may be re-recorded once
   touches: feature/editor/tools/crop, core/imaging/ops (only if the render side is also wrong)
 
-- [ ] T24 Live rotate / straighten preview in the crop tool
+- [x] T24 Live rotate / straighten preview in the crop tool
   spec: specs/crop.md §Interaction (amend), canvas.md
   deps: T23
   done when:

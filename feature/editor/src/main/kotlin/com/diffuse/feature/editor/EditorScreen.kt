@@ -24,6 +24,7 @@ import com.diffuse.core.ui.theme.ThemeMode
 import com.diffuse.core.ui.theme.Tokens
 import com.diffuse.feature.editor.canvas.CanvasViewport
 import com.diffuse.feature.editor.canvas.EditorCanvas
+import com.diffuse.feature.editor.canvas.OverlayTransform
 
 const val EditorScreenTestTag = "EditorScreen"
 
@@ -51,6 +52,8 @@ fun EditorScreen(
     sheet: (@Composable () -> Unit)? = null,
     /** specs/canvas.md: the crop tool draws inside the canvas, not over the whole screen. */
     cropOverlay: (@Composable BoxScope.() -> Unit)? = null,
+    /** tasks.md T24: the crop tool's rotation, previewed live without a re-render. */
+    overlayTransform: OverlayTransform = OverlayTransform.None,
 ) {
     // DESIGN.md §1: the editor is always warm-dark chrome, never the browse palette.
     AppTheme(mode = ThemeMode.Edit) {
@@ -92,6 +95,7 @@ fun EditorScreen(
                 contentDescription = stringResource(
                     if (comparing) R.string.editor_canvas_source else R.string.editor_canvas_edited,
                 ),
+                overlayTransform = overlayTransform,
                 overlay = cropOverlay,
             )
             EditorToolStrip(

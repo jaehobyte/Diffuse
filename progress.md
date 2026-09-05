@@ -2,9 +2,14 @@
 
 ## Current
 
-**T24 Live rotate / straighten preview in the crop tool** — next.
+**T22-T24 complete.** `scripts/check.sh` green offline. Phase 5 (v1.1 fixes) is done;
+T25 is `[H]`, so the loop stops here until a human lands the v2 decisions and assets.
 
 ## Done
+
+- T24 Live rotate / straighten preview — `OverlayTransform` in the canvas rotates the drawn
+  bitmap about the image centre with no `Renderer` pass; quarter turns swap the fitted size.
+  2 transform tests + goldens `crop_live_rotate_15` / `crop_live_rotate_90`.
 
 - T23 Crop preset aspect — the geometry was right; `EditorRoute` fed it a constant 4:3.
   `CropState` now carries `sourceAspect` (from the bare-source preview) and flips it on odd
@@ -64,6 +69,20 @@ T04 Image loading pipeline — unblocked. The loop can run **T04 through T12**;
 T13 blocks on the still-missing `specs/adjust_light.md`.
 
 ## Decisions
+
+### T24
+
+- **`OverlayTransform` splits the quarter turns from the straighten**, because `CropOp`
+  does: the turns change the image's shape (so the canvas refits to the swapped size), the
+  straighten rotates inside those bounds (so its corners are clipped and the rect
+  auto-shrinks). One combined angle could not drive both.
+- **The bitmap is drawn into an axis-swapped rect and then rotated onto the image rect.**
+  Rotating the fitted rect itself would leave the drawn image at the wrong aspect.
+- **`touches` named `feature/editor/canvas` and `.../tools/crop`,** but the transform has to
+  reach the canvas through `EditorScreen` and be built in `EditorRoute`; both were edited.
+- **`recordRoborazziDebug --tests '*CropGoldenTest*'` also rewrites `crop_overlay.png`.**
+  T24 does not name that golden, so it was restored from git; `verifyRoborazziDebug` then
+  passed against the committed version, confirming the change is inside the threshold.
 
 ### T23
 
@@ -205,6 +224,12 @@ T13 blocks on the still-missing `specs/adjust_light.md`.
 _(none)_
 
 ## Open issues for a human
+
+- **The crop tool previews the *cropped* image, not the full source.** specs/crop.md says
+  opening 자르기 refits to the un-cropped source; the ViewModel just renders the current
+  document, so an existing Crop is baked into what the overlay sits on. Harmless until
+  T24 made the rotation visible; the fix is to render the document minus its Crop while
+  the sheet is open.
 
 - **Compare in the editor route is not wired to the ViewModel.** `EditorScreen` owns the
   hold state and swaps to `source`, which the VM renders, but `onCompareChange` is a no-op

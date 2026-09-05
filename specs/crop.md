@@ -15,6 +15,7 @@ Depends on: canvas.md (overlay slot, `LocalCanvasTransform`), edit_model.md (`Cr
 - Straighten: rotates the image under the fixed rect; the rect is auto-shrunk (aspect preserved) so it stays fully inside the rotated image — no empty corners, ever.
 - 90° buttons: rotate the whole source; rect rotates with it; aspect preset swaps (4:5 → 5:4 is displayed as the same chip).
 - Min rect size: 10% of the short edge.
+- Straighten and the 90° buttons preview **live on the canvas**, with no `Renderer` pass: the canvas rotates the drawn bitmap about the image centre (quarter turns swap the fitted size, the straighten rotates inside the unchanged bounds, matching `CropOp`). The rect stays where it is on screen; Apply commits `Crop(rect, angleDeg)` as before and Cancel drops the transform with the sheet.
 
 ## Model
 `Operation.Crop(rect: RectF normalized to un-rotated source, angleDeg: Float)` — `angleDeg` includes 90° steps + straighten (e.g. 105°). One Crop max; Apply replaces it.

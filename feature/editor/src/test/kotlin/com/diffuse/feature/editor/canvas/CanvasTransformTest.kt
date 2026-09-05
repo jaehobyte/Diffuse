@@ -70,6 +70,40 @@ class CanvasTransformTest {
         assertEquals((point.x - transform.imageRect.left) / viewport.scale, imagePoint.x, 0.01f)
     }
 
+    /** tasks.md T24: the live rotation is a canvas transform, so it is asserted here. */
+    @Test
+    fun `a straighten rotates in place and leaves the fitted size alone`() {
+        val transform = OverlayTransform(straightenDeg = 15f)
+
+        assertEquals(15f, transform.angleDeg, 0.001f)
+        assertEquals(image, transform.turnedSize(image))
+        val rect = CanvasMath.imageRect(bounds, viewportAtFit())
+        assertEquals(rect, transform.drawRect(rect))
+    }
+
+    @Test
+    fun `a quarter turn swaps the fitted size and the drawn rect about the centre`() {
+        val transform = OverlayTransform(quarterTurns = 1)
+
+        assertEquals(90f, transform.angleDeg, 0.001f)
+        assertEquals(Size(image.height, image.width), transform.turnedSize(image))
+
+        // The canvas fits the turned image, then draws the bitmap into a rect that lands
+        // on it once rotated: swapped extents, same centre.
+        val turnedBounds = CanvasBounds(canvas, transform.turnedSize(image))
+        val fit = CanvasMath.fitScale(turnedBounds, marginPx)
+        val rect = CanvasMath.imageRect(
+            turnedBounds,
+            CanvasViewport(scale = fit, offset = Offset.Zero, fitScale = fit),
+        )
+        val drawn = transform.drawRect(rect)
+
+        assertEquals(rect.height, drawn.width, 0.01f)
+        assertEquals(rect.width, drawn.height, 0.01f)
+        assertEquals(rect.center.x, drawn.center.x, 0.01f)
+        assertEquals(rect.center.y, drawn.center.y, 0.01f)
+    }
+
     @Test
     fun `the top left image pixel sits at the image rect origin`() {
         val transform = transformFor(viewportAtFit())
