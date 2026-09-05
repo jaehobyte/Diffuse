@@ -19,6 +19,7 @@ import com.diffuse.core.ui.theme.ThemeMode
 import com.diffuse.core.ui.theme.Tokens
 import com.diffuse.feature.editor.canvas.CanvasViewport
 import com.diffuse.feature.editor.canvas.EditorCanvas
+import com.diffuse.feature.editor.canvas.OverlayTransform
 import com.diffuse.feature.editor.canvas.testImage
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
 import com.github.takahirom.roborazzi.captureRoboImage
@@ -66,6 +67,43 @@ class CropGoldenTest {
 
         capture("crop_overlay")
     }
+
+    /**
+     * tasks.md T24: the straighten and the 90° buttons rotate the canvas immediately,
+     * with the crop rect staying where it is on screen.
+     */
+    private fun liveRotate(name: String, transform: OverlayTransform, rect: RectF) {
+        val image = testImage()
+        compose.setContent {
+            AppTheme(ThemeMode.Edit) {
+                var viewport by remember { mutableStateOf(CanvasViewport()) }
+                EditorCanvas(
+                    bitmap = image,
+                    viewport = viewport,
+                    onViewportChange = { viewport = it },
+                    overlayTransform = transform,
+                    overlay = { CropOverlay(rect = rect, onRectChange = {}) },
+                )
+            }
+        }
+        compose.waitForIdle()
+
+        capture(name)
+    }
+
+    @Test
+    fun cropLiveRotate15() = liveRotate(
+        name = "crop_live_rotate_15",
+        transform = OverlayTransform(straightenDeg = 15f),
+        rect = CropGeometry.shrinkToFit(RectF(0.15f, 0.2f, 0.85f, 0.8f), 15f, 4f / 3f),
+    )
+
+    @Test
+    fun cropLiveRotate90() = liveRotate(
+        name = "crop_live_rotate_90",
+        transform = OverlayTransform(quarterTurns = 1),
+        rect = RectF(0.15f, 0.2f, 0.85f, 0.8f),
+    )
 
     @Test
     fun cropSheetOpen() {

@@ -127,7 +127,7 @@ Compose Navigation, type-safe routes. Predictive back enabled. Deep links: none 
 | Slider drag → preview update | < 100ms p50 |
 | Export 12MP JPEG | < 2s |
 | Editor peak memory, 12MP source | < 250MB |
-| APK size (release, arm64) | < 15MB |
+| APK size (release, arm64) | < 500MB (ADR-008; was 15MB before bundled models) |
 
 ## 9. Error handling
 
@@ -144,5 +144,8 @@ Compose Navigation, type-safe routes. Predictive back enabled. Deep links: none 
 | 003 | Portrait only in v1 | Tablet layout is a separate composable tree; adds no value until tools stabilize |
 | 004 | Hilt over manual DI | Multi-module wiring without boilerplate; well-known to agents |
 | 005 | AI out of v1 entirely | Ship a solid editor first; AI is additive on the same model |
+| 006 | 4096px working resolution | CPU render + 250MB memory budget; true-original export deferred with GPU |
+| 007 | On-device segmentation with EdgeTAM via ExecuTorch (XNNPACK) | Apache-2.0, ~32MB total, no per-use cost, works offline; interface allows a cloud swap later |
+| 008 | Bundle model files in the APK | Simplest delivery, no first-run download UI; APK budget raised to 50MB |
 
 New ADRs go in `docs/decisions/NNN-title.md` and get a row here.

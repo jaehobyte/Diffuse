@@ -15,6 +15,8 @@ import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.core.imaging.model.ImageRef
 import com.diffuse.feature.editor.canvas.testImage
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -42,6 +44,7 @@ class EditorHistoryTest {
         compose.setContent {
             val canUndo by history.canUndo.collectAsState()
             val canRedo by history.canRedo.collectAsState()
+            val current by history.current.collectAsState()
             EditorScreen(
                 preview = testImage(),
                 selectedTool = null,
@@ -52,6 +55,8 @@ class EditorHistoryTest {
                 onBack = {},
                 onUndo = { history.undo() },
                 onRedo = { history.redo() },
+                canReset = current.operations.isNotEmpty(),
+                onReset = { history.resetToOriginal() },
                 onCompareChange = {},
                 onExport = {},
             )
@@ -62,6 +67,8 @@ class EditorHistoryTest {
     private fun undoButton() = compose.onNodeWithTag(string(R.string.editor_undo))
 
     private fun redoButton() = compose.onNodeWithTag(string(R.string.editor_redo))
+
+    private fun resetButton() = compose.onNodeWithTag(string(R.string.editor_reset))
 
     @Test
     fun `undo and redo track the stack as it changes`() {
@@ -92,6 +99,29 @@ class EditorHistoryTest {
 
         undoButton().assertIsNotEnabled()
         redoButton().assertIsEnabled()
+    }
+
+    /** T22 done-when: reset then undo restores every operation. */
+    @Test
+    fun `reset drops every operation and undo restores them`() {
+        showShell()
+        resetButton().assertIsNotEnabled()
+
+        val edited = document
+            .withAdjust(AdjustKind.Exposure, 0.5f)
+            .withAdjust(AdjustKind.Contrast, -0.25f)
+        history.push(edited)
+        compose.waitForIdle()
+        resetButton().assertIsEnabled()
+
+        resetButton().performClick()
+        compose.waitForIdle()
+        assertTrue(history.current.value.operations.isEmpty())
+        resetButton().assertIsNotEnabled()
+
+        undoButton().performClick()
+        compose.waitForIdle()
+        assertEquals(edited.operations, history.current.value.operations)
     }
 
     private fun string(resId: Int): String =

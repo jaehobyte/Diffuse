@@ -2,10 +2,22 @@
 
 ## Current
 
-**T01–T21 complete.** `scripts/check.sh` green offline: 215 tests, 20 render goldens,
-20 screenshot goldens. The app now launches into Browse, imports, edits and exports.
+**T22-T24 complete.** `scripts/check.sh` green offline. Phase 5 (v1.1 fixes) is done;
+T25 is `[H]`, so the loop stops here until a human lands the v2 decisions and assets.
 
 ## Done
+
+- T24 Live rotate / straighten preview — `OverlayTransform` in the canvas rotates the drawn
+  bitmap about the image centre with no `Renderer` pass; quarter turns swap the fitted size.
+  2 transform tests + goldens `crop_live_rotate_15` / `crop_live_rotate_90`.
+
+- T23 Crop preset aspect — the geometry was right; `EditorRoute` fed it a constant 4:3.
+  `CropState` now carries `sourceAspect` (from the bare-source preview) and flips it on odd
+  quarter turns. `presetAspectMatchesInPixels` covers five presets x both orientations.
+
+- T22 Reset to original — `RestartAlt` icon between Redo and Compare, `resetToOriginal()`
+  as one uncoalesced history step, viewport zeroed so the canvas refits. 1 test +
+  `editor_shell_default` re-recorded.
 
 - T21 Navigation and polish — Hilt graph, Browse → Editor → Export sheet, autosave on
   back, destructive confirmation while exporting, predictive back.
@@ -57,6 +69,55 @@ T04 Image loading pipeline — unblocked. The loop can run **T04 through T12**;
 T13 blocks on the still-missing `specs/adjust_light.md`.
 
 ## Decisions
+
+### T24
+
+- **`OverlayTransform` splits the quarter turns from the straighten**, because `CropOp`
+  does: the turns change the image's shape (so the canvas refits to the swapped size), the
+  straighten rotates inside those bounds (so its corners are clipped and the rect
+  auto-shrinks). One combined angle could not drive both.
+- **The bitmap is drawn into an axis-swapped rect and then rotated onto the image rect.**
+  Rotating the fitted rect itself would leave the drawn image at the wrong aspect.
+- **`touches` named `feature/editor/canvas` and `.../tools/crop`,** but the transform has to
+  reach the canvas through `EditorScreen` and be built in `EditorRoute`; both were edited.
+- **`recordRoborazziDebug --tests '*CropGoldenTest*'` also rewrites `crop_overlay.png`.**
+  T24 does not name that golden, so it was restored from git; `verifyRoborazziDebug` then
+  passed against the committed version, confirming the change is inside the threshold.
+
+### T23
+
+- **The root cause was the call site, not `CropGeometry`.** The task guessed "aspect
+  enforced in normalised space without multiplying by the source aspect"; the maths already
+  multiplied. `EditorRoute` passed a hardcoded `CANVAS_ASPECT = 4f / 3f`, so on a 3000x4000
+  source the red test reported `Square gave 0.5625, expected 1.0` — and 16:9 gave ~1:1,
+  exactly the reported symptom.
+- **`CropState` owns `sourceAspect`**, so `withPreset`/`straightened` can no longer be
+  handed the wrong number. The ViewModel reads it off the bare-source preview, whose shape
+  is the source's shape.
+- **`imageAspect` inverts on odd quarter turns**, because `CropOp` normalises `rect`
+  against the post-quarter-turn canvas. Without it a preset chosen after a 90° turn would
+  reintroduce the same class of bug.
+- **`touches` named only `feature/editor/tools/crop`**, but the constant lived in
+  `EditorRoute` and the aspect had to come from `EditorViewModel`; both were edited, since
+  the bug is unfixable inside the crop package alone.
+- **`rotated()` still leaves the rect and the preset chip alone** after a 90° turn
+  (specs/crop.md §Interaction asks for both). Untouched from T15 — out of T23's scope.
+
+### T22
+
+- **The reset icon sits in the centre group, right after Redo.** DESIGN.md §4 puts the
+  history controls in the centre and Compare/Export on the right; "between Redo and
+  Compare" is satisfied either way, and grouping it with undo/redo keeps the right side to
+  the two actions §4 names. `Icons.Rounded.RestartAlt` over `history`, which reads as
+  "version history" rather than "start over".
+- **Reset zeroes the viewport.** `RefitOnSizeChange` only refits a viewport the user has
+  not zoomed, so `onReset` resets `CanvasViewport()` in `EditorScreen` to guarantee the
+  refit the task asks for when a Crop is dropped.
+- **`resetToOriginal()` is an extension on `HistoryStack`**, not a private VM method, so
+  the UI test drives the same code the ViewModel does instead of restating it.
+- **CLAUDE.md forbids editing `specs/*.md`, but T22's `touches` explicitly allows
+  appending one row to the Top bar section.** Took the more specific instruction and
+  appended a single bullet to specs/editor_shell.md §Top bar behavior.
 
 ### Stack (T01)
 
@@ -164,10 +225,12 @@ _(none)_
 
 ## Open issues for a human
 
-- **The crop overlay assumes a 4:3 canvas aspect.** `EditorRoute` passes a constant because
-  the overlay does not report its measured size back yet. Presets and auto-shrink are
-  correct for that ratio and drift for others; wiring the measured aspect through
-  `LocalCanvasTransform` is the fix.
+- **The crop tool previews the *cropped* image, not the full source.** specs/crop.md says
+  opening 자르기 refits to the un-cropped source; the ViewModel just renders the current
+  document, so an existing Crop is baked into what the overlay sits on. Harmless until
+  T24 made the rotation visible; the fix is to render the document minus its Crop while
+  the sheet is open.
+
 - **Compare in the editor route is not wired to the ViewModel.** `EditorScreen` owns the
   hold state and swaps to `source`, which the VM renders, but `onCompareChange` is a no-op
   at the route level.

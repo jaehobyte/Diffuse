@@ -24,6 +24,7 @@ import com.diffuse.core.ui.theme.ThemeMode
 import com.diffuse.core.ui.theme.Tokens
 import com.diffuse.feature.editor.canvas.CanvasViewport
 import com.diffuse.feature.editor.canvas.EditorCanvas
+import com.diffuse.feature.editor.canvas.OverlayTransform
 
 const val EditorScreenTestTag = "EditorScreen"
 
@@ -43,11 +44,16 @@ fun EditorScreen(
     onRedo: () -> Unit,
     onCompareChange: (Boolean) -> Unit,
     onExport: () -> Unit,
+    /** tasks.md T22: enabled only while the document has operations to drop. */
+    canReset: Boolean = false,
+    onReset: () -> Unit = {},
     modifier: Modifier = Modifier,
     /** DESIGN.md §4: sheets rise above the tool strip rather than replacing it. */
     sheet: (@Composable () -> Unit)? = null,
     /** specs/canvas.md: the crop tool draws inside the canvas, not over the whole screen. */
     cropOverlay: (@Composable BoxScope.() -> Unit)? = null,
+    /** tasks.md T24: the crop tool's rotation, previewed live without a re-render. */
+    overlayTransform: OverlayTransform = OverlayTransform.None,
 ) {
     // DESIGN.md §1: the editor is always warm-dark chrome, never the browse palette.
     AppTheme(mode = ThemeMode.Edit) {
@@ -65,10 +71,16 @@ fun EditorScreen(
             EditorTopBar(
                 canUndo = canUndo,
                 canRedo = canRedo,
+                canReset = canReset,
                 canCompare = canCompare,
                 onBack = onBack,
                 onUndo = onUndo,
                 onRedo = onRedo,
+                // tasks.md T22: dropping a Crop changes the dimensions, so refit the canvas.
+                onReset = {
+                    viewport = CanvasViewport()
+                    onReset()
+                },
                 onCompareChange = {
                     comparing = it
                     onCompareChange(it)
@@ -83,6 +95,7 @@ fun EditorScreen(
                 contentDescription = stringResource(
                     if (comparing) R.string.editor_canvas_source else R.string.editor_canvas_edited,
                 ),
+                overlayTransform = overlayTransform,
                 overlay = cropOverlay,
             )
             EditorToolStrip(

@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -55,6 +56,8 @@ fun EditorCanvas(
     onViewportChange: (CanvasViewport) -> Unit,
     modifier: Modifier = Modifier,
     contentDescription: String? = null,
+    /** tasks.md T24: a live rotation preview, applied to the drawn bitmap only. */
+    overlayTransform: OverlayTransform = OverlayTransform.None,
     overlay: (@Composable BoxScope.() -> Unit)? = null,
 ) {
     val density = LocalDensity.current
@@ -62,7 +65,9 @@ fun EditorCanvas(
     val checkerPx = with(density) { CheckerCell.toPx() }
 
     var canvasSize by remember { mutableStateOf(Size.Zero) }
-    val imageSize = bitmap?.let { Size(it.width.toFloat(), it.height.toFloat()) } ?: Size.Zero
+    val imageSize = overlayTransform.turnedSize(
+        bitmap?.let { Size(it.width.toFloat(), it.height.toFloat()) } ?: Size.Zero,
+    )
     val bounds = CanvasBounds(canvasSize, imageSize)
     val fitScale = CanvasMath.fitScale(bounds, marginPx)
 
@@ -84,7 +89,7 @@ fun EditorCanvas(
         Canvas(modifier = Modifier.fillMaxSize()) {
             drawRect(color = Tokens.editBackground, size = size)
             if (bitmap != null && viewport.scale > 0f) {
-                drawPhoto(bitmap, transform.imageRect, viewport, checkerPx)
+                drawPhoto(bitmap, transform.imageRect, viewport, checkerPx, overlayTransform)
             }
         }
         if (overlay != null) {
@@ -153,20 +158,26 @@ private fun DrawScope.drawPhoto(
     rect: Rect,
     viewport: CanvasViewport,
     checkerPx: Float,
+    overlayTransform: OverlayTransform,
 ) {
+    val target = overlayTransform.drawRect(rect)
+    // The straighten leaves the rotated image's corners outside the rect, exactly as
+    // CropOp does when it rotates inside unchanged bounds.
     clipRect(rect.left, rect.top, rect.right, rect.bottom) {
         drawCheckerboard(rect, checkerPx)
+        rotate(degrees = overlayTransform.angleDeg, pivot = rect.center) {
+            drawImage(
+                image = bitmap,
+                dstOffset = IntOffset(target.left.roundToInt(), target.top.roundToInt()),
+                dstSize = IntSize(target.width.roundToInt(), target.height.roundToInt()),
+                filterQuality = if (viewport.scale < viewport.fitScale * SHARP_PIXEL_ZOOM) {
+                    FilterQuality.High
+                } else {
+                    FilterQuality.None
+                },
+            )
+        }
     }
-    drawImage(
-        image = bitmap,
-        dstOffset = IntOffset(rect.left.roundToInt(), rect.top.roundToInt()),
-        dstSize = IntSize(rect.width.roundToInt(), rect.height.roundToInt()),
-        filterQuality = if (viewport.scale < viewport.fitScale * SHARP_PIXEL_ZOOM) {
-            FilterQuality.High
-        } else {
-            FilterQuality.None
-        },
-    )
 }
 
 private fun DrawScope.drawCheckerboard(rect: Rect, cellPx: Float) {
