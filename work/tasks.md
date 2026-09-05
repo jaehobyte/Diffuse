@@ -203,7 +203,7 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `deps` = task ids that must
     - unsupported formats show a snackbar
   touches: feature/browse, app/navigation
 
-- [ ] T20 Export
+- [x] T20 Export
   spec: specs/export.md, DESIGN.md §4 (Bottom sheet)
   deps: T10, T07
   done when:

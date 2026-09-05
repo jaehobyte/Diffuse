@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="export_title">내보내기</string>
+    <string name="export_save">저장</string>
+    <string name="export_saving">저장하는 중</string>
+    <string name="export_cancel">취소</string>
+    <string name="export_saved">저장했어요</string>
+    <string name="export_open">열기</string>
+
+    <string name="export_format">형식</string>
+    <string name="export_format_jpeg">JPEG</string>
+    <string name="export_format_png">PNG</string>
+
+    <string name="export_size">크기</string>
+    <string name="export_size_original">원본</string>
+    <string name="export_size_2048">2048</string>
+    <string name="export_size_1080">1080</string>
+
+    <string name="export_preset">프리셋</string>
+    <string name="export_preset_none">없음</string>
+    <string name="export_preset_four_five">인스타 4:5</string>
+    <string name="export_preset_nine_sixteen">스토리 9:16</string>
+
+    <string name="export_error_io">저장하지 못했어요</string>
+</resources>

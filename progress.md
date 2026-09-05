@@ -2,10 +2,12 @@
 
 ## Current
 
-T19 done. T20 Export, then T21 Navigation and polish.
+T20 done. T21 Navigation and polish is the last task.
 
 ## Done
 
+- T20 Export — format/size/preset sheet, render→crop→downscale pipeline, MediaStore
+  writer with IS_PENDING, progress overlay with cancel. 8 tests + 2 goldens.
 - T19 Import from Photo Picker — `BrowseImport`, `BrowseRoute` with `PickVisualMedia`,
   40% scrim while decoding, `AppError` → Korean snackbar. 6 tests.
 - T18 Browse home — staggered 2/3-column masonry, long-press actions with a destructive
@@ -158,6 +160,13 @@ T13 blocks on the still-missing `specs/adjust_light.md`.
 _(none)_
 
 ## Open issues for a human
+
+- **specs/export.md asks for DataStore; T20 used `SharedPreferences`.** The catalog is
+  frozen by CLAUDE.md and has no DataStore entry. Either add one and migrate
+  `ExportSettingsStore`, or amend the spec.
+- **The MediaStore write is not covered by a test.** `ImageStore` is an interface and the
+  pipeline is tested through a fake; the `MediaStoreImageStore` implementation itself needs
+  a device or a Robolectric shim that does not exist yet.
 
 - **The release APK is 16.06 MB, over the 15 MB budget** (specs/architecture.md §8),
   measured for the first time at T12. `isMinifyEnabled = false`, so R8 strips nothing:

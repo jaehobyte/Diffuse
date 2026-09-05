@@ -52,6 +52,8 @@ fun EditSheet(
     onCancel: () -> Unit,
     onApply: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Export calls its commit "저장" rather than "적용" (specs/export.md). */
+    applyLabel: String? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val colors = LocalAppColors.current
@@ -80,7 +82,7 @@ fun EditSheet(
             verticalArrangement = Arrangement.spacedBy(SectionSpacing),
             content = content,
         )
-        ActionRow(onCancel = onCancel, onApply = onApply)
+        ActionRow(onCancel = onCancel, onApply = onApply, applyLabel = applyLabel)
     }
 }
 
@@ -97,13 +99,13 @@ private fun ColumnScope.DragHandle() {
 }
 
 @Composable
-private fun ActionRow(onCancel: () -> Unit, onApply: () -> Unit) {
+private fun ActionRow(onCancel: () -> Unit, onApply: () -> Unit, applyLabel: String?) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         TertiaryPill(text = stringResource(R.string.sheet_cancel), onClick = onCancel)
         Spacer(modifier = Modifier.weight(1f))
-        PrimaryPill(text = stringResource(R.string.sheet_apply), onClick = onApply)
+        PrimaryPill(text = applyLabel ?: stringResource(R.string.sheet_apply), onClick = onApply)
     }
 }
