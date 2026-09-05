@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.diffuse.android.application)
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.diffuse.compose)
     alias(libs.plugins.diffuse.hilt)
 }
@@ -26,6 +27,8 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.hilt.navigation.compose)
+    implementation(libs.kotlinx.serialization.json)
 }
 
 dependencies {

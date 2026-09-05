@@ -213,7 +213,7 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `deps` = task ids that must
     - UI test verifies a file with the expected dimensions is written
   touches: feature/export, core/imaging/render
 
-- [ ] T21 Navigation and polish
+- [x] T21 Navigation and polish
   spec: specs/architecture.md
   deps: T19, T20
   done when:

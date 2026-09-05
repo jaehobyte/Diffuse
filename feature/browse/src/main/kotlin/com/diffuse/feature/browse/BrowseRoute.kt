@@ -16,9 +16,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.testTag
 import com.diffuse.core.common.AppError
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil3.compose.AsyncImage
 import com.diffuse.core.data.ProjectSummary
 import kotlinx.coroutines.launch
 
@@ -50,6 +54,25 @@ private fun rememberErrorMessages(): (AppError) -> String {
  * specs/browse.md §Import. The Photo Picker needs no storage permission, so there is
  * nothing to request before launching it.
  */
+@Composable
+fun BrowseRoute(
+    onOpenEditor: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    viewModel: BrowseViewModel = hiltViewModel(),
+) {
+    val projects by viewModel.projects.collectAsStateWithLifecycle()
+    BrowseRoute(
+        projects = projects,
+        nowMillis = System.currentTimeMillis(),
+        importer = viewModel.importer,
+        onOpenEditor = onOpenEditor,
+        onDuplicate = viewModel::duplicate,
+        onDelete = viewModel::delete,
+        modifier = modifier,
+        thumbnail = { ProjectThumbnail(it) },
+    )
+}
+
 @Composable
 fun BrowseRoute(
     projects: List<ProjectSummary>,
@@ -102,4 +125,16 @@ fun BrowseRoute(
             modifier = Modifier.testTag(BrowseSnackbarTestTag).align(Alignment.BottomCenter),
         )
     }
+}
+
+
+/** specs/browse.md: thumbnails come through Coil, with crossfade off. */
+@Composable
+private fun BoxScope.ProjectThumbnail(summary: ProjectSummary) {
+    AsyncImage(
+        model = java.io.File(summary.thumbPath),
+        contentDescription = null,
+        contentScale = ContentScale.Crop,
+        modifier = Modifier.fillMaxSize(),
+    )
 }

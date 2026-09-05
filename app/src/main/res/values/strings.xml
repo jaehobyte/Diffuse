@@ -1,4 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Diffuse</string>
+    <string name="export_saved_message">저장했어요</string>
+    <string name="export_failed_message">저장하지 못했어요</string>
+    <string name="export_abort_title">저장을 취소할까요?</string>
+    <string name="export_abort_message">지금 나가면 저장이 중단돼요.</string>
+    <string name="export_abort_confirm">나가기</string>
+    <string name="export_abort_cancel">계속 저장</string>
 </resources>

@@ -2,6 +2,7 @@ package com.diffuse.feature.editor
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -45,6 +46,8 @@ fun EditorScreen(
     modifier: Modifier = Modifier,
     /** DESIGN.md §4: sheets rise above the tool strip rather than replacing it. */
     sheet: (@Composable () -> Unit)? = null,
+    /** specs/canvas.md: the crop tool draws inside the canvas, not over the whole screen. */
+    cropOverlay: (@Composable BoxScope.() -> Unit)? = null,
 ) {
     // DESIGN.md §1: the editor is always warm-dark chrome, never the browse palette.
     AppTheme(mode = ThemeMode.Edit) {
@@ -80,6 +83,7 @@ fun EditorScreen(
                 contentDescription = stringResource(
                     if (comparing) R.string.editor_canvas_source else R.string.editor_canvas_edited,
                 ),
+                overlay = cropOverlay,
             )
             EditorToolStrip(
                 selectedTool = selectedTool,

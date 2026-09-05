@@ -2,10 +2,13 @@
 
 ## Current
 
-T20 done. T21 Navigation and polish is the last task.
+**T01–T21 complete.** `scripts/check.sh` green offline: 215 tests, 20 render goldens,
+20 screenshot goldens. The app now launches into Browse, imports, edits and exports.
 
 ## Done
 
+- T21 Navigation and polish — Hilt graph, Browse → Editor → Export sheet, autosave on
+  back, destructive confirmation while exporting, predictive back.
 - T20 Export — format/size/preset sheet, render→crop→downscale pipeline, MediaStore
   writer with IS_PENDING, progress overlay with cancel. 8 tests + 2 goldens.
 - T19 Import from Photo Picker — `BrowseImport`, `BrowseRoute` with `PickVisualMedia`,
@@ -160,6 +163,14 @@ T13 blocks on the still-missing `specs/adjust_light.md`.
 _(none)_
 
 ## Open issues for a human
+
+- **The crop overlay assumes a 4:3 canvas aspect.** `EditorRoute` passes a constant because
+  the overlay does not report its measured size back yet. Presets and auto-shrink are
+  correct for that ratio and drift for others; wiring the measured aspect through
+  `LocalCanvasTransform` is the fix.
+- **Compare in the editor route is not wired to the ViewModel.** `EditorScreen` owns the
+  hold state and swaps to `source`, which the VM renders, but `onCompareChange` is a no-op
+  at the route level.
 
 - **specs/export.md asks for DataStore; T20 used `SharedPreferences`.** The catalog is
   frozen by CLAUDE.md and has no DataStore entry. Either add one and migrate
