@@ -2,10 +2,12 @@
 
 ## Current
 
-T08 done. Next: T09 Undo / redo history.
+T09 done. Next: T10 Render pipeline with preview cache.
 
 ## Done
 
+- T09 Undo / redo history — `HistoryStack` with coalescing, 50-entry cap and
+  `StateFlow` enablement wired into the top bar. 8 + 2 tests.
 - T08 Non-destructive edit model — `EditDocument`/`Operation`/`AdjustKind`/`ImageRef`
   with accessors enforcing the specs/edit_model.md rules, plus lenient JSON. 12 tests.
 - T07 Bottom sheet component — `EditSheet` (24dp corners, handle, 45% cap, pinned

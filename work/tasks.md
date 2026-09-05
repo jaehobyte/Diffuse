@@ -97,7 +97,7 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `deps` = task ids that must
     - JSON round-trip test passes; unknown op types are dropped, not crashed
   touches: core/imaging/model
 
-- [ ] T09 Undo / redo history
+- [x] T09 Undo / redo history
   spec: specs/history.md
   deps: T08
   done when:
