@@ -2,10 +2,12 @@
 
 ## Current
 
-T14 done. Working through T15–T21.
+T15 done. Working through T16–T21.
 
 ## Done
 
+- T15 Crop and rotate — rotate-then-crop render, `CropGeometry` auto-shrink, overlay with
+  handles and thirds grid, preset/straighten/90° sheet. 15 tests + 4 goldens.
 - T14 Color adjustments — Temperature/Tint/Saturation/Vibrance maths, `ColorSheet` on the
   shared `AdjustSheet`, `ToolSheetHost`; 8 goldens + `color_sheet_open`.
 - T13 Light adjustments — Exposure/Contrast/Highlights/Shadows maths, the shared

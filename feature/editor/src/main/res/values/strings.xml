@@ -25,4 +25,14 @@
     <string name="color_tint">색조</string>
     <string name="color_saturation">채도</string>
     <string name="color_vibrance">생동감</string>
+
+    <string name="crop_title">자르기</string>
+    <string name="crop_free">자유</string>
+    <string name="crop_square">1:1</string>
+    <string name="crop_four_five">4:5</string>
+    <string name="crop_nine_sixteen">9:16</string>
+    <string name="crop_sixteen_nine">16:9</string>
+    <string name="crop_straighten">수평</string>
+    <string name="crop_rotate_left">왼쪽으로 90도 회전</string>
+    <string name="crop_rotate_right">오른쪽으로 90도 회전</string>
 </resources>

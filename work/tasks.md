@@ -154,7 +154,7 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `deps` = task ids that must
     - "Color" sheet opens from the tool strip
   touches: core/imaging/ops, feature/editor/tools/color
 
-- [ ] T15 Crop and rotate
+- [x] T15 Crop and rotate
   spec: specs/crop.md
   deps: T07, T09, T10
   done when:

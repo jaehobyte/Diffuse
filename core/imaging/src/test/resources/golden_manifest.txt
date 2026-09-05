@@ -21,3 +21,7 @@ tint_+0.5.png
 tint_-0.5.png
 vibrance_+0.5.png
 vibrance_-0.5.png
+
+# T15 (specs/crop.md)
+crop_1x1.png
+crop_straighten_15.png

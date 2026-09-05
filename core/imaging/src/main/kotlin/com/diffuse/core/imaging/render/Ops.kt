@@ -43,6 +43,6 @@ object Ops : OpRegistry {
         -> identity
     }
 
-    /** T15 (specs/crop.md) replaces this with the rotate-then-crop maths. */
-    override fun crop(bitmap: Bitmap, operation: Operation.Crop): Bitmap = bitmap
+    override fun crop(bitmap: Bitmap, operation: Operation.Crop): Bitmap =
+        CropOp.apply(bitmap, operation)
 }
