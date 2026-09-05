@@ -25,3 +25,7 @@ vibrance_-0.5.png
 # T15 (specs/crop.md)
 crop_1x1.png
 crop_straighten_15.png
+
+# T16 (specs/adjust_detail.md)
+sharpen_0.5.png
+vignette_0.5.png

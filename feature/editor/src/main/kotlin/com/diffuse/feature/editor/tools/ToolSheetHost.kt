@@ -6,6 +6,7 @@ import com.diffuse.core.imaging.model.AdjustKind
 import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.feature.editor.Tool
 import com.diffuse.feature.editor.tools.color.ColorSheet
+import com.diffuse.feature.editor.tools.detail.DetailSheet
 import com.diffuse.feature.editor.tools.light.LightSheet
 
 /**
@@ -29,7 +30,10 @@ fun ToolSheetHost(
         Tool.Color -> ColorSheet(
             document, onValueChange, onValueChangeFinished, onCancel, onApply, modifier,
         )
-        // T15 and T16 add Crop and Detail.
-        Tool.Crop, Tool.Detail, null -> Unit
+        Tool.Detail -> DetailSheet(
+            document, onValueChange, onValueChangeFinished, onCancel, onApply, modifier,
+        )
+        // Crop carries its own state, so T21 hosts it alongside the editor's.
+        Tool.Crop, null -> Unit
     }
 }

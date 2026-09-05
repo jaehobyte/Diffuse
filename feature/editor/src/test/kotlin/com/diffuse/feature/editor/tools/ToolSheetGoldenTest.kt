@@ -17,6 +17,7 @@ import com.diffuse.core.ui.theme.AppTheme
 import com.diffuse.core.ui.theme.ThemeMode
 import com.diffuse.core.ui.theme.Tokens
 import com.diffuse.feature.editor.tools.color.ColorSheet
+import com.diffuse.feature.editor.tools.detail.DetailSheet
 import com.diffuse.feature.editor.tools.light.LightSheet
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
 import com.github.takahirom.roborazzi.captureRoboImage
@@ -38,6 +39,7 @@ class ToolSheetGoldenTest {
         .withAdjust(AdjustKind.Exposure, 0.35f)
         .withAdjust(AdjustKind.Shadows, -0.2f)
         .withAdjust(AdjustKind.Saturation, 0.3f)
+        .withAdjust(AdjustKind.Sharpen, 0.45f)
 
     private fun showSheet(content: @Composable (EditDocument) -> Unit) {
         compose.setContent {
@@ -85,5 +87,20 @@ class ToolSheetGoldenTest {
         }
 
         capture("color_sheet_open")
+    }
+
+    @Test
+    fun detailSheetOpen() {
+        showSheet { document ->
+            DetailSheet(
+                document = document,
+                onValueChange = { _, _ -> },
+                onValueChangeFinished = {},
+                onCancel = {},
+                onApply = {},
+            )
+        }
+
+        capture("detail_sheet_open")
     }
 }

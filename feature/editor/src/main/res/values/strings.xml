@@ -35,4 +35,8 @@
     <string name="crop_straighten">수평</string>
     <string name="crop_rotate_left">왼쪽으로 90도 회전</string>
     <string name="crop_rotate_right">오른쪽으로 90도 회전</string>
+
+    <string name="detail_title">디테일</string>
+    <string name="detail_sharpen">선명도</string>
+    <string name="detail_vignette">비네트</string>
 </resources>

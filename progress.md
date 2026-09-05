@@ -2,10 +2,12 @@
 
 ## Current
 
-T15 done. Working through T16–T21.
+T16 done. Working through T17–T21.
 
 ## Done
 
+- T16 Detail adjustments — Sharpen (separable unsharp mask) and Vignette, `DetailSheet`;
+  6 tests + 2 render goldens + `detail_sheet_open`. Every `AdjustKind` now has real maths.
 - T15 Crop and rotate — rotate-then-crop render, `CropGeometry` auto-shrink, overlay with
   handles and thirds grid, preset/straighten/90° sheet. 15 tests + 4 goldens.
 - T14 Color adjustments — Temperature/Tint/Saturation/Vibrance maths, `ColorSheet` on the

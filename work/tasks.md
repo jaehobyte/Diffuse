@@ -164,7 +164,7 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `deps` = task ids that must
     - golden: `crop_overlay`
   touches: core/imaging/ops, feature/editor/tools/crop
 
-- [ ] T16 Detail adjustments
+- [x] T16 Detail adjustments
   spec: specs/adjust_detail.md, specs/render.md
   deps: T13
   done when:

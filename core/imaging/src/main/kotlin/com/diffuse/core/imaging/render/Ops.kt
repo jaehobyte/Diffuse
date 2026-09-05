@@ -15,14 +15,8 @@ interface OpRegistry {
     fun crop(bitmap: Bitmap, operation: Operation.Crop): Bitmap
 }
 
-/**
- * The v1 CPU registry. The pixel maths arrives with the tasks that own each group and
- * that carry the golden tests proving it; until then an entry returns its input
- * unchanged, so the pipeline is exercised without pretending an adjustment happened.
- */
+/** The v1 CPU registry: one entry per [AdjustKind], plus the crop. */
 object Ops : OpRegistry {
-
-    private val identity: (Bitmap, Float) -> Bitmap = { bitmap, _ -> bitmap }
 
     override fun adjust(kind: AdjustKind): (Bitmap, Float) -> Bitmap = when (kind) {
         // specs/adjust_light.md
@@ -37,10 +31,9 @@ object Ops : OpRegistry {
         AdjustKind.Saturation -> ColorOps::saturation
         AdjustKind.Vibrance -> ColorOps::vibrance
 
-        // T16 (specs/adjust_detail.md)
-        AdjustKind.Sharpen,
-        AdjustKind.Vignette,
-        -> identity
+        // specs/adjust_detail.md
+        AdjustKind.Sharpen -> DetailOps::sharpen
+        AdjustKind.Vignette -> DetailOps::vignette
     }
 
     override fun crop(bitmap: Bitmap, operation: Operation.Crop): Bitmap =
