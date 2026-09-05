@@ -16,7 +16,7 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `deps` = task ids that must
 
 ## Phase 0 — Scaffold & safety net (done by a human before the loop starts)
 
-- [ ] T01 Project skeleton compiles
+- [x] T01 Project skeleton compiles
   spec: specs/architecture.md
   deps: —
   done when:
