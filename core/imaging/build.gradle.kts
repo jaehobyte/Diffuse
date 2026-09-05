@@ -8,7 +8,7 @@ android {
 }
 
 dependencies {
-    implementation(projects.core.common)
+    api(projects.core.common)
     implementation(libs.androidx.exifinterface)
     implementation(libs.kotlinx.serialization.json)
 }

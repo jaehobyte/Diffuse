@@ -2,12 +2,12 @@
 
 ## Current
 
-Phase 0 follow-up — **complete, uncommitted**. Unblocks the loop:
-`specs/` now matches the paths tasks.md actually uses, `specs/imaging.md` is drafted,
-and `core:common` exists. check.sh green offline.
+T04 done. Next: T05 Canvas composable.
 
 ## Done
 
+- T04 Image loading pipeline — `ImageLoader.load(uri)` + `SourceImage`; 4096px bound,
+  two-step downsample, EXIF applied to pixels, typed failures. 8 tests.
 - T03 Screenshot test harness — `theme_swatches` golden (all 21 colors + 8 text styles,
   both modes), shared `ScreenshotOptions`, §7 fixtures derived from `test/kodim23.png`.
 - T02 Design tokens and theme — `core/ui/theme/Tokens.kt` (21 colors, 8 text styles,

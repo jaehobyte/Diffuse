@@ -45,7 +45,7 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `deps` = task ids that must
 
 ## Phase 1 — Canvas
 
-- [ ] T04 Image loading pipeline
+- [x] T04 Image loading pipeline
   spec: specs/imaging.md
   deps: T01
   done when:
