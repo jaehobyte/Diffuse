@@ -146,7 +146,7 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `deps` = task ids that must
     - "Light" sheet with four sliders; slider drag coalesces into one history entry
   touches: core/imaging/ops, feature/editor/tools/light
 
-- [ ] T14 Color adjustments
+- [x] T14 Color adjustments
   spec: specs/adjust_color.md, specs/render.md
   deps: T13
   done when:

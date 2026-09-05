@@ -2,10 +2,12 @@
 
 ## Current
 
-T13 done. Working through T14–T21.
+T14 done. Working through T15–T21.
 
 ## Done
 
+- T14 Color adjustments — Temperature/Tint/Saturation/Vibrance maths, `ColorSheet` on the
+  shared `AdjustSheet`, `ToolSheetHost`; 8 goldens + `color_sheet_open`.
 - T13 Light adjustments — Exposure/Contrast/Highlights/Shadows maths, the shared
   `AdjustSheet`, the golden-image machinery, 8 render goldens + `light_sheet_open`.
 - T12 Slider component — `AdjustSlider` (4dp track, 20dp thumb, value pinned right in

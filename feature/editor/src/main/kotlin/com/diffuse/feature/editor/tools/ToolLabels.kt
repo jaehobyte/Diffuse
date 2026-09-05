@@ -14,11 +14,11 @@ internal fun AdjustKind.labelRes(): Int = when (this) {
     AdjustKind.Contrast -> R.string.light_contrast
     AdjustKind.Highlights -> R.string.light_highlights
     AdjustKind.Shadows -> R.string.light_shadows
-    // T14 and T16 fill these in with their own labels.
-    AdjustKind.Temperature,
-    AdjustKind.Tint,
-    AdjustKind.Saturation,
-    AdjustKind.Vibrance,
+    AdjustKind.Temperature -> R.string.color_temperature
+    AdjustKind.Tint -> R.string.color_tint
+    AdjustKind.Saturation -> R.string.color_saturation
+    AdjustKind.Vibrance -> R.string.color_vibrance
+    // T16 fills these in with its own labels.
     AdjustKind.Sharpen,
     AdjustKind.Vignette,
     -> R.string.light_title

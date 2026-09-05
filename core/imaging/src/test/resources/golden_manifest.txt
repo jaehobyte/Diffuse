@@ -11,3 +11,13 @@ highlights_+0.5.png
 highlights_-0.5.png
 shadows_+0.5.png
 shadows_-0.5.png
+
+# T14 (specs/adjust_color.md)
+saturation_+0.5.png
+saturation_-0.5.png
+temperature_+0.5.png
+temperature_-0.5.png
+tint_+0.5.png
+tint_-0.5.png
+vibrance_+0.5.png
+vibrance_-0.5.png

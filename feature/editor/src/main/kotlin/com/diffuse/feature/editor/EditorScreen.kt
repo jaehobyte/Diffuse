@@ -1,6 +1,7 @@
 package com.diffuse.feature.editor
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -11,6 +12,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.ImageBitmap
@@ -41,6 +43,8 @@ fun EditorScreen(
     onCompareChange: (Boolean) -> Unit,
     onExport: () -> Unit,
     modifier: Modifier = Modifier,
+    /** DESIGN.md §4: sheets rise above the tool strip rather than replacing it. */
+    sheet: (@Composable () -> Unit)? = null,
 ) {
     // DESIGN.md §1: the editor is always warm-dark chrome, never the browse palette.
     AppTheme(mode = ThemeMode.Edit) {
@@ -49,9 +53,9 @@ fun EditorScreen(
         }
         // DESIGN.md §7: hold to compare with the original is the single comparison gesture.
         var comparing by remember { mutableStateOf(false) }
+        Box(modifier = modifier.testTag(EditorScreenTestTag).fillMaxSize()) {
         Column(
-            modifier = modifier
-                .testTag(EditorScreenTestTag)
+            modifier = Modifier
                 .fillMaxSize()
                 .background(Tokens.editBackground),
         ) {
@@ -82,6 +86,10 @@ fun EditorScreen(
                 onToolClick = onToolClick,
                 modifier = Modifier.navigationBarsPadding(),
             )
+        }
+        if (sheet != null) {
+            Box(modifier = Modifier.align(Alignment.BottomCenter)) { sheet() }
+        }
         }
     }
 }

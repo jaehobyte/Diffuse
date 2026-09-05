@@ -31,12 +31,11 @@ object Ops : OpRegistry {
         AdjustKind.Highlights -> LightOps::highlights
         AdjustKind.Shadows -> LightOps::shadows
 
-        // T14 (specs/adjust_color.md)
-        AdjustKind.Temperature,
-        AdjustKind.Tint,
-        AdjustKind.Saturation,
-        AdjustKind.Vibrance,
-        -> identity
+        // specs/adjust_color.md
+        AdjustKind.Temperature -> ColorOps::temperature
+        AdjustKind.Tint -> ColorOps::tint
+        AdjustKind.Saturation -> ColorOps::saturation
+        AdjustKind.Vibrance -> ColorOps::vibrance
 
         // T16 (specs/adjust_detail.md)
         AdjustKind.Sharpen,

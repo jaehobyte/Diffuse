@@ -16,6 +16,7 @@ import com.diffuse.core.ui.ScreenshotOptions
 import com.diffuse.core.ui.theme.AppTheme
 import com.diffuse.core.ui.theme.ThemeMode
 import com.diffuse.core.ui.theme.Tokens
+import com.diffuse.feature.editor.tools.color.ColorSheet
 import com.diffuse.feature.editor.tools.light.LightSheet
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
 import com.github.takahirom.roborazzi.captureRoboImage
@@ -36,6 +37,7 @@ class ToolSheetGoldenTest {
     private val document = EditDocument("d", ImageRef("/p.jpg"), createdAt = 0L, updatedAt = 0L)
         .withAdjust(AdjustKind.Exposure, 0.35f)
         .withAdjust(AdjustKind.Shadows, -0.2f)
+        .withAdjust(AdjustKind.Saturation, 0.3f)
 
     private fun showSheet(content: @Composable (EditDocument) -> Unit) {
         compose.setContent {
@@ -68,5 +70,20 @@ class ToolSheetGoldenTest {
         }
 
         capture("light_sheet_open")
+    }
+
+    @Test
+    fun colorSheetOpen() {
+        showSheet { document ->
+            ColorSheet(
+                document = document,
+                onValueChange = { _, _ -> },
+                onValueChangeFinished = {},
+                onCancel = {},
+                onApply = {},
+            )
+        }
+
+        capture("color_sheet_open")
     }
 }
