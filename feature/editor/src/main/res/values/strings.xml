@@ -13,4 +13,10 @@
     <string name="editor_tool_color">색상</string>
     <string name="editor_tool_crop">자르기</string>
     <string name="editor_tool_detail">디테일</string>
+
+    <string name="light_title">빛</string>
+    <string name="light_exposure">노출</string>
+    <string name="light_contrast">대비</string>
+    <string name="light_highlights">하이라이트</string>
+    <string name="light_shadows">그림자</string>
 </resources>

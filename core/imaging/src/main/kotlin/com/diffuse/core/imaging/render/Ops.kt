@@ -25,12 +25,11 @@ object Ops : OpRegistry {
     private val identity: (Bitmap, Float) -> Bitmap = { bitmap, _ -> bitmap }
 
     override fun adjust(kind: AdjustKind): (Bitmap, Float) -> Bitmap = when (kind) {
-        // T13 (specs/adjust_light.md)
-        AdjustKind.Exposure,
-        AdjustKind.Contrast,
-        AdjustKind.Highlights,
-        AdjustKind.Shadows,
-        -> identity
+        // specs/adjust_light.md
+        AdjustKind.Exposure -> LightOps::exposure
+        AdjustKind.Contrast -> LightOps::contrast
+        AdjustKind.Highlights -> LightOps::highlights
+        AdjustKind.Shadows -> LightOps::shadows
 
         // T14 (specs/adjust_color.md)
         AdjustKind.Temperature,

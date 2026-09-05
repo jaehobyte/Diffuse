@@ -1,0 +1,13 @@
+# specs/testing.md §4. Every PNG in core/imaging/src/test/resources/golden/ must be
+# listed here, and every entry must exist. A golden is added only by the task whose
+# `done when` names it.
+
+# T13 (specs/adjust_light.md)
+contrast_+0.5.png
+contrast_-0.5.png
+exposure_+0.5.png
+exposure_-0.5.png
+highlights_+0.5.png
+highlights_-0.5.png
+shadows_+0.5.png
+shadows_-0.5.png

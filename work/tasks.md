@@ -137,7 +137,7 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `deps` = task ids that must
     - goldens: `slider_default`, `slider_zero_centered`
   touches: core/ui/components
 
-- [ ] T13 Light adjustments
+- [x] T13 Light adjustments
   spec: specs/adjust_light.md, specs/render.md
   deps: T07, T09, T10, T12
   done when:

@@ -2,12 +2,12 @@
 
 ## Current
 
-T04–T12 complete. Next: T13 Light adjustments (spec: specs/adjust_light.md).
-T13 is the first task needing specs/testing.md §4's golden-image machinery, which does
-not exist yet — see "Open issues for a human".
+T13 done. Working through T14–T21.
 
 ## Done
 
+- T13 Light adjustments — Exposure/Contrast/Highlights/Shadows maths, the shared
+  `AdjustSheet`, the golden-image machinery, 8 render goldens + `light_sheet_open`.
 - T12 Slider component — `AdjustSlider` (4dp track, 20dp thumb, value pinned right in
   mono, centre tick, double-tap reset); 5 tests + goldens `slider_default`/`slider_zero_centered`.
 - T11 Compare gesture — hold shows the source, release restores the preview; disabled
