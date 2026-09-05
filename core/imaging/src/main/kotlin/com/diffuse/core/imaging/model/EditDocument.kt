@@ -1,0 +1,64 @@
+package com.diffuse.core.imaging.model
+
+import android.graphics.RectF
+import com.diffuse.core.common.newId
+
+/**
+ * specs/edit_model.md: source plus an ordered operation list, so any state can be
+ * re-rendered, undone, serialised and exported at full resolution.
+ *
+ * specs/architecture.md §6: read [operations] through the accessors below, never by
+ * destructuring, so v2 can introduce layers without touching call sites.
+ */
+data class EditDocument(
+    val id: String,
+    val source: ImageRef,
+    val operations: List<Operation> = emptyList(),
+    val createdAt: Long,
+    val updatedAt: Long,
+) {
+
+    fun adjustValue(kind: AdjustKind): Float =
+        operations.filterIsInstance<Operation.Adjust>()
+            .firstOrNull { it.kind == kind }
+            ?.value
+            ?: 0f
+
+    fun crop(): Operation.Crop? = operations.filterIsInstance<Operation.Crop>().firstOrNull()
+
+    /**
+     * One live [Operation.Adjust] per kind: setting a kind that already exists updates it
+     * in place, keeping its list position. A neutral value removes the entry rather than
+     * storing a no-op.
+     */
+    fun withAdjust(kind: AdjustKind, value: Float): EditDocument {
+        val coerced = kind.coerce(value)
+        val index = operations.indexOfFirst { it is Operation.Adjust && it.kind == kind }
+        val updated = when {
+            kind.isNeutral(coerced) && index >= 0 -> operations - operations[index]
+            kind.isNeutral(coerced) -> operations
+            index >= 0 -> operations.toMutableList().also {
+                it[index] = (it[index] as Operation.Adjust).copy(value = coerced)
+            }
+            else -> operations + Operation.Adjust(newId(), kind, coerced)
+        }
+        return copy(operations = updated)
+    }
+
+    /** At most one [Operation.Crop]; a new crop replaces the old one in place. */
+    fun withCrop(rect: RectF, angleDeg: Float): EditDocument {
+        val index = operations.indexOfFirst { it is Operation.Crop }
+        val candidate = Operation.Crop(
+            id = (operations.getOrNull(index) as? Operation.Crop)?.id ?: newId(),
+            rect = RectF(rect),
+            angleDeg = angleDeg,
+        )
+        val updated = when {
+            candidate.isFullFrame && index >= 0 -> operations - operations[index]
+            candidate.isFullFrame -> operations
+            index >= 0 -> operations.toMutableList().also { it[index] = candidate }
+            else -> operations + candidate
+        }
+        return copy(operations = updated)
+    }
+}

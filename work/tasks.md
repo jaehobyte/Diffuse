@@ -88,7 +88,7 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `deps` = task ids that must
 
 ## Phase 2 — Edit engine
 
-- [ ] T08 Non-destructive edit model
+- [x] T08 Non-destructive edit model
   spec: specs/edit_model.md
   deps: T04
   done when:

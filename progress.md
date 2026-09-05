@@ -2,10 +2,12 @@
 
 ## Current
 
-T07 done. Next: T08 Non-destructive edit model.
+T08 done. Next: T09 Undo / redo history.
 
 ## Done
 
+- T08 Non-destructive edit model — `EditDocument`/`Operation`/`AdjustKind`/`ImageRef`
+  with accessors enforcing the specs/edit_model.md rules, plus lenient JSON. 12 tests.
 - T07 Bottom sheet component — `EditSheet` (24dp corners, handle, 45% cap, pinned
   [Cancel | Apply]) plus `TertiaryPill`; 3 tests + goldens `sheet_collapsed`/`sheet_expanded`.
 - T06 Editor screen shell — top bar 56dp / canvas / tool strip 72dp, edge-to-edge,
