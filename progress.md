@@ -2,128 +2,109 @@
 
 ## Current
 
-T02 Design tokens and theme — **complete, uncommitted** (interactive Phase 0).
-Verified: `TokensTest` 34 assertions green; `scripts/check.sh` exits 0 offline;
-Pretendard variable font confirmed rendering Korean text under Robolectric
-(temporary test, since removed — T03's `theme_swatches` golden covers it).
+T03 Screenshot test harness — **complete, uncommitted** (interactive Phase 0).
+Verified by injection: check.sh exits non-zero on a lint error, a detekt violation,
+a failing unit test, a missing golden and an edited golden; exits 0 when clean.
 
 ## Done
 
+- T03 Screenshot test harness — `theme_swatches` golden (all 21 colors + 8 text styles,
+  both modes), shared `ScreenshotOptions`, §7 fixtures derived from `test/kodim23.png`.
 - T02 Design tokens and theme — `core/ui/theme/Tokens.kt` (21 colors, 8 text styles,
   §6 elevation), `Theme.kt` (`AppTheme(mode)`, `AppColors`, `LocalAppColors`),
-  Pretendard + JetBrains Mono bundled. Not yet committed.
-- T01 Project skeleton compiles — modules `app`, `core:{common,imaging,ui,data}`,
-  `feature:{browse,editor,export}`; Gradle 8.14.5 / AGP 8.13.2 / Kotlin 2.3.21;
-  `scripts/check.sh` green offline. Not yet committed (awaiting review).
+  Pretendard + JetBrains Mono bundled.
+- T01 Project skeleton compiles — 8 modules, Gradle 8.14.5 / AGP 8.13.2 / Kotlin 2.3.21,
+  build-logic convention plugins, `dependencyGuard`, `scripts/check.sh` green offline.
 
 ## Next
 
-T03 Screenshot test harness (deps: T02 — now satisfied).
+T04 Image loading pipeline — **BLOCKED**: `specs/imaging.md` does not exist.
+See "Open issues for a human".
 
 ## Decisions
 
-- **T01 / stack**: AGP 8.13.2, Kotlin 2.3.21, Gradle 8.14.5, KSP 2.3.11, Compose BOM
-  2026.08.00. The terminal 8.x AGP line was chosen over AGP 9.4.0: AGP 9 carries
-  breaking DSL changes, and CLAUDE.md forbids the loop from editing root gradle
-  files, so a DSL mismatch would force a block rather than a fix.
-- **T01 / targetSdk**: `compileSdk`/`targetSdk` pinned to **36**, not 37.
-  ARCHITECTURE.md §2 says "targetSdk latest stable"; AGP 8.13.2 caps compileSdk at 36.
-  Documented deviation — revisit if the project moves to AGP 9.
-- **T01 / core:common is a JVM module**: ARCHITECTURE.md §3 says core:common has no
-  Android dependencies, so it uses `diffuse.jvm.library`, not the android-library
-  convention. Consequence: its Hilt bindings (`DispatcherProvider`) must live in a
-  `@Module` in `app`, since Hilt needs an Android module.
-- **T01 / `testDebugUnitTest` alias**: that task name is Android-only, so `core:common`
-  registers an alias depending on `test`. Without it `scripts/check.sh` would silently
-  skip every core:common unit test.
-- **T01 / `dependencyGuard`**: implemented as a custom root Gradle task encoding the
-  ARCHITECTURE.md §3 module map and the §4 rules (no feature→feature, nothing depends
-  on `:app`, no Compose/Hilt/Room in `core:imaging`, no Room in `core:ui`). Chosen over
-  the Dropbox dependency-guard plugin, which locks dependency *version lists* rather
-  than the module graph that §4 actually describes. No new dependency, no network.
-- **T01 / JUnit 5 + vintage**: `de.mannodermaus.android-junit5` 2.0.1 with the JUnit
-  vintage engine, so specs/testing.md §3's JUnit 5 unit tests and the JUnit 4-only
-  Robolectric/Roborazzi tests run on one platform in the same module.
-- **T01 / Robolectric offline**: Robolectric fetches its `android-all` jar from Maven at
-  *test runtime*, which `check.sh --offline` forbids. `android-all-instrumented` is
-  pinned in the catalog, resolved through a Gradle configuration, synced to
-  `build/robolectric-deps`, and `robolectric.offline=true` +
-  `robolectric.dependency.dir` point at it.
-- **T01 / `scripts/check.sh` authored in Phase 0**: T01's `done when` requires it to exit
-  0, but `touches` lists only gradle files and T03 owns `scripts/`. Since tasks.md marks
-  all of Phase 0 as human work, `check.sh` was written once here, verbatim from
-  specs/testing.md §2, and is frozen from now on. T01 therefore also had to wire detekt,
-  Roborazzi and dependencyGuard so all five task names resolve.
-- **T01 / Roborazzi `changeThreshold` deferred**: specs/testing.md §5 requires it set once
-  in `build.gradle.kts`. T01 only applies the plugin so `verifyRoborazziDebug` exists
-  (it passes trivially with zero goldens); T03 owns the threshold and the first golden.
+### Stack (T01)
 
-- **T01 / version ceilings forced by the AGP 8.13.2 lane.** The priming run rejected the
-  newest release of several libraries; each pin below is the newest version that works
-  with AGP 8.13.2 + compileSdk 36 + Kotlin 2.3.21. Moving to AGP 9 would lift all of them.
-  - `hilt` **2.58** — 2.59+ hard-fails: "only compatible with AGP 9.0.0 or higher".
-  - `composeBom` **2026.06.01** (Compose 1.11.4) — 2026.08.00 ships Compose 1.12.0, which
-    requires AGP 9.1.0 and compileSdk 37.
-  - `coreKtx` **1.18.0**, `lifecycle` **2.10.0**, `navigationCompose` **2.9.8**,
-    `hiltNavigationCompose` **1.3.0** — newer builds require compileSdk 37 / AGP 9.1.
-  - `coil` **3.4.0** — coil3 3.6.x drags `org.jetbrains.compose:1.12.0` in transitively,
-    which forces AndroidX Compose to 1.12.0 regardless of the BOM; coil3 3.5.0 avoids that
-    but is compiled with Kotlin 2.4.0, and Hilt 2.58 reads Kotlin metadata only up to 2.3.
-    Kotlin 2.3.21 therefore sits exactly at Hilt 2.58's ceiling — **do not bump Kotlin to
-    2.4.x without also moving to AGP 9 + Hilt 2.59+.**
-- **T01 / `junit-platform-launcher` is mandatory.** Without it JUnit 5 discovery dies with
-  "OutputDirectoryCreator not available ... unaligned versions of junit-platform-engine and
-  junit-platform-launcher". Added as `testRuntimeOnly` in the shared test config.
-- **T01 / `robolectric.properties` per Android module.** Robolectric defaults to the
-  manifest's targetSdk, which library modules do not set, so it fell back to `minSdk` (26)
-  and demanded an API-26 `android-all` jar that offline mode does not have. Each Android
-  module now pins `sdk=36` (matching the pinned `android-all-instrumented` artifact) and
-  `graphicsMode=NATIVE` (specs/testing.md §5).
-- **T01 / three smoke tests kept deliberately** (`SmokeJunit5Test`, `SmokeRobolectricTest`,
-  `MainActivityLaunchTest`). They are beyond T01's literal scope, but with zero test sources
-  `check.sh` passed offline while the test *toolchain* was entirely unproven — the first
-  test the loop wrote would have failed on an unprimed `kotlin-scripting-compiler-embeddable`.
-  `MainActivityLaunchTest` is also how T01's "app launches to an empty Compose screen" was
-  verified: this machine has no device and no `/dev/kvm`, so no emulator is possible.
-  Delete them if you would rather T02/T03 own the first tests.
+- **AGP 8.13.2 / Kotlin 2.3.21 / Gradle 8.14.5 / compileSdk 36.** AGP 9 was rejected:
+  its DSL changes are what an unattended loop gets wrong, and CLAUDE.md forbids the loop
+  from editing root gradle files, so a mismatch forces a block rather than a fix.
+  `targetSdk 36` is a documented deviation from ARCHITECTURE.md §2 "latest stable" (37),
+  which AGP 8.13.2 cannot compile against.
+- **Version ceilings this forces.** Each pin is the newest that works on this line:
+  `hilt 2.58` (2.59+ demands AGP 9.0), `composeBom 2026.06.01` (2026.08.00 ships Compose
+  1.12.0, needing AGP 9.1 + compileSdk 37), `coreKtx 1.18.0`, `lifecycle 2.10.0`,
+  `navigationCompose 2.9.8`, `hiltNavigationCompose 1.3.0`, `coil 3.4.0`.
+- **Tripwire: Kotlin 2.3.21 is exactly at Hilt 2.58's metadata ceiling.** Hilt 2.58 reads
+  Kotlin metadata only up to 2.3. coil 3.5.0+ is built with Kotlin 2.4 and breaks the
+  Hilt processor. Do not bump Kotlin to 2.4.x without also moving to AGP 9 + Hilt 2.59+.
+- **`core:common` is a pure JVM module** (ARCHITECTURE.md §3 allows it no Android deps),
+  so its Hilt bindings must live in a `@Module` in `app`. It registers a
+  `testDebugUnitTest` alias, without which check.sh would silently skip its tests.
+- **`dependencyGuard` is a custom root task**, not the Dropbox plugin, because §4
+  describes module-graph rules while that plugin locks dependency version lists.
 
-### T02
+### Test harness (T01, T03)
 
-- **Pretendard as a variable font.** DESIGN.md §3 mandates Pretendard and
-  specs/testing.md §5 requires it bundled for deterministic goldens, so it had to be
-  vendored (the loop is offline). Measured compressed-in-APK cost: variable **2.82 MB**
-  vs 4.06 MB for four static OTFs (400/500/600/700), so the single variable file wins on
-  both size and weight fidelity. Plus JetBrains Mono Medium at 127 KB for the `mono`
-  token. Total ≈ 2.95 MB against the 15 MB APK budget (ARCHITECTURE.md §8) — roughly 20%,
-  worth re-measuring at T20 when the release APK is real.
-- **`@OptIn(ExperimentalTextApi::class)`** is required for `FontVariation`. Acceptable
-  because the Compose version is pinned in a frozen catalog, so the API cannot shift
-  underneath us mid-loop.
-- **`mono` line height = 1.3 (16.9sp).** DESIGN.md §3 gives no line height for that row;
-  it follows `label`, the other small-text token.
-- **`letterSpacing = 0.sp` set explicitly** on the six styles where DESIGN.md §3 lists no
-  tracking. Left unset it resolves to `TextUnit.Unspecified` (NaN), which is neither
-  assertable nor deterministic for goldens.
-- **`AppColors` carries only the mode-dependent roles.** Brand and semantic colors are
-  identical in both modes per DESIGN.md §2, so they default to `Tokens` instead of being
-  duplicated per palette. Edit-mode `surfaceSecondary` maps to `editSurfaceRaised`, which
-  DESIGN.md §4 (Buttons) states directly.
-- **MaterialTheme gets a colorScheme but no typography.** DESIGN.md §2 says M3 is for
-  primitives only; the scheme exists solely to keep stock components off the default
-  purple. Components pass `Typography.*` explicitly, so mapping M3's type slots would be
-  speculative.
+- **Robolectric offline.** It fetches `android-all` from Maven at *test runtime*, which
+  `--offline` forbids. The artifact is pinned, resolved through a Gradle configuration,
+  synced to `build/robolectric-deps`, and reached via `robolectric.offline=true`.
+  Each Android module also pins `sdk=36` in `robolectric.properties` — Robolectric
+  otherwise falls back to `minSdk` (26) on library modules and demands an API-26 jar.
+- **`junit-platform-launcher` is mandatory** or JUnit 5 discovery dies on unaligned
+  platform jars. JUnit 5 runs with the vintage engine so Robolectric/Roborazzi JUnit 4
+  tests share one platform (specs/testing.md §3).
+- **Goldens are declared as test-task inputs.** Without that Gradle marks the test task
+  UP-TO-DATE and `verifyRoborazziDebug` passes against a deleted or edited golden — the
+  exact hole testing.md §5 forbids. Verified by injection; see ## Current.
+- **`changeThreshold` lives in build-logic, not the Roborazzi extension**, which exposes
+  no such knob in 1.73. The value is a system property set once for every Compose module
+  and `ScreenshotOptions` is its only reader, failing loudly if it is unset.
+- **Golden path is fixed in `ScreenshotOptions.goldenPath()`**, because the Roborazzi
+  Gradle plugin owns `roborazzi.output.dir` and overrode attempts to set it.
+
+### Design tokens (T02)
+
+- **Pretendard as a single variable font.** DESIGN.md §3 mandates it and testing.md §5
+  needs it bundled for deterministic goldens. Measured compressed-in-APK: variable
+  2.82 MB vs 4.06 MB for four static weights, plus JetBrains Mono Medium at 127 KB.
+  Total ≈ 2.95 MB of the 15 MB budget (ARCHITECTURE.md §8) — re-measure at T20.
+  `FontVariation` needs `@OptIn(ExperimentalTextApi::class)`; safe because the Compose
+  version is pinned in a frozen catalog.
+- **Where DESIGN.md is silent:** `mono` line height follows `label` at 1.3; the six
+  styles with no stated tracking get an explicit `letterSpacing = 0.sp`, since unset
+  resolves to `Unspecified` (NaN) and is neither assertable nor deterministic.
+- **`AppColors` carries only mode-dependent roles**; brand and semantic colors are
+  identical in both modes so they default to `Tokens`. Edit-mode `surfaceSecondary`
+  maps to `editSurfaceRaised` per DESIGN.md §4. MaterialTheme gets a colorScheme but no
+  typography — §2 says M3 is for primitives only.
+
+### Fixtures (T03)
+
+- **All §7 fixtures are derived from `test/kodim23.png`** (user decision), generated by
+  `scripts/make_fixtures.py` so the derivation stays reviewable. `photo_512.png` is a
+  512×288 crop over a 512×96 row of reference patches, because testing.md §4 requires
+  skin tone, sky, deep shadow and neutral gray, none of which kodim23 contains.
+  `transparent_256.png` and `corrupt.jpg` cannot come from kodim23 at all and are
+  synthesised.
 
 ## Attempts
 
 _(none)_
 
-## Open issues for a human (not blocking T01)
+## Open issues for a human
 
-- `work/tasks.md` references spec files that do not exist:
-  `specs/imaging.md` (T04), `adjust_light.md` (T13), `adjust_color.md` (T14),
-  `crop.md` (T15), `adjust_detail.md` (T16), `persistence.md` (T17),
-  `browse.md` (T18, T19), `export.md` (T20). **T04 blocks the loop immediately.**
-- Task specs say `specs/architecture.md`; the file is `ARCHITECTURE.md` at the repo root,
-  and the existing specs live under `docs/specs/`, not `specs/`.
-- `fixtures/` (specs/testing.md §7) is a human deliverable for T03 and does not exist yet.
-  The only fixture present is `test/kodim23.png`.
+- **T04 is blocked.** `specs/imaging.md` does not exist. Neither do the specs for
+  T13–T20: `adjust_light`, `adjust_color`, `crop`, `adjust_detail`, `persistence`,
+  `browse`, `export`. Tasks also cite `specs/architecture.md` and `specs/testing.md`,
+  but the real paths are `ARCHITECTURE.md` at the root and `docs/specs/`.
+- **`photo_12mp.jpg` is 1.42 MB, not the "~3MB" testing.md §7 states.** It is 4000×3000
+  with EXIF orientation 6 as required; it simply compresses well because it is upscaled
+  from a 768×512 source. Say so if the byte size itself matters to a test.
+- **`ScreenshotOptions` lives in `core:ui/src/test`.** The first feature-module golden
+  (T05) needs it too and cannot see it from there — promote it to `testFixtures` then.
+- **testing.md §4's golden-image machinery does not exist yet**: `GoldenAssert.kt`,
+  `golden_manifest.txt`, `GoldenInventoryTest`. They belong in `core:imaging`, outside
+  T03's `touches`. First needed by T13.
+- **`fixtures/` and `scripts/check.sh` were authored as Phase 0 human deliverables**,
+  matching tasks.md's "done by a human before the loop starts"; both sit outside the
+  `touches` lists of the tasks that specify them.

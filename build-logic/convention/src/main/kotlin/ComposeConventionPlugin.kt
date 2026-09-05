@@ -1,7 +1,10 @@
 import com.android.build.api.dsl.CommonExtension
 import org.gradle.api.Plugin
 import org.gradle.api.Project
+import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.testing.Test
 import org.gradle.kotlin.dsl.dependencies
+import org.gradle.kotlin.dsl.withType
 
 /**
  * Compose + Roborazzi screenshot testing (specs/testing.md 5).
@@ -17,6 +20,21 @@ class ComposeConventionPlugin : Plugin<Project> {
         val android = extensions.findByType(CommonExtension::class.java)
             ?: error("diffuse.compose requires an Android plugin to be applied first")
         android.buildFeatures.compose = true
+
+        // specs/testing.md §5. Roborazzi's Gradle extension has no changeThreshold knob,
+        // so the value lives here and ScreenshotOptions is its single reader.
+        //
+        // The goldens must also be declared as task inputs. Without this Gradle sees no
+        // input change, marks the test task UP-TO-DATE and skips it, so verifyRoborazzi
+        // passes against a deleted or edited golden -- exactly what testing.md §5 forbids
+        // ("a missing golden is a failure, not an auto-record").
+        val goldenImages = fileTree("src/test/screenshots") { include("**/*.png") }
+        tasks.withType<Test>().configureEach {
+            systemProperty("diffuse.roborazzi.changeThreshold", "0.01")
+            inputs.files(goldenImages)
+                .withPropertyName("roborazziGoldenImages")
+                .withPathSensitivity(PathSensitivity.RELATIVE)
+        }
 
         dependencies {
             val bom = platform(libs.lib("compose-bom"))

@@ -34,7 +34,7 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `deps` = task ids that must
     - `TokensTest` asserts hex values match DESIGN.md
   touches: core/ui
 
-- [ ] T03 Screenshot test harness
+- [x] T03 Screenshot test harness
   spec: specs/testing.md
   deps: T02
   done when:
