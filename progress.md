@@ -2,10 +2,14 @@
 
 ## Current
 
-T11 done. Next: T12 Slider component — the last task in this batch.
+T04–T12 complete. Next: T13 Light adjustments (spec: specs/adjust_light.md).
+T13 is the first task needing specs/testing.md §4's golden-image machinery, which does
+not exist yet — see "Open issues for a human".
 
 ## Done
 
+- T12 Slider component — `AdjustSlider` (4dp track, 20dp thumb, value pinned right in
+  mono, centre tick, double-tap reset); 5 tests + goldens `slider_default`/`slider_zero_centered`.
 - T11 Compare gesture — hold shows the source, release restores the preview; disabled
   without operations. 4 tests.
 - T10 Render pipeline — `Renderer`/`CpuRenderer`, preview+base LRU caches, cancellable

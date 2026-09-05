@@ -128,7 +128,7 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `deps` = task ids that must
 
 ## Phase 3 — Adjustment tools
 
-- [ ] T12 Slider component
+- [x] T12 Slider component
   spec: DESIGN.md §4 (Slider)
   deps: T02
   done when:
