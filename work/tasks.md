@@ -107,7 +107,7 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `deps` = task ids that must
     - top bar undo/redo enabled state reflects the stack
   touches: core/imaging/history, feature/editor
 
-- [ ] T10 Render pipeline with preview cache
+- [x] T10 Render pipeline with preview cache
   spec: specs/render.md
   deps: T08
   done when:

@@ -2,10 +2,12 @@
 
 ## Current
 
-T09 done. Next: T10 Render pipeline with preview cache.
+T10 done. Next: T11 Compare gesture.
 
 ## Done
 
+- T10 Render pipeline — `Renderer`/`CpuRenderer`, preview+base LRU caches, cancellable
+  between ops, `Ops` registry, gated benchmark behind `scripts/bench.sh`. 8 tests.
 - T09 Undo / redo history — `HistoryStack` with coalescing, 50-entry cap and
   `StateFlow` enablement wired into the top bar. 8 + 2 tests.
 - T08 Non-destructive edit model — `EditDocument`/`Operation`/`AdjustKind`/`ImageRef`

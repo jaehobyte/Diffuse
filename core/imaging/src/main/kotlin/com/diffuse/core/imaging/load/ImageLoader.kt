@@ -10,9 +10,11 @@ import androidx.exifinterface.media.ExifInterface
 import com.diffuse.core.common.AppError
 import com.diffuse.core.common.DispatcherProvider
 import com.diffuse.core.common.Result
+import com.diffuse.core.imaging.model.ImageRef
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
+import java.io.File
 import java.io.FileNotFoundException
 import java.io.IOException
 import kotlin.coroutines.coroutineContext
@@ -29,8 +31,6 @@ private const val ROTATE_270 = 270f
 /**
  * Decodes a picked image into a bounded, correctly oriented bitmap (specs/imaging.md).
  *
- * `decode(ref, targetLongEdgePx)` from the spec is not here yet: it needs `ImageRef`
- * from T08 and specs/imaging.md assigns it to T10.
  */
 class ImageLoader internal constructor(
     private val resolver: ContentResolver,
@@ -50,6 +50,38 @@ class ImageLoader internal constructor(
             is Result.Success -> withContext(dispatchers.default) { decode(bytes.value) }
         }
 
+    /**
+     * Re-reads a source already copied into app storage. This is what `Renderer` builds
+     * its base decode cache on (specs/render.md, Caching).
+     */
+    suspend fun decode(ref: ImageRef, targetLongEdgePx: Int): Result<Bitmap> {
+        val bytes = when (val read = readFile(ref)) {
+            is Result.Failure -> return read
+            is Result.Success -> read.value
+        }
+        return withContext(dispatchers.default) {
+            when (val decoded = decode(bytes, targetLongEdgePx)) {
+                is Result.Failure -> decoded
+                is Result.Success -> Result.Success(decoded.value.bitmap)
+            }
+        }
+    }
+
+    private suspend fun readFile(ref: ImageRef): Result<ByteArray> = withContext(dispatchers.io) {
+        val file = File(ref.path)
+        try {
+            if (!file.isFile) {
+                Result.Failure(AppError.MissingSource)
+            } else {
+                Result.Success(file.readBytes())
+            }
+        } catch (@Suppress("SwallowedException") e: SecurityException) {
+            Result.Failure(AppError.MissingSource)
+        } catch (e: IOException) {
+            Result.Failure(AppError.Io(e))
+        }
+    }
+
     private suspend fun readBytes(uri: Uri): Result<ByteArray> = withContext(dispatchers.io) {
         try {
             val stream = resolver.openInputStream(uri)
@@ -67,7 +99,10 @@ class ImageLoader internal constructor(
     }
 
     @Suppress("ReturnCount")
-    private suspend fun decode(bytes: ByteArray): Result<SourceImage> = try {
+    private suspend fun decode(
+        bytes: ByteArray,
+        targetLongEdgePx: Int = MAX_LONG_EDGE_PX,
+    ): Result<SourceImage> = try {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         decodeByteArray(bytes, bounds)
         val mimeType = bounds.outMimeType
@@ -78,11 +113,11 @@ class ImageLoader internal constructor(
         coroutineContext.ensureActive()
 
         val orientation = readOrientation(bytes)
-        val sampled = decodeSampled(bytes, bounds)
+        val sampled = decodeSampled(bytes, bounds, targetLongEdgePx)
             ?: return Result.Failure(AppError.Unsupported)
         coroutineContext.ensureActive()
 
-        val scaled = scaleToBound(sampled, bounds)
+        val scaled = scaleToBound(sampled, bounds, targetLongEdgePx)
         coroutineContext.ensureActive()
 
         val oriented = applyOrientation(scaled, orientation)
@@ -103,8 +138,12 @@ class ImageLoader internal constructor(
         Result.Failure(AppError.TooLarge)
     }
 
-    private fun decodeSampled(bytes: ByteArray, bounds: BitmapFactory.Options): Bitmap? {
-        val (targetWidth, targetHeight) = targetSize(bounds.outWidth, bounds.outHeight)
+    private fun decodeSampled(
+        bytes: ByteArray,
+        bounds: BitmapFactory.Options,
+        longEdgePx: Int,
+    ): Bitmap? {
+        val (targetWidth, targetHeight) = targetSize(bounds.outWidth, bounds.outHeight, longEdgePx)
         val options = BitmapFactory.Options().apply {
             inSampleSize = sampleSizeFor(bounds.outWidth, bounds.outHeight, targetWidth, targetHeight)
             inPreferredConfig = Bitmap.Config.ARGB_8888
@@ -112,8 +151,12 @@ class ImageLoader internal constructor(
         return decodeByteArray(bytes, options)
     }
 
-    private fun scaleToBound(sampled: Bitmap, bounds: BitmapFactory.Options): Bitmap {
-        val (targetWidth, targetHeight) = targetSize(bounds.outWidth, bounds.outHeight)
+    private fun scaleToBound(
+        sampled: Bitmap,
+        bounds: BitmapFactory.Options,
+        longEdgePx: Int,
+    ): Bitmap {
+        val (targetWidth, targetHeight) = targetSize(bounds.outWidth, bounds.outHeight, longEdgePx)
         if (sampled.width == targetWidth && sampled.height == targetHeight) return sampled
         val scaled = Bitmap.createScaledBitmap(sampled, targetWidth, targetHeight, true)
         if (scaled !== sampled) sampled.recycle()
@@ -131,10 +174,11 @@ class ImageLoader internal constructor(
     private companion object {
 
         /** Never upscale: an image already inside the bound keeps its stored size. */
-        fun targetSize(width: Int, height: Int): Pair<Int, Int> {
+        fun targetSize(width: Int, height: Int, longEdgePx: Int): Pair<Int, Int> {
+            val bound = minOf(longEdgePx, MAX_LONG_EDGE_PX)
             val longEdge = max(width, height)
-            if (longEdge <= MAX_LONG_EDGE_PX) return width to height
-            val scale = MAX_LONG_EDGE_PX.toDouble() / longEdge
+            if (longEdge <= bound) return width to height
+            val scale = bound.toDouble() / longEdge
             return max(1, (width * scale).roundToInt()) to max(1, (height * scale).roundToInt())
         }
 

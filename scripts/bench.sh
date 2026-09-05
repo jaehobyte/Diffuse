@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Not part of green (specs/testing.md 2). Run by a human, weekly.
-# The benchmark module and the render benchmarks are added by T10.
+# specs/testing.md §2: not part of green. Run by a human.
+# The benchmarks assume DIFFUSE_BENCHMARK and are skipped by scripts/check.sh without it.
 set -euo pipefail
-echo "bench: no benchmarks yet (added by T10)."
+DIFFUSE_BENCHMARK=true ./gradlew --offline -i \
+  :core:imaging:testDebugUnitTest --rerun --tests '*RenderBenchmarkTest*' \
+  | grep -E 'preview (run|p50)'
