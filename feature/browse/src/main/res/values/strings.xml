@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browse_app_mark">Editor</string>
+    <string name="browse_new_project">새 프로젝트</string>
+    <string name="browse_empty_title">첫 사진을 열어보세요</string>
+
+    <string name="browse_duplicate">복제</string>
+    <string name="browse_delete">삭제</string>
+    <string name="browse_delete_title">이 프로젝트를 삭제할까요?</string>
+    <string name="browse_delete_message">되돌릴 수 없어요.</string>
+    <string name="browse_delete_confirm">삭제</string>
+    <string name="browse_delete_cancel">취소</string>
+
+    <string name="browse_time_just_now">방금</string>
+    <string name="browse_time_minutes">%d분 전</string>
+    <string name="browse_time_hours">%d시간 전</string>
+    <string name="browse_time_yesterday">어제</string>
+    <string name="browse_time_days">%d일 전</string>
+</resources>

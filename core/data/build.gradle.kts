@@ -15,7 +15,9 @@ ksp {
 
 dependencies {
     implementation(projects.core.common)
-    implementation(projects.core.imaging)
+    // ProjectRepository takes SourceImage and returns EditDocument, so core:imaging is
+    // part of this module's API surface, not an implementation detail.
+    api(projects.core.imaging)
 
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)

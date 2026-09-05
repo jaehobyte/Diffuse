@@ -184,7 +184,7 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `deps` = task ids that must
     - DAO tests pass
   touches: core/data
 
-- [ ] T18 Browse home (masonry grid)
+- [x] T18 Browse home (masonry grid)
   spec: specs/browse.md, DESIGN.md §4 (Image tile), §5
   deps: T02, T17
   done when:

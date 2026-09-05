@@ -2,10 +2,12 @@
 
 ## Current
 
-T17 done. Working through T18–T21.
+T18 done. Working through T19–T21.
 
 ## Done
 
+- T18 Browse home — staggered 2/3-column masonry, long-press actions with a destructive
+  confirmation, Korean relative times, empty state. 7 tests + 4 goldens.
 - T17 Project persistence — Room `projects` table with exported schema, atomic document
   writes, thumbnails, `ProjectAutosave` with a 2s debounce. 14 tests.
 - T16 Detail adjustments — Sharpen (separable unsharp mask) and Vignette, `DetailSheet`;
