@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -14,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import com.diffuse.core.ui.theme.AppTheme
 import com.diffuse.core.ui.theme.ThemeMode
 import com.diffuse.core.ui.theme.Tokens
@@ -27,6 +29,8 @@ const val EditorScreenTestTag = "EditorScreen"
 fun EditorScreen(
     preview: ImageBitmap?,
     selectedTool: Tool?,
+    /** Shown instead of [preview] while the compare button is held (specs/editor_shell.md). */
+    source: ImageBitmap? = null,
     onToolClick: (Tool) -> Unit,
     canUndo: Boolean,
     canRedo: Boolean,
@@ -43,6 +47,8 @@ fun EditorScreen(
         var viewport by rememberSaveable(stateSaver = ViewportSaver) {
             mutableStateOf(CanvasViewport())
         }
+        // DESIGN.md §7: hold to compare with the original is the single comparison gesture.
+        var comparing by remember { mutableStateOf(false) }
         Column(
             modifier = modifier
                 .testTag(EditorScreenTestTag)
@@ -56,14 +62,20 @@ fun EditorScreen(
                 onBack = onBack,
                 onUndo = onUndo,
                 onRedo = onRedo,
-                onCompareChange = onCompareChange,
+                onCompareChange = {
+                    comparing = it
+                    onCompareChange(it)
+                },
                 onExport = onExport,
             )
             EditorCanvas(
-                bitmap = preview,
+                bitmap = if (comparing) source ?: preview else preview,
                 viewport = viewport,
                 onViewportChange = { viewport = it },
                 modifier = Modifier.weight(1f),
+                contentDescription = stringResource(
+                    if (comparing) R.string.editor_canvas_source else R.string.editor_canvas_edited,
+                ),
             )
             EditorToolStrip(
                 selectedTool = selectedTool,

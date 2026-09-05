@@ -25,6 +25,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -52,6 +54,7 @@ fun EditorCanvas(
     viewport: CanvasViewport,
     onViewportChange: (CanvasViewport) -> Unit,
     modifier: Modifier = Modifier,
+    contentDescription: String? = null,
     overlay: (@Composable BoxScope.() -> Unit)? = null,
 ) {
     val density = LocalDensity.current
@@ -75,6 +78,7 @@ fun EditorCanvas(
             .testTag(EditorCanvasTestTag)
             .fillMaxSize()
             .onSizeChanged { canvasSize = Size(it.width.toFloat(), it.height.toFloat()) }
+            .semantics { contentDescription?.let { this.contentDescription = it } }
             .canvasGestures(bounds, viewport, onViewportChange),
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {

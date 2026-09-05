@@ -6,6 +6,9 @@
     <string name="editor_compare">원본과 비교</string>
     <string name="editor_export">내보내기</string>
 
+    <string name="editor_canvas_edited">편집한 사진</string>
+    <string name="editor_canvas_source">원본 사진</string>
+
     <string name="editor_tool_light">라이트</string>
     <string name="editor_tool_color">색상</string>
     <string name="editor_tool_crop">자르기</string>

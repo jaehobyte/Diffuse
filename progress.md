@@ -2,10 +2,12 @@
 
 ## Current
 
-T10 done. Next: T11 Compare gesture.
+T11 done. Next: T12 Slider component — the last task in this batch.
 
 ## Done
 
+- T11 Compare gesture — hold shows the source, release restores the preview; disabled
+  without operations. 4 tests.
 - T10 Render pipeline — `Renderer`/`CpuRenderer`, preview+base LRU caches, cancellable
   between ops, `Ops` registry, gated benchmark behind `scripts/bench.sh`. 8 tests.
 - T09 Undo / redo history — `HistoryStack` with coalescing, 50-entry cap and

@@ -117,7 +117,7 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `deps` = task ids that must
     - benchmark test present (excluded from `check`, run via `scripts/bench.sh`)
   touches: core/imaging/render, scripts/
 
-- [ ] T11 Compare gesture
+- [x] T11 Compare gesture
   spec: specs/editor_shell.md
   deps: T09, T10
   done when:
