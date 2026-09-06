@@ -22,6 +22,8 @@ When two attributes conflict, the higher one wins. Example: a GPU renderer would
 - Hilt for DI. One `@HiltViewModel` per screen.
 - Room for project index, kotlinx.serialization for documents.
 - Coil for thumbnails in Browse only; the editor decodes through `core:imaging`.
+- OkHttp + kotlinx.serialization for the two v2 HTTP clients (`core:ai`). No Retrofit, no Ktor — five
+  endpoints do not earn a framework, and okhttp already arrives transitively through Coil.
 - Roborazzi (screenshot), JUnit5, Turbine (Flow tests), Macrobenchmark (render budget).
 - minSdk 26, targetSdk latest stable. Portrait only in v1.
 
@@ -102,9 +104,9 @@ State is a single immutable data class. Side effects (snackbar, navigation) go t
 
 | v2 need | Where it plugs in | What v1 must not do |
 |---|---|---|
-| AI provider | new `core:ai` module depended on by `feature:editor` | v1 must not hardcode the tool list length or assume all ops are pure functions of the source |
+| AI provider | new `core:ai` module depended on by `feature:editor` (v2: shipped) | v1 must not hardcode the tool list length or assume all ops are pure functions of the source |
 | Mask brush | `Operation.Mask` + canvas one-finger mode toggle | v1 canvas keeps a `gestureMode` field even though only `Pan` exists |
-| AI result bitmaps | `Operation.AiResult(ImageRef)` + `ImageRef` becomes sealed (File / Memory) | v1 `ImageRef` stays a value class; the renderer resolves it through one `resolve(ref)` function |
+| AI result bitmaps | `Operation.GenerativeErase(maskId, resultRef)` — v2 shipped this as a plain `ImageRef`; `ImageRef` did not need to become sealed | v1 `ImageRef` stays a value class; the renderer resolves it through one `resolve(ref)` function |
 | GPU render | replace `Ops.kt` internals with AGSL; interface unchanged | v1 op math lives only in `Ops.kt` |
 | Layers | `EditDocument.layers: List<Layer>` | v1 code accesses `operations` only via `EditDocument` accessors, never by destructuring |
 | Tablet layout | `WindowSizeClass` switch in `EditorScreen` | v1 sheet/panel content is a separate composable from its container |
@@ -127,11 +129,23 @@ Compose Navigation, type-safe routes. Predictive back enabled. Deep links: none 
 | Slider drag → preview update | < 100ms p50 |
 | Export 12MP JPEG | < 2s |
 | Editor peak memory, 12MP source | < 250MB |
-| APK size (release, arm64) | < 500MB (ADR-008; was 15MB before bundled models) |
+| APK size (release, arm64) | < 15MB (ADR-008 retired with ADR-009; no models are bundled) |
 
 ## 9. Error handling
 
-- `core` returns `Result<T>` with a sealed `AppError` (`TooLarge`, `Unsupported`, `MissingSource`, `Io`). Never throws across module boundaries except `CancellationException`.
+- `core` returns `Result<T>` with a sealed `AppError`. Never throws across module boundaries except `CancellationException`.
+
+| Case | Meaning |
+|---|---|
+| `TooLarge` | too large to decode, or to send, within budget |
+| `Unsupported` | format or media type this app does not handle |
+| `MissingSource` | the referenced file or URI no longer resolves |
+| `Io(cause)` | reading, writing, or transport failed |
+| `Unauthorized` | the configured credential was rejected (v2, `core:ai`) |
+| `Invalid(detail)` | the request itself was malformed or rejected as such (v2, `core:ai`) |
+| `Unavailable` | a required backend is not configured, not ready, or unreachable (v2, `core:ai`) |
+
+The last three were added in T25 for the HTTP clients. `detail` is for logs, never for a user-facing string.
 - Features map `AppError` to Korean strings in `strings.xml` and show a snackbar. Dialogs only for destructive confirmations.
 - Log with `core:common` `Logger`; no `Log.d` scattered.
 
@@ -145,7 +159,9 @@ Compose Navigation, type-safe routes. Predictive back enabled. Deep links: none 
 | 004 | Hilt over manual DI | Multi-module wiring without boilerplate; well-known to agents |
 | 005 | AI out of v1 entirely | Ship a solid editor first; AI is additive on the same model |
 | 006 | 4096px working resolution | CPU render + 250MB memory budget; true-original export deferred with GPU |
-| 007 | On-device segmentation with EdgeTAM via ExecuTorch (XNNPACK) | Apache-2.0, ~32MB total, no per-use cost, works offline; interface allows a cloud swap later |
-| 008 | Bundle model files in the APK | Simplest delivery, no first-run download UI; APK budget raised to 50MB |
+| ~~007~~ | ~~On-device segmentation with EdgeTAM via ExecuTorch~~ | **Retired by ADR-009.** Never implemented. Kept as tasks.md D09 in case offline selection becomes a requirement |
+| ~~008~~ | ~~Bundle model files in the APK~~ | **Retired with ADR-007.** The APK budget returns to 15MB |
+| 009 | Server-side SAM 3 over HTTP (`~/sam3-server`) | Text-prompt segmentation, which EdgeTAM cannot do at all, is the feature v2 is actually for; no 32MB of models in the APK, no ExecuTorch dependency, and the model improves without an app release. Costs offline support — accepted, see D09 |
+| 010 | Generative editing through a sam3-server proxy, never a direct Gemini call | An API key in an APK is extractable by anyone who downloads it. The app already authenticates against this server, so the proxy adds one endpoint and zero new trust relationships |
 
 New ADRs go in `docs/decisions/NNN-title.md` and get a row here.

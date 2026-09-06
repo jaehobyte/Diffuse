@@ -48,13 +48,14 @@ tasks.withType<Detekt>().configureEach {
 val allowedProjectDeps: Map<String, Set<String>> = mapOf(
     ":core:common" to emptySet(),
     ":core:imaging" to setOf(":core:common"),
+    ":core:ai" to setOf(":core:common", ":core:imaging"),
     ":core:ui" to setOf(":core:common"),
     ":core:data" to setOf(":core:common", ":core:imaging"),
     ":feature:browse" to setOf(":core:common", ":core:ui", ":core:data"),
-    ":feature:editor" to setOf(":core:common", ":core:ui", ":core:imaging", ":core:data"),
+    ":feature:editor" to setOf(":core:common", ":core:ui", ":core:imaging", ":core:data", ":core:ai"),
     ":feature:export" to setOf(":core:common", ":core:ui", ":core:imaging"),
     ":app" to setOf(
-        ":core:common", ":core:imaging", ":core:ui", ":core:data",
+        ":core:common", ":core:imaging", ":core:ai", ":core:ui", ":core:data",
         ":feature:browse", ":feature:editor", ":feature:export",
     ),
 )
@@ -64,6 +65,8 @@ val forbiddenGroupPrefixes: Map<String, Set<String>> = mapOf(
     ":core:imaging" to setOf("androidx.compose", "com.google.dagger", "androidx.hilt", "androidx.room"),
     // 4.3: core:ui knows nothing about documents or rendering.
     ":core:ui" to setOf("androidx.room"),
+    // ai_provider.md 2: core:ai is a model boundary, not UI and not storage.
+    ":core:ai" to setOf("androidx.compose", "androidx.room"),
 )
 
 val guardedConfigurations = setOf(

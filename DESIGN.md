@@ -12,7 +12,17 @@
 - The app has two modes:
   - **Browse mode** (home, gallery, templates, export result): light cream chrome, straight from Pinterest.
   - **Edit mode** (canvas screen): warm dark chrome. Bright surroundings distort exposure judgment, so everything around the canvas is dark.
-- The accent (Pinterest Red) appears in **one place per screen**: the primary action or the active-tab indicator. Never decorative.
+- The accent (Pinterest Red) appears **at most once per surface at rest**, never decoratively. A
+  surface is the top bar, the tool strip, or the frontmost sheet. Browse has one surface and so still
+  gets exactly one accent.
+- A **transient active state** may add one more accent, and only while it lasts: the progress
+  spinner during AI work, the mic while listening. Nothing that persists after the user stops
+  interacting counts as transient.
+  *(Ruling, T25. §1 previously said "one place per screen", which §4 already contradicted twice: Edit
+  mode requires an accent Export pill in the top bar and an accent indicator in the tool strip, and
+  the loading overlay's spinner is accent on top of both. The intent — the accent marks the one thing
+  to press, and the photo stays the hero — is unchanged; the unit is now the surface, and momentary
+  states are named as the exception they always were.)*
 - Density: generous. Minimum 12dp between controls, 16dp horizontal screen padding.
 - Tone: friendly but tool-like. No emoji, no speech-bubble tips, no mascot.
 
@@ -88,6 +98,20 @@ Rules
 - Height 72dp, horizontally scrollable. Items 64dp wide: 24dp icon + `label` text.
 - Selected tool: icon and label in `accent`, 2dp indicator underneath. No background fill.
 - AI tools carry a 6dp `accent` dot at the top-right of the icon. No "AI" badge text.
+
+### Prompt bar (Edit mode, inside a sheet)
+- Height 48dp, radius 16dp (the pill radius), fill `editSurfaceRaised`. Full sheet width.
+- Leading 24dp mic icon, trailing 24dp send icon, both with 48dp hit areas. Text `bodyMd` in
+  `editInk`; placeholder `editInkSecondary`. Horizontal padding 12dp, 8dp between icon and text.
+- Both icons are `editInk` at rest. **The sheet's one accent stays on its Apply pill** — a prompt bar
+  never takes it, so every sheet commits the same way. The send icon earns its weight from the
+  enabled/disabled state and the IME Done key instead.
+- The mic turns `accent` while listening, as the transient exception in §1 — **a fill change only**:
+  no glow, no pulse, no animated ring.
+- While listening, send is replaced by a stop icon in the same slot.
+- Disabled: 38% alpha, color unchanged.
+- No mic at all when the device has no speech recognizer. The bar is never the only way to act — it
+  sits alongside the sheet's buttons, never replacing them.
 
 ### Bottom sheet (detail adjustments)
 - Top corners 24dp. Drag handle 32×4dp in `editHairline`.

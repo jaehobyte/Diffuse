@@ -22,6 +22,7 @@ rootProject.name = "diffuse"
 include(":app")
 include(":core:common")
 include(":core:imaging")
+include(":core:ai")
 include(":core:ui")
 include(":core:data")
 include(":feature:browse")

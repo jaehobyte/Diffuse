@@ -1,57 +1,125 @@
-# specs/segmentation.md — EdgeTAM on-device segmentation
+# specs/segmentation.md — SAM 3 segmentation over HTTP
 
-Owner tasks: T27 (runtime), T28 (delivery)
-Module: `core/ai/edgetam`
-Decisions: ADR-007 (EdgeTAM via ExecuTorch), ADR-008 (bundle in APK)
+Owner tasks: T27 (`Sam3Client`), T28 (`Sam3SegmentationProvider`, settings)
+Module: `core/ai/sam3`
+Decisions: ADR-009. Supersedes the retired EdgeTAM / ExecuTorch plan (ADR-007, ADR-008 — see
+tasks.md D09).
+Upstream contract: `~/sam3-server/specs/api.md`. **That file wins on any disagreement with this one.**
 
-## 1. Model
-- EdgeTAM (Meta, CVPR 2025), Apache-2.0. ExecuTorch XNNPACK export, two files:
-  - `edgetam_encoder_xnnpack_fp32.pte` — 19.7MB. Input `image (1,3,1024,1024) fp32` → `image_embed (1,256,64,64)`, `feat_s0 (1,32,256,256)`, `feat_s1 (1,64,128,128)`
-  - `edgetam_decoder_xnnpack_fp16.pte` — 12.6MB. Input the three tensors above + `points (1,1,N,2) fp32` pixel coords in 1024-space + `labels (1,1,N) int64` (1 = fg, 0 = bg) → `mask_logits (1,1,3,256,256)`, `iou (1,1,3)`. Takes and returns fp32 tensors.
-- Source: `mlboydaisuke/EdgeTAM-ExecuTorch` on Hugging Face. Record the SHA-256 of both files in `core/ai/edgetam/ModelManifest.kt` and verify on first load; mismatch → `Unavailable(Io)`.
-- Runtime: `org.pytorch:executorch-android` (version pinned in `libs.versions.toml`). XNNPACK CPU backend only in v2; no NNAPI/GPU delegate.
+## 1. Backend
+Meta's SAM 3 behind an authenticated FastAPI service. Two-call shape: one upload runs the vision
+backbone and caches the inference state; every prompt afterwards reuses it. Three prompt kinds
+exist server-side (`points`, `box`, `text`); v2 uses **points** and **text**. `box` is deferred
+(D06) — do not write a client for it.
 
-## 2. Delivery (ADR-008: bundle)
-- Both files live in `app/src/main/assets/models/`. APK budget in architecture.md §8 rises from 15MB to **50MB**; update the `check.sh` size assertion.
-- On first `prepare`, copy assets to `filesDir/models/` (ExecuTorch loads from a file path), verify SHA-256, then load. Subsequent launches skip the copy if the hash file matches.
-- `availability` is `Unavailable(Unsupported)` on non-arm64/x86_64 ABIs (`Build.SUPPORTED_64_BIT_ABIS` empty) and `Unavailable(Io)` if the copy or hash fails. The selection tool shows a greyed icon and a snackbar with the reason on tap.
-- Test fixture copies of the same files live in `fixtures/models/` via git-lfs (not in the APK).
-
-## 3. `prepare(image)`
-1. Letterbox the ARGB bitmap into 1024×1024: scale so the long edge = 1024, pad the short edge with black, remember `(scale, padX, padY)`.
-2. Convert to fp32 CHW, RGB / 255, then normalize with ImageNet mean `(0.485, 0.456, 0.406)` and std `(0.229, 0.224, 0.225)`.
-3. Run the encoder module. Keep the three output tensors in `ImageEmbedding.payload` together with the letterbox params.
-4. Memory: the three tensors ≈ 4MB + 8MB + 4MB fp32; plus the input tensor 12MB during the call. Release the input tensor before returning. Only one embedding alive per provider instance.
-5. Target latency: < 700ms on a Pixel 6a. Not asserted in `check`; measured in `bench.sh`.
-
-## 4. `segment(embedding, prompt)`
-1. Map each normalized point to 1024-space: `x1024 = x × imageWidth × scale + padX`, same for y.
-2. Build `points (1,1,N,2)` and `labels (1,1,N)`.
-3. Run the decoder. Pick index `argmax(iou)` from the three masks.
-4. `sigmoid(logit) > 0.5` → binary, at 256×256 in letterbox space.
-5. Crop the letterbox padding, bilinear-upsample to `imageWidth × imageHeight`, write to an `ALPHA_8` bitmap. Feather: none in v2 (hard edge); a 1px blur is D-level.
-6. Return `SegMask(alpha, iou[best])`.
-Target latency: < 60ms.
-
-## 5. Threading & cancellation
-- `Dispatchers.default`. Encoder and decoder calls are blocking JNI; check `ensureActive()` before each and release outputs if cancelled after.
-- `EdgeTamProvider` is a `@Singleton`; module loading is guarded by a `Mutex`.
-
-## 6. Failure modes
-| Condition | Result |
+| Setting | Value |
 |---|---|
-| `.pte` missing / hash mismatch | `Unavailable(Io)` |
-| unsupported ABI | `Unavailable(Unsupported)` |
-| `OutOfMemoryError` in `prepare` | `Failure(TooLarge)`; provider stays `Ready` |
-| decoder throws | `Failure(Unsupported)` with the message logged |
-| all three IoU scores < 0.3 | still return the best mask; UI may show a "낮은 신뢰도" hint (selection_tool.md) |
+| Base URL | from `Sam3Settings` (§6). No default that points at a public host. |
+| Auth | `Authorization: Bearer <token>` on every `/v1/` route |
+| Coordinates sent | normalized 0..1 against the uploaded image |
+| Geometry received | original-image pixels |
+| Mask encoding | always `format = "png"` — base64 8-bit alpha PNG at original resolution |
+| Upload limit | 20 MB, JPEG or PNG |
+| Session TTL | 600 s server-side, refreshed on each use, LRU-evicted above 8 |
 
-## 7. Tests
-- `EdgeTamProviderTest` (Robolectric, loads `fixtures/models/`):
-  - `prepare` on `photo_512.png` succeeds; embedding dims match the contract.
-  - a fg click at the center of the red patch → mask bbox covers ≥ 80% of the patch, ≤ 5% of the gray patch.
-  - fg click + bg click inside the patch → mask area shrinks.
-  - hash mismatch (corrupt a byte in a temp copy) → `Unavailable(Io)`.
-- `LetterboxMathTest` (pure JVM): round-trip of point mapping for landscape and portrait sizes.
-- `bench.sh`: encoder and decoder wall time on the 12MP fixture.
-- If the ExecuTorch native library cannot load under Robolectric on the loop machine, `EdgeTamProviderTest` is tagged `@Tag("device")` and excluded from `check.sh`; `LetterboxMathTest` and all fake-based tests remain. Record this in `blocked.md` so a human runs it on a device.
+**No COCO RLE decoder is written.** The server offers a PNG encoding of the same mask, so RLE would
+be dead code. If a future need appears, add it then.
+
+## 2. `Sam3Client` (T27)
+OkHttp + kotlinx.serialization. One class, one `OkHttpClient` instance, no interceptor stack beyond
+the auth header.
+
+```kotlin
+class Sam3Client(...) {
+    suspend fun health(): Result<Unit>                                     // GET /healthz
+    suspend fun upload(jpeg: ByteArray): Result<UploadResponse>            // POST /v1/images
+    suspend fun points(id: String, p: PointPrompt): Result<List<RawMask>>  // .../segment/points
+    suspend fun text(id: String, phrase: String): Result<List<RawMask>>    // .../segment/text
+    suspend fun delete(id: String)                                         // DELETE /v1/images/{id}
+}
+```
+- `points` sends `multimask = true` and returns the model's candidates, ordered by score as the
+  server ordered them. `text` sends `threshold = 0.5`, `max_instances = 20`.
+- `RawMask` carries the decoded `ALPHA_8` bitmap and the score. Decoding runs off the calling thread.
+- Timeouts: connect 10 s, read 30 s for prompts, read 60 s for the upload.
+- `health` is the only unauthenticated call.
+
+## 3. Encoding an image for upload
+1. If the working bitmap's long edge exceeds 2048 px, downscale to 2048 (bilinear). Masks come back
+   at the uploaded size and are scaled up to the working size by the provider; a 2048 mask is more
+   than enough for a hard-edged selection and keeps the upload small.
+2. Compress to JPEG quality 90. If the result still exceeds 20 MB, drop quality to 75 and retry once;
+   still too large → `Failure(TooLarge)`.
+3. Send as `multipart/form-data`, field `file`.
+
+## 4. Error mapping
+| HTTP | `error` | `AppError` |
+|---|---|---|
+| 400 | `invalid_prompt` | `Invalid(detail)` |
+| 401 | `unauthorized` | `Unauthorized` |
+| 410 | `session_expired` | absorbed — see §5 |
+| 413 | `image_too_large` | `TooLarge` |
+| 415 | `unsupported_media_type` | `Unsupported` |
+| 503 | `not_ready` / `out_of_memory` | `Unavailable` |
+| transport / decode | — | `Io(cause)` |
+
+The error body is always `{ "error": ..., "detail": ... }`. `detail` goes into the log and into
+`Invalid`, never into a user-facing string — user strings are Korean and live in `strings.xml`.
+
+## 5. Session expiry is absorbed, never surfaced
+api.md states a client must be prepared for `410` at any time. The provider handles it:
+
+```
+prompt → 410 → re-upload the same bitmap (once) → replay the same prompt → result
+                                                 ↘ 410 again → Failure(Unavailable)
+```
+The caller sees only a slower call. The re-upload uses the bitmap the provider retained when the
+session was opened; if that bitmap is gone, the provider fails with `Unavailable` rather than
+guessing. Only **one** replay per prompt — no loop.
+
+## 6. Settings (T28)
+`Sam3Settings` exposes `baseUrl: String` and `token: String` as a `StateFlow`.
+- Build-time default: `local.properties` keys `sam3.baseUrl` and `sam3.token`, surfaced as
+  `BuildConfig` fields on `:app`. `buildConfig` is off globally in `gradle.properties`, so it is
+  enabled for `:app` only, in build-logic.
+- Runtime override: a settings sheet writes both to `SharedPreferences` — the same choice
+  `ExportSettingsStore` already made, since the catalog has no DataStore entry.
+- Empty base URL is the default when `local.properties` says nothing. It is not an error state to
+  hide; it is what `availability` reports.
+- The emulator reaches a host-local server at `http://10.0.2.2:8080`. Say so in the settings sheet
+  helper text.
+
+## 7. Availability
+```
+no base URL configured            → Unavailable(Invalid)
+GET /healthz fails or returns 503 → Unavailable(Unavailable)
+GET /healthz 200                  → Ready
+```
+Checked when the provider is first used and whenever settings change; not polled. A failed prompt
+does not by itself flip `availability` — one bad request is not a dead server.
+
+## 8. `Sam3SegmentationProvider` (T28)
+- `open(bitmap)`: encode per §3, upload, retain the encoded bytes for the §5 replay, build
+  `SegSession`. Closes any previous session with `DELETE` first.
+- `byPoints`: normalize the points against the **uploaded** size, send, take the highest-scoring
+  candidate, scale its alpha to the working image size (nearest-neighbour — the mask is binary),
+  return `SegMask`.
+- `byText`: send the phrase, scale every returned mask the same way, preserve score order.
+- `close`: `DELETE`, then drop the retained bytes.
+- All of it on `DispatcherProvider.io`; `ensureActive()` before each network call.
+
+## 9. Tests
+`Sam3ClientTest` and `Sam3SegmentationProviderTest`, both on `MockWebServer` (localhost only):
+- each route: correct path, method, auth header, and JSON body shape
+- normalized coordinates are encoded as sent, not as pixels
+- base64 alpha PNG decodes to an `ALPHA_8` bitmap of the advertised size
+- every row of the §4 table maps to the stated `AppError`
+- the §5 replay: 410 then success replays the prompt exactly once and the caller sees success;
+  410 twice yields `Unavailable`
+- `open` twice issues a `DELETE` for the first session
+- an oversized bitmap is downscaled and re-compressed per §3 rather than failing
+- `byText` returning `count: 0` yields an empty list, not a failure
+- cancellation mid-call leaves no session leaked (a `DELETE` is still attempted)
+
+`bench.sh` gains upload and prompt wall time against a `MockWebServer` with a fixed delay —
+informational only, and it measures our encode/decode cost, not the model's.

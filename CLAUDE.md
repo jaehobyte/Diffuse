@@ -91,7 +91,9 @@ You are running unattended in a loop. No one will answer questions. Follow these
 ### Hard limits
 - Never modify: `.github/`, `settings.gradle.kts`, root `build.gradle.kts`, `gradle/libs.versions.toml`, `local.properties`, `scripts/check.sh`, any `*.md` under `specs/`, `DESIGN.md`, this file.
 - Never add a dependency not already in `libs.versions.toml`. If a task seems to need one, block it.
-- Never make a network call from code or tests. `FakeAiProvider` only. `USE_REMOTE_AI` stays `false`.
+- Never call an **external** host from code or tests. `MockWebServer` on localhost is the only
+  network a test may touch, and only in `core:ai`. Everywhere else use the fakes in
+  `ai_provider.md` §6. `USE_REMOTE_AI` stays `false`.
 - Never delete or weaken an existing test to make `check` pass. Never widen a golden tolerance. Never add `@Ignore`.
 - Never regenerate screenshot goldens unless the task's `done when` names that golden.
 - Never commit with a red `check`. Never force-push. Never touch branches other than the current one.

@@ -14,6 +14,9 @@ fun AppError.messageRes(): Int = when (this) {
     AppError.Unsupported -> R.string.error_unsupported
     AppError.MissingSource -> R.string.error_missing_source
     is AppError.Io -> R.string.error_io
+    AppError.Unauthorized -> R.string.error_unauthorized
+    is AppError.Invalid -> R.string.error_invalid
+    AppError.Unavailable -> R.string.error_unavailable
 }
 
 /**
