@@ -41,6 +41,23 @@ data class EditDocument(
     fun generativeFills(): List<Operation.GenerativeFill> =
         operations.filterIsInstance<Operation.GenerativeFill>()
 
+    /** specs/outpaint.md §3: at most one, and always `operations[0]`. */
+    fun outpaint(): Operation.Outpaint? = operations.firstOrNull() as? Operation.Outpaint
+
+    /**
+     * specs/outpaint.md §3: 확대 comes before 선택. A `Mask`, `CutOut`, `GenerativeErase` or
+     * `GenerativeFill` carries pixels or alpha sized to the un-extended canvas, and re-basing
+     * those would mean resampling stored PNGs — a quality loss the user did not ask for. One
+     * guard, in the model, so neither the tool nor a future planner can go round it.
+     */
+    val canOutpaint: Boolean
+        get() = operations.none {
+            it is Operation.Mask ||
+                it is Operation.CutOut ||
+                it is Operation.GenerativeErase ||
+                it is Operation.GenerativeFill
+        }
+
     /**
      * specs/edit_model.md: `source.hasAlpha || operations.any { it is CutOut }`. The document
      * holds no `SourceImage`, but `DefaultProjectRepository` writes the source as `.png`
@@ -105,6 +122,41 @@ data class EditDocument(
             else -> operations + Operation.Adjust(newId(), kind, coerced, maskId)
         }
         return copy(operations = updated)
+    }
+
+    /**
+     * specs/outpaint.md §3. Inserts at index 0 and replaces an existing one, so a second 확대
+     * re-bases from the bare source rather than extending the model's own invention. [margins]
+     * are clamped, and an existing `Crop` is re-normalized into the new space rather than
+     * dropped — four numbers with no pixels behind them cost nothing to move.
+     *
+     * Returns the document unchanged when [canOutpaint] is false; the tool greys itself on the
+     * same flag, and this is what makes the rule the model's rather than the tool's.
+     */
+    fun withOutpaint(
+        margins: Margins,
+        resultRef: ImageRef,
+        id: String = newId(),
+    ): EditDocument {
+        if (!canOutpaint) return this
+        val clamped = margins.clamped()
+        val existing = outpaint()
+        val rest = operations.filterNot { it is Operation.Outpaint }.map { operation ->
+            if (operation is Operation.Crop) {
+                operation.copy(
+                    rect = Margins.renormalize(
+                        operation.rect,
+                        from = existing?.margins ?: Margins.None,
+                        to = clamped,
+                    ),
+                )
+            } else {
+                operation
+            }
+        }
+        return copy(
+            operations = listOf(Operation.Outpaint(existing?.id ?: id, clamped, resultRef)) + rest,
+        )
     }
 
     /** At most one [Operation.Crop]; a new crop replaces the old one in place. */

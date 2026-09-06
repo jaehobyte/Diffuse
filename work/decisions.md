@@ -8,6 +8,43 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T63
+
+- **The interior-fidelity case is a pixel-exact assertion, not a second golden.** outpaint.md §8
+  and the task both say "a golden proving the interior is the source's pixels". A stored PNG
+  cannot prove that: it only proves the render matches a file recorded from the same render.
+  `OutpaintTest` renders the document without its `Outpaint`, renders it with one, and asserts
+  every sampled interior pixel is equal — which is the claim §3 actually makes. `outpaint_render`
+  is still recorded, for the composite as a whole.
+
+- **The blend width is derived from the stored result's own size, not from a working-resolution
+  constant.** §4 gives `OUTPAINT_BLEND_PX = 8` at working resolution and asks for it to scale at
+  export. The renderer has no way to know what working resolution was, but the stored PNG *is*
+  the expanded canvas at that resolution, so the ratio between this render and that file is
+  exactly the factor. A `WORKING_LONG_EDGE` constant in `core:imaging` would have been a second
+  copy of a number `core:ai` owns.
+
+- **The seam ramp is applied to a copy of the source, by scaling its alpha channel.** The
+  alternative — a `LinearGradient` shader per edge — needs four draws plus four corner cases
+  where two ramps meet, and `min(horizontal, vertical)` gives the corners for free. The copy also
+  needs `setHasAlpha(true)`: `Bitmap.copy` carries the source's opaque flag, and an opaque
+  bitmap's alpha channel is ignored when it is drawn, which would have silently removed the ramp.
+
+- **`Margins` lives in `core/imaging/model` rather than beside `Operation`.** `Operation.kt`
+  already carries every op; `MAX_MARGIN_FRACTION`, the clamp, the expanded-size arithmetic and
+  the crop re-normalization are a coordinate space, and putting them in their own file is what
+  lets §3's arithmetic be tested without a bitmap (`OutpaintGeometryTest`).
+
+- **`withOutpaint` returns the document unchanged when `canOutpaint` is false**, rather than
+  throwing or returning a `Result`. Every other `with*` helper on `EditDocument` returns a
+  document, and T65's tool greys itself on the same flag, so the model-layer guard is a backstop
+  for a path the UI already closed — not an error the caller is expected to handle.
+
+- **A replacing `withOutpaint` keeps the first op's `id`.** The `resultRef` filename is
+  `outpaint_<id>.png`, so a second 확대 overwrites one file rather than leaving the first
+  orphaned in the project folder. The margins re-base from the source either way, which is what
+  §3 asks for.
+
 ### T62
 
 - **The instruction's new rule is written in English function names, not in 채우기/지우기.**

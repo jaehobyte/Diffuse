@@ -134,6 +134,23 @@ sealed interface Operation {
         val prompt: String,
     ) : Operation
 
+    /**
+     * specs/outpaint.md §2, §3. The **only** op that makes the canvas bigger, which is why it is
+     * always first in the list: everything after it measures against one canvas, the expanded
+     * one, and no op has to ask which era it was created in.
+     *
+     * [resultRef] is the whole expanded image the model returned, at working resolution. The
+     * renderer draws the decoded source back over its interior (§4), so the original pixels
+     * survive at whatever resolution they were decoded at and only the invented border is the
+     * model's ~1024px answer.
+     */
+    data class Outpaint(
+        override val id: String,
+        val margins: Margins,
+        /** `outpaint_<id>.png` at working resolution, in the project folder. */
+        val resultRef: ImageRef,
+    ) : Operation
+
     /** [rect] is normalised 0..1 against the un-cropped, un-rotated source. */
     data class Crop(
         override val id: String,

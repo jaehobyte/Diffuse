@@ -1,15 +1,18 @@
-# progress.md
-
 ## Current
 
-**T62 is done and `check` is green.** The planner has seven functions; `fill_selection(prompt)`
-decodes to one `PlanStep.Fill` and runs through the same provider and the same undilated selection
-the 채우기 tool uses, so a plan and a tap produce the same document. `validate` gained no clause.
-
-**Next: T63** `Operation.Outpaint` — read outpaint.md §2–§3 before writing a line. T64, T65 follow;
-T57 and T66 stay `[!]`.
+_Idle._ T63 is committed; the next `[ ]` task is T64 (`WhitePad` and `OutpaintProvider`).
 
 ## Done
+
+- T63 `Operation.Outpaint` — the only op that makes the canvas bigger, and so the only one that is
+  always `operations[0]`. `Margins` holds four fractions and `MAX_MARGIN_FRACTION = 0.5f`;
+  `withOutpaint` inserts at index 0, replaces rather than compounds, clamps, **refuses** while any
+  `Mask` / `CutOut` / `GenerativeErase` / `GenerativeFill` exists, and re-normalizes an existing
+  `Crop.rect` — all four rules in the model, so no tool or planner can go round them. The renderer
+  expands **before** T49's walk (`OutpaintOp`), draws the stored result to fill the new canvas and
+  the decoded source back over its interior with an 8px alpha ramp, so the photograph keeps its own
+  resolution and only the invented border is the model's. `v` stays 1. 15 tests, golden
+  `outpaint_render`; every existing golden passed unrecorded.
 
 - T62 `fill_selection` — the planner's seventh function. `PlanStep.Fill(prompt)` beside `Erase`,
   declared between `cut_out_selection` and `crop_ratio`, and one instruction rule: fill replaces,
@@ -64,21 +67,11 @@ T57 and T66 stay `[!]`.
   the result so the renderer composes through the same mask the model was shown. Both erase paths
   share it; `activeMaskId` stays on the user's own selection. 7 dilation tests + updated tool tests.
 
-- T49 The renderer walks `document.operations` once, in list order, instead of grouping by type.
-  A masked adjustment committed after an erase used to be computed and then overwritten by the
-  erase result — the third device report. `Crop` stays last, `Mask` stays pixel-less, the three
-  render goldens did not move. 5 order tests.
+## Next
 
-- T48 지시 tool — `Tool.Direct` appended, a `placeholder` parameter on `PromptBar` /
-  `VoicePromptBar` (the three prompt-bar goldens pass unrecorded), `DirectSheet` with §11's step
-  templates and the `direct_not_understood` hint, `DirectController` owning the plan *and* the run
-  through a `DirectHost`, one history entry per committed step with no coalesce key, and a blank
-  key opening the 서버 설정 sheet. 23 tests + goldens `direct_sheet_open` / `direct_plan_preview`.
-
-- T47 `PlanRunner` — `validate` enforcing §9.1's one rule (a step that consumes a selection must
-  have one), `run` as a cold flow chaining each step onto the last, one `SegSession` for the whole
-  run, save lambdas instead of `ProjectRepository`, and the partial-run guarantee: a failure or a
-  cancellation ends the run with everything before it committed. 16 tests.
+T64 `WhitePad` and `OutpaintProvider` — no deps, and it needs nothing T63 added: `Margins` is
+declared a second time in `core:ai` per ai_provider.md §3, because `core:ai` does not depend on
+`core:imaging`.
 
 ## Decisions
 

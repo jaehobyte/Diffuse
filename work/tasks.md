@@ -265,7 +265,7 @@ design drifted — block it rather than adding one.
   core/ai/EditPlanProvider.kt, core/ai tests, feature/editor/tools/direct,
   feature/editor/EditorViewModel.kt, feature/editor strings.xml, feature/editor tests
 
-- [ ] T63 `Operation.Outpaint` — the one op that makes the canvas bigger
+- [x] T63 `Operation.Outpaint` — the one op that makes the canvas bigger
   spec: specs/outpaint.md §2, §3, §4, §8; specs/edit_model.md; specs/render.md; specs/crop.md
   deps: —
   done when:
