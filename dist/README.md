@@ -16,6 +16,13 @@ a ~24MB binary out of the repository:
   selection, prompts, generative erase
 - [v0.3.1](https://github.com/jaehobyte/Diffuse/releases/tag/v0.3.1) — session-lifecycle fixes
   found on the first device run
+- [v0.3.6](https://github.com/jaehobyte/Diffuse/releases/tag/v0.3.6) — the first build verified on
+  a phone against the real model. Ships **no** server address and **no** token: a published APK
+  must not carry either, and an empty address is what makes the app open its 서버 설정 sheet on
+  the first tap of 선택.
+
+v0.3.0 and v0.3.1 default to `http://10.0.2.2:8080`, the emulator's alias for its host, so the
+선택 tool cannot work on a physical device. Use v0.3.6.
 
 Sizes, against the APK budget in specs/architecture.md §8 (**< 15MB**; ADR-008 raised it to
 50MB while EdgeTAM weights were bundled, and was struck with ADR-009 when they were dropped):
@@ -27,6 +34,7 @@ Sizes, against the APK budget in specs/architecture.md §8 (**< 15MB**; ADR-008 
 | release at v0.2.0 (unsigned, `isMinifyEnabled = false`) | 16.21 MB |
 | debug at v0.3.0 | 23.96 MB |
 | debug at v0.3.1 | 23.96 MB |
+| debug at v0.3.6 | 23.96 MB |
 | release at v0.3.0 (unsigned, `isMinifyEnabled = false`) | 17.40 MB |
 
 **The release build is 2.4 MB over budget.** R8 is still off, so that is the unshrunk size:
