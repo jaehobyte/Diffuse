@@ -76,7 +76,7 @@ class EditorViewModel @Inject constructor(
     private var previewJob: Job? = null
 
     /** specs/selection_tool.md: the tool owns its own state, session and undo stack. */
-    val selection = SelectionController(ai.segmentation, ai.sam3Settings, viewModelScope)
+    val selection = SelectionController(ai.segmentation, ai.sam3Settings, ai.geminiSettings, viewModelScope)
 
     /** specs/prompt_input.md §3: handed straight to the prompt bar; the VM never drives it. */
     val speech: SpeechInput = ai.speech

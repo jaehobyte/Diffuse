@@ -20,6 +20,35 @@ Nothing in `work/tasks.md` is left. What a human still owes:
 
 ## Decisions
 
+### T39 — the Gemini key rides in `SelectionController`, and two tests took a constructor arg
+
+`work/tasks.md` lists T39's `touches` as `core/ai/gemini`, `Sam3SettingsSheet.kt`,
+`EditorRoute.kt` and `strings.xml`. Wiring the key from the sheet to `GeminiSettings` cannot fit
+inside that list: `EditorRoute` reads the sheet's values out of `EditorUiState` and has no way to
+reach a `@Singleton` itself. Three files outside the list changed, each minimally:
+
+- `EditorAi` gains `geminiSettings`. It is already "the editor's whole AI surface in one
+  injectable", so a second credential belongs there rather than in a new one.
+- `SelectionController` takes it and `saveSettings` becomes three-arg. The controller already
+  owns the 서버 설정 sheet's lifecycle (`showSettings`, `dismissSettings`), and generative_erase.md
+  §8 makes that one sheet serve both providers — so the alternative was a second owner for the
+  same sheet. `SelectionState.geminiApiKey` exists for the same reason: it is the state the sheet
+  renders from.
+- `SelectionToolTest` and `GenerativeEraseToolTest` construct `EditorAi` directly, so they take
+  the new argument. Mechanical only; no assertion was changed except the one in
+  `saveSettings closes the sheet and re-probes`, which now also asserts the key was stored.
+
+The name `Sam3SettingsSheet` is now wrong — it is the 서버 설정 sheet for two providers. Renaming
+it would touch `EditorRoute`, the test tags and `SelectSheetTest`, for no behaviour, so it stays.
+
+### T39 — the key field is masked but its value is still readable to a test
+
+`PasswordVisualTransformation` changes `EditableText` to bullets and sets the `Password`
+semantics flag, but leaves `InputText` as the real value — so `onNodeWithText("AIza-old")` still
+matches. The test asserts on `Password` and on `EditableText` instead of on the absence of a text
+node, because the absence is not true and asserting it would only be true by accident.
+
+
 ### T30/T41 — the third device run: it works
 
 Verified on an SM-S948N against the real model, over the public endpoint: a tap on the dog's coat

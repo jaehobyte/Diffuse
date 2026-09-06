@@ -145,6 +145,7 @@ private fun sheetFor(
         return {
             Sam3SettingsSheet(
                 config = state.selection.config,
+                geminiApiKey = state.selection.geminiApiKey,
                 onSave = viewModel.selection::saveSettings,
                 onCancel = viewModel.selection::dismissSettings,
             )

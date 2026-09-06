@@ -51,6 +51,9 @@
     <string name="sam3_settings_token">토큰</string>
     <string name="sam3_settings_save">저장</string>
 
+    <!-- specs/generative_erase.md §8 -->
+    <string name="gemini_settings_api_key">Gemini API 키</string>
+
     <string name="light_title">빛</string>
     <string name="light_exposure">노출</string>
     <string name="light_contrast">대비</string>

@@ -2,23 +2,13 @@
 
 ## Current
 
-**T22-T24 complete.** `scripts/check.sh` green offline. The v1.1 fix phase is done.
-
-**v2 was re-planned on 2026-09-06** (user decision). On-device EdgeTAM is dropped in favour of the
-server-side SAM 3 service at `~/sam3-server`, and the backlog gains a prompt bar with voice input
-and a generative eraser. `work/tasks.md` is now T26-T38 in four phases, with the human
-prerequisites listed at the top of that file rather than as a task. ADR-007 and ADR-008 are struck
-in architecture.md §10; ADR-009 and ADR-010 replace them.
-
-Specs are written and consistent: `ai_provider.md`, `segmentation.md`, `selection_tool.md`
-(rewritten), `prompt_input.md`, `generative_erase.md` (new), plus amendments to `edit_model.md`,
-`architecture.md` (§2, §6, §8, §9, §10) and `DESIGN.md` (§1 accent ruling, §4 prompt bar).
-
-**T26-T38 done — the whole v2 backlog is implemented and `scripts/check.sh` is green offline.**
-
-One prerequisite is still open: `POST /v1/edit/erase` does not exist in `~/sam3-server` yet, so
-the generative eraser has nothing real to talk to. Everything else runs against a running SAM 3
-service once `sam3.baseUrl` / `sam3.token` are set (or entered in the in-app settings sheet).
+**T39 — `GeminiSettings` and the key field.**
+1. `core/ai/gemini`: `GeminiConfig(apiKey, baseUrl = DEFAULT_BASE_URL)` + `GeminiSettings` over
+   `SharedPreferences` file `gemini_settings`, key `api_key`, default `""` → verify: round-trip test.
+2. No `BuildConfig` field, no `local.properties` read, `baseUrl` a constant with a ctor seam only.
+3. `Sam3SettingsSheet` gains a masked `Gemini API 키` field; `onSave` carries three values.
+4. Wire it: `EditorAi` → `SelectionController` (it already owns the sheet) → `EditorRoute`.
+5. Verify: `scripts/check.sh` green.
 
 ## Done
 
@@ -29,7 +19,8 @@ service once `sam3.baseUrl` / `sam3.token` are set (or entered in the in-app set
 
 - T37 `EraseProvider` — `Sam3EraseClient` posting image + mask + hint to `/v1/edit/erase` with
   a 60s read timeout, `Sam3EraseProvider` reusing segmentation's availability, and `MaskPng`.
-  10 MockWebServer tests.
+  10 MockWebServer tests. **Superseded by ADR-011**: T42 deletes all three of those files. The
+  `EraseProvider` interface it declared stays.
 
 - T36 Prompt or speech → mask — the selection sheet hosts `VoicePromptBar`, a phrase runs
   `byText`, its instances union into one mask and merge by the current mode, and `count == 0`
@@ -66,47 +57,9 @@ service once `sam3.baseUrl` / `sam3.token` are set (or entered in the in-app set
   JSON, `MaskIo` (ALPHA_8 ↔ PNG), `Renderer.resolveMask` with a 2-entry cache, and
   `ProjectRepository.saveMask` writing `mask_<id>.png`. 21 tests.
 
-- T28 `Sam3SegmentationProvider` — one live session plus the bytes that opened it, so §5's
-  expiry replay (re-upload once, repeat the prompt) never reaches the caller. `Sam3Settings`
-  on SharedPreferences with `local.properties` defaults through `:core:ai`'s own BuildConfig,
-  `Sam3ImageCodec` (2048px, JPEG 90 → 75), and `AiModule`. 19 tests.
+_T01–T28 trimmed per CLAUDE.md (keep the last 10)._
 
-- T27 `Sam3Client` — OkHttp + kotlinx.serialization over the five SAM 3 routes, `Sam3Outcome`
-  with `SessionExpired` as its own case, and `MaskCodec`. 17 MockWebServer tests, localhost only.
-
-- T26 `core:ai` module — `SegmentationProvider` (`open`/`byPoints`/`byText`/`close`) and
-  `EraseProvider` behind `Availability`, plus the two fakes in `src/testShared/kotlin` so
-  `:feature:editor` tests can compile them. 15 tests. `settings.gradle.kts`, the dependencyGuard
-  module map and `:feature:editor` all gained the `:core:ai` edge.
-
-- T24 Live rotate / straighten preview — `OverlayTransform` in the canvas rotates the drawn
-  bitmap about the image centre with no `Renderer` pass; quarter turns swap the fitted size.
-  2 transform tests + goldens `crop_live_rotate_15` / `crop_live_rotate_90`.
-
-- T23 Crop preset aspect — the geometry was right; `EditorRoute` fed it a constant 4:3.
-  `CropState` now carries `sourceAspect` (from the bare-source preview) and flips it on odd
-  quarter turns. `presetAspectMatchesInPixels` covers five presets x both orientations.
-
-- T22 Reset to original — `RestartAlt` icon between Redo and Compare, `resetToOriginal()`
-  as one uncoalesced history step, viewport zeroed so the canvas refits. 1 test +
-  `editor_shell_default` re-recorded.
-
-- T21 Navigation and polish — Hilt graph, Browse → Editor → Export sheet, autosave on
-  back, destructive confirmation while exporting, predictive back.
-- T20 Export — format/size/preset sheet, render→crop→downscale pipeline, MediaStore
-  writer with IS_PENDING, progress overlay with cancel. 8 tests + 2 goldens.
-- T19 Import from Photo Picker — `BrowseImport`, `BrowseRoute` with `PickVisualMedia`,
-  40% scrim while decoding, `AppError` → Korean snackbar. 6 tests.
-- T18 Browse home — staggered 2/3-column masonry, long-press actions with a destructive
-  confirmation, Korean relative times, empty state. 7 tests + 4 goldens.
-- T17 Project persistence — Room `projects` table with exported schema, atomic document
-  writes, thumbnails, `ProjectAutosave` with a 2s debounce. 14 tests.
-- T16 Detail adjustments — Sharpen (separable unsharp mask) and Vignette, `DetailSheet`;
-  6 tests + 2 render goldens + `detail_sheet_open`. Every `AdjustKind` now has real maths.
-- T15 Crop and rotate — rotate-then-crop render, `CropGeometry` auto-shrink, overlay with
-  handles and thirds grid, preset/straighten/90° sheet. 15 tests + 4 goldens.
-
-_T01–T14 trimmed per CLAUDE.md (keep the last 10). Their decisions are still in ## Decisions
+## Decisions
 
 Moved to `work/decisions.md`, one entry per task, newest first.
 
@@ -118,8 +71,10 @@ Moved to `work/decisions.md`, one entry per task, newest first.
   app half cannot be checked on this machine — no `/dev/kvm`, no emulator package, no attached
   device — so it needs a phone or a workstation.
 
-- **`POST /v1/edit/erase` returns 404**: it is not implemented in `~/sam3-server`. The
-  generative eraser has nothing to talk to until it is.
+- **The eraser needs a Gemini API key entered on the device.** No key is shipped, committed, or
+  read from `.env` at build time (ADR-011, generative_erase.md §2), so until someone pastes one
+  into the 서버 설정 sheet the 지우기 tool reports itself unavailable. `check` is unaffected — every
+  test uses the fake or `MockWebServer`.
 
 - **The crop tool previews the *cropped* image, not the full source.** specs/crop.md says
   opening 자르기 refits to the un-cropped source; the ViewModel just renders the current

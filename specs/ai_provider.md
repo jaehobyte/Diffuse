@@ -1,9 +1,10 @@
 # specs/ai_provider.md — AI provider boundary
 
-Owner tasks: T26 (segmentation), T37 (erase)
+Owner tasks: T26 (segmentation), T39–T42 (erase)
 Module: `core:ai`
 Depends on: architecture.md §6 (extension points), §9 (errors)
-Decisions: ADR-009 (server-side SAM 3), ADR-010 (generative editing via the sam3-server proxy)
+Decisions: ADR-009 (server-side SAM 3), ADR-011 (the device calls Gemini directly; supersedes
+ADR-010, the sam3-server proxy)
 
 ## 1. Purpose
 Put every model behind a small suspend interface so the editor never knows which runtime is
@@ -54,6 +55,10 @@ interface EraseProvider {
 }
 ```
 
+`EraseProvider` says nothing about *how* the hole is described to a model. Painting the masked
+region white is `GeminiEraseProvider`'s private business (generative_erase.md §4), so swapping the
+backend under this interface leaves `EraseController` and `FakeEraseProvider` untouched.
+
 ## 4. Contract
 - `open` is expensive (a full upload plus one backbone pass). Callers call it once per image and
   reuse the session for every prompt. A provider keeps **at most one** live session; a second `open`
@@ -99,15 +104,16 @@ interface EraseProvider {
 `FakeEraseProvider`: fills the mask region with the mean color of the pixels in a 4px band just
 outside the mask. Deterministic, so goldens are stable.
 
-No test may reach an external host. `Sam3Client` tests use `MockWebServer` on localhost
-(CLAUDE.md hard limits, as amended by T25).
+No test reaches an external host. `Sam3Client` and `GeminiEraseClient` tests use `MockWebServer` on
+localhost; both take their base URL as a constructor seam, which is what makes that possible for a
+client whose production host is a public one.
 
 ## 7. DI
 ```kotlin
 @Module @InstallIn(SingletonComponent::class)
 abstract class AiModule {
     @Binds abstract fun seg(impl: Sam3SegmentationProvider): SegmentationProvider
-    @Binds abstract fun erase(impl: Sam3EraseProvider): EraseProvider
+    @Binds abstract fun erase(impl: GeminiEraseProvider): EraseProvider
 }
 ```
 Tests replace it with `@TestInstallIn` binding the fakes.

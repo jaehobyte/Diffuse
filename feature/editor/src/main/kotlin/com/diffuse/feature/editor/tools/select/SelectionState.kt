@@ -41,6 +41,12 @@ data class SelectionState(
     /** specs/segmentation.md §6: the only way out of an unconfigured provider. */
     val showSettings: Boolean = false,
     val config: Sam3Config = Sam3Config("", ""),
+    /**
+     * specs/generative_erase.md §8: the same sheet carries the Gemini key. It is held here
+     * rather than in `EraseState` because this is the state the sheet renders from, and there
+     * is only one sheet.
+     */
+    val geminiApiKey: String = "",
     /** One-shot snackbar text, cleared once shown. DESIGN.md §4 forbids toasts. */
     @StringRes val message: Int? = null,
 ) {
