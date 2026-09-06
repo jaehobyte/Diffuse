@@ -8,6 +8,34 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T58
+
+- **`DirectHost.onFinished` carries the `CropRatio`, not a boolean.** The spec said the ViewModel
+  "sees that the plan's last step was a Crop"; a boolean would have said that, but the tool also
+  has to open with the chip selected, and only the controller knows which ratio ran. One nullable
+  enum says both things, and non-null already means "and every step committed" — a run that
+  stopped early may never have reached the crop, and opening 자르기 then would be a lie.
+
+- **The chip is restored by `withPreset` after the tool opens, not by teaching `CropState.from`
+  to recover it.** `CropState.from` deliberately restores the rect and the angle and leaves the
+  preset `Free` (specs/crop.md: "re-opening the tool shows the existing crop"). Changing that
+  would alter what a *manual* re-open shows and could move `crop_sheet_open`, for a gain this
+  task does not need. Keeping the ratio locked matters here for a specific reason: the model
+  chose 9:16 for a story, and a free drag would quietly lose it.
+
+- **A ratio the photo already is commits no `Crop`, and the tool still opens.** edit_model.md
+  deletes a full-frame crop as a no-op, so `crop_ratio(square)` on a square photo produces no
+  operation. The hand-off still runs, so the user gets the 자르기 tool with the chip selected and
+  can reframe. This surfaced as a failing test that had assumed a square source would crop.
+
+- **`sourceAspect` is a file-level private function, not a `EditorViewModel` member.**
+  `EditorViewModel` sits exactly at detekt's `TooManyFunctions` ceiling of 20, and adding a
+  twenty-first broke `check`. It reads only its argument, so moving it out of the class costs
+  nothing and is honest about why.
+
+- **`CropRatio.wireName` is spelled out rather than derived.** `Portrait4x5.name.lowercase()` is
+  "portrait4x5", not "portrait_4_5", and a name the model reads should look like a ratio.
+
 ### T56 — the spec's `masked` default was wrong, and the wire enum had quietly grown
 
 **`adjust_color_range` defaults `masked` to false; adjust_hsl.md §8 said true.** Writing the decoder

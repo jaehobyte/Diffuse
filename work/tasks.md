@@ -13,7 +13,7 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `[H]` human-only, loop must
 
 ## Queue
 
-**Phase 12, T58–T65.** T57 and T66 are `[!]` — both need a human. Pick the first `[ ]` whose deps
+**Phase 12, T59–T65.** T57 and T66 are `[!]` — both need a human. Pick the first `[ ]` whose deps
 are all `[x]`, as always.
 
 ---
@@ -136,7 +136,7 @@ design drifted — block it rather than adding one.
     - one test covers 빛, 색, 혼합 and 디테일 at once, since all four share `EditSheet`
   touches: feature/editor/EditorScreen.kt, feature/editor/EditorRoute.kt, feature/editor tests
 
-- [ ] T58 `crop_ratio` — the planner's sixth function
+- [x] T58 `crop_ratio` — the planner's sixth function
   spec: specs/vibe_edit.md §4, §4.1, §5, §7, §9.1, §9.2, §11; specs/crop.md
   deps: —
   done when:

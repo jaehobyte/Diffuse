@@ -1,6 +1,7 @@
 package com.diffuse.core.ai.gemini
 
 import com.diffuse.core.ai.EditPlan
+import com.diffuse.core.ai.CropRatio
 import com.diffuse.core.ai.PlanStep
 import com.diffuse.core.common.AppError
 import com.diffuse.core.common.DispatcherProvider
@@ -117,6 +118,7 @@ class GeminiPlanClientTest {
                 "adjust_color_range",
                 "erase_selection",
                 "cut_out_selection",
+                "crop_ratio",
             ),
             declarations.map { it.jsonObject["name"]!!.jsonPrimitive.content },
         )
@@ -575,6 +577,86 @@ class GeminiPlanClientTest {
 
     // ---- fixtures --------------------------------------------------------
 
+    // ---- crop_ratio (T58, specs/vibe_edit.md §4.1, §5) -------------------
+
+    @Test
+    fun `a crop ratio decodes to a Crop step`() = runTest {
+        server.enqueue(calls(CROP_CALL))
+
+        val plan = client.plan(JPEG, REQUEST).valueOrFail()
+
+        assertEquals(EditPlan(listOf(PlanStep.Crop(CropRatio.Story9x16))), plan)
+    }
+
+    @Test
+    fun `every ratio the catalog offers decodes`() = runTest {
+        val wire = listOf("square", "portrait_4_5", "story_9_16", "landscape_16_9")
+        server.enqueue(
+            calls(*wire.map { cropCall(it) }.toTypedArray()),
+        )
+
+        val plan = client.plan(JPEG, REQUEST).valueOrFail()
+
+        // Only the last survives — §5 keeps one crop per plan — so ask about the mapping
+        // one ratio at a time instead.
+        assertEquals(listOf(PlanStep.Crop(CropRatio.Landscape16x9)), plan.steps)
+    }
+
+    @Test
+    fun `a crop that arrived first still runs last`() = runTest {
+        server.enqueue(calls(CROP_CALL, SELECT_CALL, ADJUST_CALL))
+
+        val plan = client.plan(JPEG, REQUEST).valueOrFail()
+
+        assertEquals(
+            listOf(
+                PlanStep.Select("나무"),
+                PlanStep.Adjust(AdjustKind.Saturation, 0.3f, masked = true),
+                PlanStep.Crop(CropRatio.Story9x16),
+            ),
+            plan.steps,
+        )
+    }
+
+    @Test
+    fun `two crop calls become the last one only`() = runTest {
+        server.enqueue(calls(cropCall("square"), ADJUST_CALL, cropCall("landscape_16_9")))
+
+        val plan = client.plan(JPEG, REQUEST).valueOrFail()
+
+        assertEquals(
+            listOf(
+                PlanStep.Adjust(AdjustKind.Saturation, 0.3f, masked = true),
+                PlanStep.Crop(CropRatio.Landscape16x9),
+            ),
+            plan.steps,
+        )
+    }
+
+    @Test
+    fun `an unknown ratio drops the step and the rest of the plan survives`() = runTest {
+        server.enqueue(calls(ADJUST_CALL, cropCall("panorama")))
+
+        val plan = client.plan(JPEG, REQUEST).valueOrFail()
+
+        assertEquals(
+            listOf(PlanStep.Adjust(AdjustKind.Saturation, 0.3f, masked = true)),
+            plan.steps,
+        )
+    }
+
+    @Test
+    fun `free is not a ratio the model may choose`() = runTest {
+        server.enqueue(calls(cropCall("free")))
+
+        val plan = client.plan(JPEG, REQUEST).valueOrFail()
+
+        assertEquals(emptyList<PlanStep>(), plan.steps)
+    }
+
+    private fun cropCall(ratio: String) =
+        """{"functionCall":{"name":"crop_ratio","args":{"ratio":"$ratio"}}}"""
+
     private fun calls(vararg parts: String) =
         json("""{"candidates":[{"content":{"parts":[${parts.joinToString(",")}]}}]}""")
 
@@ -602,5 +684,7 @@ class GeminiPlanClientTest {
             """{"functionCall":{"name":"select_region","args":{"phrase":"나무"}}}"""
         const val ADJUST_CALL =
             """{"functionCall":{"name":"adjust","args":{"kind":"saturation","value":0.3}}}"""
+        const val CROP_CALL =
+            """{"functionCall":{"name":"crop_ratio","args":{"ratio":"story_9_16"}}}"""
     }
 }

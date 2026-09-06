@@ -115,7 +115,7 @@ internal class GeminiPlanClient(
             val steps = response.candidates.firstOrNull()?.content?.parts.orEmpty()
                 .mapNotNull { it.functionCall }
                 .flatMap(::steps)
-            Result.Success(EditPlan(steps))
+            Result.Success(EditPlan(cropLast(steps)))
         }
     }
 
@@ -134,10 +134,24 @@ internal class GeminiPlanClient(
             FN_ADJUST_COLOR_RANGE -> colorRange(call.args)
             FN_ERASE_SELECTION -> listOf(PlanStep.Erase)
             FN_CUT_OUT_SELECTION -> listOf(PlanStep.CutOut)
+            FN_CROP_RATIO -> listOfNotNull(
+                call.args.string(ARG_RATIO)?.let(::cropRatioOf)?.let(PlanStep::Crop),
+            )
             else -> emptyList()
         }
         if (steps.isEmpty()) logger?.warn(TAG, "dropped function call '${call.name}' ${call.args}")
         return steps
+    }
+
+    /**
+     * specs/vibe_edit.md §5, §4.1: however many crops the model emitted and wherever it put them,
+     * keep the **last** and move it to the **end**. Two crops in one plan is the model restating
+     * itself rather than asking to crop twice, and `Operation.Crop` is at-most-one anyway
+     * (edit_model.md). No other step is reordered — the model's order is the plan everywhere else.
+     */
+    private fun cropLast(steps: List<PlanStep>): List<PlanStep> {
+        val crop = steps.lastOrNull { it is PlanStep.Crop } ?: return steps
+        return steps.filterNot { it is PlanStep.Crop } + crop
     }
 
     private fun adjust(args: JsonObject): PlanStep.Adjust? {

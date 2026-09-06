@@ -13,6 +13,8 @@ import com.diffuse.core.ui.components.EditSheet
 import com.diffuse.core.ui.theme.LocalAppColors
 import com.diffuse.core.ui.theme.Typography
 import com.diffuse.feature.editor.R
+import com.diffuse.feature.editor.tools.crop.preset
+import com.diffuse.feature.editor.tools.crop.presetLabelRes
 import com.diffuse.feature.editor.tools.stepLabel
 import kotlin.math.roundToInt
 
@@ -85,4 +87,9 @@ private fun stepLine(step: PlanStep): String = when (step) {
     )
     PlanStep.Erase -> stringResource(R.string.direct_step_erase)
     PlanStep.CutOut -> stringResource(R.string.direct_step_cutout)
+    // §4.1: the ratio reads in the same characters the 자르기 sheet is about to show.
+    is PlanStep.Crop -> stringResource(
+        R.string.direct_step_crop,
+        stringResource(presetLabelRes(step.ratio.preset)),
+    )
 }

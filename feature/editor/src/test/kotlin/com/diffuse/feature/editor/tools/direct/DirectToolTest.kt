@@ -5,6 +5,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.diffuse.core.ai.Availability
+import com.diffuse.core.ai.CropRatio
 import com.diffuse.core.ai.EditPlan
 import com.diffuse.core.ai.FakeEraseProvider
 import com.diffuse.core.ai.FakePlanProvider
@@ -28,6 +29,7 @@ import com.diffuse.feature.editor.EditorViewModel
 import com.diffuse.feature.editor.R
 import com.diffuse.feature.editor.TestDispatchers
 import com.diffuse.feature.editor.Tool
+import com.diffuse.feature.editor.tools.crop.AspectPreset
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -203,6 +205,50 @@ class DirectToolTest {
         assertEquals(1, viewModel.uiState.value.document!!.operations.size)
         viewModel.undo()
         assertEquals(0, viewModel.uiState.value.document!!.operations.size)
+    }
+
+    // ---- §4.1 the crop hand-off (T58) ------------------------------------
+
+    @Test
+    fun `a plan that ends with a crop opens the 자르기 tool on what it committed`() = runTest {
+        val viewModel = opened()
+        planner.next(EditPlan(listOf(PlanStep.Crop(CropRatio.Story9x16))))
+        viewModel.direct.submit(REQUEST)
+
+        viewModel.applySheet()
+
+        assertEquals(Tool.Crop, viewModel.uiState.value.selectedTool)
+        val crop = viewModel.uiState.value.document!!.crop()!!
+        assertTrue("a 9:16 crop is taller than it is wide", crop.rect.width() < crop.rect.height())
+        // The chip stays selected, so dragging cannot lose the ratio the model chose.
+        assertEquals(AspectPreset.NineSixteen, viewModel.uiState.value.cropState.preset)
+    }
+
+    @Test
+    fun `a plan with no crop leaves every tool closed`() = runTest {
+        val viewModel = opened()
+        planner.next(EditPlan(listOf(PlanStep.Adjust(AdjustKind.Exposure, 0.4f, masked = false))))
+        viewModel.direct.submit(REQUEST)
+
+        viewModel.applySheet()
+
+        assertNull(viewModel.uiState.value.selectedTool)
+    }
+
+    @Test
+    fun `a run that stops before its crop opens no tool`() = runTest {
+        val viewModel = opened()
+        // "없음" is the fake's phrase that finds nothing, so the run stops at step 0.
+        planner.next(
+            EditPlan(listOf(PlanStep.Select("없음"), PlanStep.Crop(CropRatio.Story9x16))),
+        )
+        viewModel.direct.submit(REQUEST)
+
+        viewModel.applySheet()
+
+        // The Select failed, so the crop never ran; opening 자르기 would be a lie.
+        assertNull(viewModel.uiState.value.selectedTool)
+        assertNull(viewModel.uiState.value.document!!.crop())
     }
 
     @Test

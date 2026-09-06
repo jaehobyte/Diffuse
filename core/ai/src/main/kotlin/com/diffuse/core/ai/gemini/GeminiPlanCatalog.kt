@@ -1,5 +1,6 @@
 package com.diffuse.core.ai.gemini
 
+import com.diffuse.core.ai.CropRatio
 import com.diffuse.core.imaging.model.AdjustKind
 import com.diffuse.core.imaging.model.HslBand
 import com.diffuse.core.imaging.model.HslChannel
@@ -13,20 +14,25 @@ import com.diffuse.core.imaging.model.HslTarget
  * to a model, not strings a person reads, so DESIGN.md §9's "Korean, in strings.xml" does not
  * apply — the same rule generative_erase.md §5 applies to its instruction.
  *
- * 자르기 is deliberately absent: a crop is four normalised numbers a model would have to invent,
- * and a wrong crop throws away framing the user chose (§4).
+ * 자르기 is here as `crop_ratio` (§4.1) and only as a ratio. The objection that kept it out until
+ * T58 stands unchanged — a model asked for a rectangle has to invent four numbers it cannot check
+ * against what the user meant — which is exactly why `ratio` is a closed enum: the model answers
+ * "which aspect does 인스타 포스팅 mean", a language question, and the rect is computed from the
+ * preset the chips already use.
  */
 internal const val FN_SELECT_REGION = "select_region"
 internal const val FN_ADJUST = "adjust"
 internal const val FN_ADJUST_COLOR_RANGE = "adjust_color_range"
 internal const val FN_ERASE_SELECTION = "erase_selection"
 internal const val FN_CUT_OUT_SELECTION = "cut_out_selection"
+internal const val FN_CROP_RATIO = "crop_ratio"
 
 internal const val ARG_PHRASE = "phrase"
 internal const val ARG_KIND = "kind"
 internal const val ARG_VALUE = "value"
 internal const val ARG_MASKED = "masked"
 internal const val ARG_COLOR = "color"
+internal const val ARG_RATIO = "ratio"
 
 /**
  * §4's ten `AdjustKind` names in lower snake case. Every one of them is a single word, so this is
@@ -43,6 +49,21 @@ internal val plannableKinds: List<AdjustKind> = AdjustKind.entries.filter { it.h
 
 internal fun adjustKindOf(wire: String): AdjustKind? =
     plannableKinds.firstOrNull { it.wireName == wire }
+
+/**
+ * §4.1's wire names. Spelled out rather than derived from the enum: "portrait_4_5" is not a
+ * lowercasing of `Portrait4x5`, and a name the model sees should read like a ratio.
+ */
+internal val CropRatio.wireName: String
+    get() = when (this) {
+        CropRatio.Square -> "square"
+        CropRatio.Portrait4x5 -> "portrait_4_5"
+        CropRatio.Story9x16 -> "story_9_16"
+        CropRatio.Landscape16x9 -> "landscape_16_9"
+    }
+
+internal fun cropRatioOf(wire: String): CropRatio? =
+    CropRatio.entries.firstOrNull { it.wireName == wire }
 
 internal val HslBand.wireName: String get() = name.lowercase()
 
@@ -88,6 +109,10 @@ internal const val PLAN_SYSTEM_INSTRUCTION =
         "- Values are relative strengths, not absolute settings: a slight change is 0.2, a clear " +
         "change is 0.4, a strong change is 0.7. Use the ends of the range only when the user " +
         "asked for an extreme.\n" +
+        "- Call crop_ratio only when the request names a shape, a platform or a format - " +
+        "\"인스타\", \"스토리\", \"정사각형\", \"9:16\". Never crop to improve a photo the user " +
+        "did not ask to reframe. Call it at most once; it always runs last, so the user can " +
+        "adjust the framing afterwards.\n" +
         "- If the request cannot be met with these functions, call nothing.\n" +
         "Examples:\n" +
         "- \"버스를 지워줘\" -> select_region(phrase=\"bus\"), erase_selection()\n" +
@@ -97,7 +122,8 @@ internal const val PLAN_SYSTEM_INSTRUCTION =
         "erase_selection(), adjust(kind=\"contrast\", value=0.2, masked=false), " +
         "adjust(kind=\"saturation\", value=0.2, masked=false)\n" +
         "- \"배경 지워줘\" -> select_region(phrase=\"the main subject\"), cut_out_selection()\n" +
-        "- \"하늘을 더 파랗게 해줘\" -> adjust_color_range(color=\"blue\", saturation=0.4)"
+        "- \"하늘을 더 파랗게 해줘\" -> adjust_color_range(color=\"blue\", saturation=0.4)\n" +
+        "- \"인스타 스토리에 올리게 잘라줘\" -> crop_ratio(ratio=\"story_9_16\")"
 
 internal val PLAN_FUNCTIONS: List<FunctionDeclaration> = listOf(
     FunctionDeclaration(
@@ -190,6 +216,26 @@ internal val PLAN_FUNCTIONS: List<FunctionDeclaration> = listOf(
         name = FN_CUT_OUT_SELECTION,
         description = "Delete everything outside the current selection, leaving it on a " +
             "transparent background.",
+    ),
+    FunctionDeclaration(
+        name = FN_CROP_RATIO,
+        description = "Crop the photo to a standard aspect ratio, centred. Use this when the " +
+            "request names a shape, a platform or a format rather than a change to the image. " +
+            "The crop tool opens afterwards so the user can move the frame, so choose the " +
+            "ratio and nothing else.",
+        parameters = Schema(
+            type = TYPE_OBJECT,
+            properties = mapOf(
+                ARG_RATIO to Schema(
+                    type = TYPE_STRING,
+                    description = "Which aspect ratio to crop to. story_9_16 is a phone story " +
+                        "or reel, portrait_4_5 is a tall feed post, square is a square post, " +
+                        "and landscape_16_9 is a wide photo.",
+                    enumValues = CropRatio.entries.map { it.wireName },
+                ),
+            ),
+            required = listOf(ARG_RATIO),
+        ),
     ),
 )
 

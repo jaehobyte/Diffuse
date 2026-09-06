@@ -12,6 +12,8 @@ import com.diffuse.core.common.Result
 import com.diffuse.core.common.newId
 import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.core.imaging.model.ImageRef
+import com.diffuse.feature.editor.tools.crop.CropState
+import com.diffuse.feature.editor.tools.crop.preset
 import com.diffuse.feature.editor.tools.erase.EraseCommit
 import com.diffuse.feature.editor.tools.erase.EraseMask
 import com.diffuse.feature.editor.tools.select.MaskOps
@@ -76,14 +78,18 @@ class PlanRunner(
      * @param preview what the canvas is showing; the session and the eraser both work on it.
      * @param activeMask the document's applied mask, already resolved by the caller. A `Select`
      * step replaces it for the steps that follow.
+     * @param sourceAspect width ÷ height of the **un-cropped** source, which is what a `Crop`
+     * step's rect is normalised against (specs/crop.md). The preview cannot supply it: once the
+     * document carries a crop, the preview is the cropped shape.
      */
     fun run(
         plan: EditPlan,
         document: EditDocument,
         preview: Bitmap,
         activeMask: Bitmap?,
+        sourceAspect: Float,
     ): Flow<RunEvent> = flow {
-        val run = Run(preview, activeMask)
+        val run = Run(preview, activeMask, sourceAspect)
         var current = document
         var stopped = false
         try {
@@ -109,7 +115,11 @@ class PlanRunner(
     }.flowOn(dispatchers.io)
 
     /** One run's mutable parts: the session it opened and the mask the steps share. */
-    private inner class Run(private val preview: Bitmap, private var mask: Bitmap?) {
+    private inner class Run(
+        private val preview: Bitmap,
+        private var mask: Bitmap?,
+        private val sourceAspect: Float,
+    ) {
 
         private var session: SegSession? = null
 
@@ -131,6 +141,7 @@ class PlanRunner(
                 )
                 PlanStep.Erase -> eraseSelection(document)
                 PlanStep.CutOut -> cutOut(document)
+                is PlanStep.Crop -> Result.Success(crop(step, document))
             }
 
         /** §9.2: the session is opened once, on the current preview, and closed with the run. */
@@ -204,6 +215,13 @@ class PlanRunner(
             }
         }
 
+        /**
+         * §4.1: the largest centred rect at the requested ratio, through the **same**
+         * `CropGeometry.applyPreset` a tap on the chip takes. No geometry is written here.
+         */
+        private fun crop(step: PlanStep.Crop, document: EditDocument): EditDocument =
+            CropState.from(document, sourceAspect).withPreset(step.ratio.preset).applyTo(document)
+
         private fun cutOut(document: EditDocument): Result<EditDocument> {
             val maskId = document.activeMaskId
             return if (maskId == null) missing() else Result.Success(document.withCutOut(maskId))
@@ -227,10 +245,13 @@ class PlanRunner(
     }
 }
 
-/** §9.1: `Select` produces a selection; these three consume one. */
+/**
+ * §9.1: `Select` produces a selection; these three consume one. `Crop` consumes none — §4.1 needed
+ * no new rule here, which is the signal the step carries only a ratio.
+ */
 private val PlanStep.consumesSelection: Boolean
     get() = when (this) {
-        is PlanStep.Select -> false
+        is PlanStep.Select, is PlanStep.Crop -> false
         is PlanStep.Adjust -> masked
         PlanStep.Erase, PlanStep.CutOut -> true
     }

@@ -2,6 +2,7 @@ package com.diffuse.feature.editor.tools.direct
 
 import android.graphics.Bitmap
 import app.cash.turbine.test
+import com.diffuse.core.ai.CropRatio
 import com.diffuse.core.ai.EditPlan
 import com.diffuse.core.ai.FakeEraseProvider
 import com.diffuse.core.ai.FakeSegmentationProvider
@@ -136,7 +137,7 @@ class PlanRunnerTest {
             ),
         )
 
-        runner.run(plan, document(), preview(), activeMask = null).test {
+        runner.run(plan, document(), preview(), activeMask = null, sourceAspect = SOURCE_ASPECT).test {
             assertEquals(RunEvent.Started(0), awaitItem())
             val first = awaitItem() as RunEvent.Committed
             assertEquals(1, first.document.operations.size)
@@ -210,7 +211,7 @@ class PlanRunnerTest {
     fun `an erase with no Select in the plan has no hint to give`() = runTest {
         val plan = EditPlan(listOf(PlanStep.Erase))
 
-        runner.run(plan, documentWithMask(), preview(), activeMask = fullMask()).toList()
+        runner.run(plan, documentWithMask(), preview(), activeMask = fullMask(), sourceAspect = SOURCE_ASPECT).toList()
 
         assertNull(eraser.lastHint)
     }
@@ -239,7 +240,9 @@ class PlanRunnerTest {
         val plan = EditPlan(listOf(PlanStep.Erase))
         val document = documentWithMask()
 
-        val events = runner.run(plan, document, preview(), activeMask = fullMask()).toList()
+        val events = runner
+            .run(plan, document, preview(), fullMask(), SOURCE_ASPECT)
+            .toList()
 
         val committed = events.filterIsInstance<RunEvent.Committed>().single()
         // T50: the erase stores the margin mask it ran through, and leaves the user's selection
@@ -256,7 +259,7 @@ class PlanRunnerTest {
             listOf(PlanStep.Select("없음"), PlanStep.Adjust(AdjustKind.Saturation, 0.3f, true)),
         )
 
-        val events = runner.run(plan, document(), preview(), activeMask = null).toList()
+        val events = runner.run(plan, document(), preview(), activeMask = null, sourceAspect = SOURCE_ASPECT).toList()
 
         assertEquals(
             listOf(
@@ -278,7 +281,7 @@ class PlanRunnerTest {
         )
         failMaskWrite = true
 
-        val events = runner.run(plan, document(), preview(), activeMask = null).toList()
+        val events = runner.run(plan, document(), preview(), activeMask = null, sourceAspect = SOURCE_ASPECT).toList()
 
         val committed = events.filterIsInstance<RunEvent.Committed>().single()
         assertEquals(0, committed.index)
@@ -297,7 +300,7 @@ class PlanRunnerTest {
         )
         eraser.failNext(AppError.Invalid("blocked:SAFETY"))
 
-        val events = runner.run(plan, document(), preview(), activeMask = null).toList()
+        val events = runner.run(plan, document(), preview(), activeMask = null, sourceAspect = SOURCE_ASPECT).toList()
 
         assertEquals(RunEvent.Stopped(1, AppError.Invalid("blocked:SAFETY")), events.last())
         assertEquals(1, events.filterIsInstance<RunEvent.Committed>().size)
@@ -313,7 +316,7 @@ class PlanRunnerTest {
         )
 
         val events = mutableListOf<RunEvent>()
-        runner.run(plan, document(), preview(), activeMask = null).test {
+        runner.run(plan, document(), preview(), activeMask = null, sourceAspect = SOURCE_ASPECT).test {
             events += awaitItem()
             events += awaitItem()
             events += awaitItem()
@@ -330,7 +333,7 @@ class PlanRunnerTest {
     fun `one session is opened for the whole run and closed when it ends`() = runTest {
         val plan = EditPlan(listOf(PlanStep.Select("나무"), PlanStep.Select("하늘")))
 
-        runner.run(plan, document(), preview(), activeMask = null).toList()
+        runner.run(plan, document(), preview(), activeMask = null, sourceAspect = SOURCE_ASPECT).toList()
 
         assertEquals(1, segmentation.openCount)
         assertEquals(emptyList<Any>(), segmentation.openSessions)
@@ -340,7 +343,55 @@ class PlanRunnerTest {
     fun `a plan with no Select opens no session at all`() = runTest {
         val plan = EditPlan(listOf(PlanStep.Adjust(AdjustKind.Exposure, 0.5f, masked = false)))
 
-        runner.run(plan, document(), preview(), activeMask = null).toList()
+        runner.run(plan, document(), preview(), activeMask = null, sourceAspect = SOURCE_ASPECT).toList()
+
+        assertEquals(0, segmentation.openCount)
+    }
+
+    // ---- §4.1 crop_ratio (T58) -------------------------------------------
+
+    @Test
+    fun `a Crop step needs no selection`() {
+        val step = PlanStep.Crop(CropRatio.Square)
+
+        assertNull(runner.validate(EditPlan(listOf(step)), document()))
+    }
+
+    @Test
+    fun `a Crop step commits a centred rect at the requested ratio`() = runTest {
+        val plan = EditPlan(listOf(PlanStep.Crop(CropRatio.Square)))
+
+        val crop = lastDocument(plan).operations.filterIsInstance<Operation.Crop>().single()
+
+        // A 2:1 source cropped to 1:1 keeps its full height and half its width, centred.
+        assertEquals(0f, crop.angleDeg, 0f)
+        assertEquals(0.25f, crop.rect.left, TOLERANCE)
+        assertEquals(0.75f, crop.rect.right, TOLERANCE)
+        assertEquals(0f, crop.rect.top, TOLERANCE)
+        assertEquals(1f, crop.rect.bottom, TOLERANCE)
+    }
+
+    @Test
+    fun `the crop lands last, after the steps before it`() = runTest {
+        val plan = EditPlan(
+            listOf(
+                PlanStep.Adjust(AdjustKind.Exposure, 0.5f, masked = false),
+                PlanStep.Crop(CropRatio.Story9x16),
+            ),
+        )
+
+        val ops = lastDocument(plan).operations
+
+        assertTrue("the adjust must survive the crop", ops.any { it is Operation.Adjust })
+        assertTrue("the crop is the last op", ops.last() is Operation.Crop)
+    }
+
+    @Test
+    fun `a Crop step opens no segmentation session`() = runTest {
+        val plan = EditPlan(listOf(PlanStep.Crop(CropRatio.Portrait4x5)))
+
+        runner.run(plan, document(), preview(), activeMask = null, sourceAspect = SOURCE_ASPECT)
+            .toList()
 
         assertEquals(0, segmentation.openCount)
     }
@@ -348,7 +399,7 @@ class PlanRunnerTest {
     // ---- fixtures ---------------------------------------------------------
 
     private suspend fun lastDocument(plan: EditPlan): EditDocument =
-        runner.run(plan, document(), preview(), activeMask = null)
+        runner.run(plan, document(), preview(), activeMask = null, sourceAspect = SOURCE_ASPECT)
             .toList()
             .filterIsInstance<RunEvent.Committed>()
             .last()
@@ -388,6 +439,10 @@ class PlanRunnerTest {
         }
 
     private companion object {
+        /** A 2:1 source, so a centred 1:1 crop is an easy number to assert. */
+        const val SOURCE_ASPECT = 2f
+        const val TOLERANCE = 0.001f
+
         const val SIZE = 32
         const val OPAQUE = 255
         const val ALPHA_SHIFT = 24

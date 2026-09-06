@@ -22,7 +22,25 @@ sealed interface PlanStep {
     data object Erase : PlanStep
 
     data object CutOut : PlanStep
+
+    /**
+     * specs/vibe_edit.md §4.1. The model picks a **ratio**, never a rectangle: the rect is
+     * computed from the preset the 자르기 chips already use, and the 자르기 tool opens straight
+     * afterwards so the user chooses the framing.
+     */
+    data class Crop(val ratio: CropRatio) : PlanStep
 }
+
+/**
+ * §4.1's closed set — the four preset chips specs/crop.md ships, minus 자유. A model choosing
+ * "free" would be choosing nothing, so it is not on the wire.
+ *
+ * It lives here rather than in `feature:editor` for the reason `PlanStep.Adjust` carries
+ * `AdjustKind` (specs/ai_provider.md §2): a plan model that cannot say what it means pushes one
+ * validation into two modules. It maps to the tool's `AspectPreset` at the feature boundary;
+ * `core:ai` never reaches for crop geometry.
+ */
+enum class CropRatio { Square, Portrait4x5, Story9x16, Landscape16x9 }
 
 /** [steps] in execution order. Empty means the model declined to act — not a failure. */
 data class EditPlan(val steps: List<PlanStep>)

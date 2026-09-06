@@ -18,6 +18,8 @@ import com.diffuse.core.imaging.model.AdjustKind
 import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.core.imaging.render.Renderer
 import com.diffuse.feature.editor.tools.crop.CropState
+import com.diffuse.core.ai.CropRatio
+import com.diffuse.feature.editor.tools.crop.preset
 import com.diffuse.feature.editor.tools.direct.DirectCanvas
 import com.diffuse.feature.editor.tools.direct.DirectController
 import com.diffuse.feature.editor.tools.direct.DirectHost
@@ -125,7 +127,7 @@ class EditorViewModel @Inject constructor(
                 return if (document == null || preview == null) {
                     null
                 } else {
-                    DirectCanvas(document, preview, state.activeMask)
+                    DirectCanvas(document, preview, state.activeMask, sourceAspect(state))
                 }
             }
 
@@ -135,9 +137,22 @@ class EditorViewModel @Inject constructor(
 
             override suspend fun releaseSession() = selection.release()
 
-            override fun onFinished() {
+            /**
+             * specs/vibe_edit.md §4.1: a plan that ended with a crop hands off to the 자르기
+             * tool, which opens on the rect that was just committed. The model chose the ratio;
+             * the user chooses the framing.
+             */
+            override fun onFinished(cropRatio: CropRatio?) {
                 sheetBaseline = null
                 _uiState.value = _uiState.value.copy(selectedTool = null)
+                if (cropRatio != null) {
+                    onToolClick(Tool.Crop)
+                    // The rect is already at this ratio; selecting the chip keeps it there while
+                    // the user drags, which is the whole point of having chosen a ratio.
+                    _uiState.value = _uiState.value.copy(
+                        cropState = _uiState.value.cropState.withPreset(cropRatio.preset),
+                    )
+                }
             }
         },
     )
@@ -228,14 +243,7 @@ class EditorViewModel @Inject constructor(
             }
             else -> {
                 sheetBaseline = state.document
-                // T23: the crop geometry is normalised, so it needs the source's pixel aspect
-                // to hold a preset. The bare-source preview has the source's shape.
-                val source = state.source
-                val aspect = if (source == null || source.height <= 0) {
-                    1f
-                } else {
-                    source.width.toFloat() / source.height
-                }
+                val aspect = sourceAspect(state)
                 val document = state.document
                 _uiState.value = state.copy(
                     selectedTool = tool,
@@ -381,5 +389,22 @@ class EditorViewModel @Inject constructor(
     companion object {
         const val PROJECT_ID = "projectId"
         const val PREVIEW_LONG_EDGE_PX = 1080
+    }
+}
+
+/**
+ * T23: the crop geometry is normalised, so it needs the source's pixel aspect to hold a preset.
+ * The bare-source preview has the source's shape. specs/vibe_edit.md §4.1's crop step needs the
+ * same number, which is why this is shared rather than computed twice.
+ *
+ * File-level rather than a member: `EditorViewModel` is at detekt's function ceiling, and this
+ * reads only its argument.
+ */
+private fun sourceAspect(state: EditorUiState): Float {
+    val source = state.source
+    return if (source == null || source.height <= 0) {
+        1f
+    } else {
+        source.width.toFloat() / source.height
     }
 }

@@ -8,6 +8,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.diffuse.core.ai.Availability
+import com.diffuse.core.ai.CropRatio
 import com.diffuse.core.ai.EditPlan
 import com.diffuse.core.ai.PlanStep
 import com.diffuse.core.ai.speech.FakeSpeechInput
@@ -97,6 +98,24 @@ class DirectSheetTest {
 
         compose.onNodeWithText("1. bus 선택").assertExists()
         compose.onNodeWithText("2. 선택 영역 지우기").assertExists()
+    }
+
+    /** specs/vibe_edit.md §4.1: the ratio reads in the 자르기 sheet's own chip characters. */
+    @Test
+    fun `a crop step names the ratio the 자르기 chips use`() {
+        show(
+            DirectState(
+                plan = EditPlan(
+                    listOf(
+                        PlanStep.Select("bus"),
+                        PlanStep.Crop(CropRatio.Story9x16),
+                    ),
+                ),
+            ),
+        )
+
+        compose.onNodeWithText("1. bus 선택").assertExists()
+        compose.onNodeWithText("2. 9:16 비율로 자르기").assertExists()
     }
 
     @Test
