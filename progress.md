@@ -1,7 +1,7 @@
 ## Current
 
-_Idle._ T70 is committed. The Phase 14 queue still holds T73, T74 and T75; T57, T66 and T72 stay
-`[!]`.
+_Idle._ **The queue is exhausted for the loop.** T70 and T77 are committed; every remaining `[ ]`
+task depends on a `[!]` one.
 
 ## Done
 
@@ -58,8 +58,13 @@ _Idle._ T70 is committed. The Phase 14 queue still holds T73, T74 and T75; T57, 
 
 ## Next
 
-T70 (채우기 under the adjust stack, `deps: —`), then T73, T74 and T75. T72 blocks T73 and T75 in
-practice — the style catalog is what their tiles show — so read its `blocked:` line first.
+**Nothing the loop can pick up.** T73, T74 and T75 all declare `deps: T72`, and T72 is `[!]` on a
+human's answer: `styles.json` comes from `Dujjoncam/PhotoTune_v1`, a private repo with no LICENSE
+file, and it is the *whole* input to the task. Its open decision 2 — twelve styles or only the ones
+that survive T71 intact — changes the enum T74 declares, so it cannot be guessed either. T57 and T66
+stay `[!]` for the reasons in `blocked.md`.
+
+Unblocking T72 unblocks the rest of Phase 14 in one move.
 
 ## Decisions
 
