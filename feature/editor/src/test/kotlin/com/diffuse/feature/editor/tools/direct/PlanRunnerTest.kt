@@ -5,6 +5,7 @@ import app.cash.turbine.test
 import com.diffuse.core.ai.CropRatio
 import com.diffuse.core.ai.EditPlan
 import com.diffuse.core.ai.FakeEraseProvider
+import com.diffuse.core.ai.FakeFillProvider
 import com.diffuse.core.ai.FakeSegmentationProvider
 import com.diffuse.core.ai.PlanStep
 import com.diffuse.core.common.AppError
@@ -38,6 +39,8 @@ class PlanRunnerTest {
     private val eraser = FakeEraseProvider()
     private val savedMasks = mutableListOf<String>()
     private val savedErases = mutableListOf<String>()
+    private val filler = FakeFillProvider()
+    private val savedFills = mutableListOf<String>()
     private var failMaskWrite = false
 
     private val dispatchers = object : DispatcherProvider {
@@ -48,6 +51,7 @@ class PlanRunnerTest {
     private val runner = PlanRunner(
         segmentation = segmentation,
         erase = eraser,
+        fill = filler,
         dispatchers = dispatchers,
         saveMask = { maskId, _ ->
             if (failMaskWrite) {
@@ -56,6 +60,10 @@ class PlanRunnerTest {
                 savedMasks += maskId
                 Result.Success(ImageRef("/p/mask_$maskId.png"))
             }
+        },
+        saveFillResult = { fillId, _ ->
+            savedFills += fillId
+            Result.Success(ImageRef("/p/fill_$fillId.png"))
         },
         eraseCommit = EraseCommit(
             saveMask = { maskId, _ -> Result.Success(ImageRef("/p/mask_$maskId.png")) },
@@ -195,6 +203,74 @@ class PlanRunnerTest {
         assertEquals(2, document.operations.filterIsInstance<Operation.Mask>().size)
         assertEquals(1, eraser.eraseCount)
         assertEquals(savedErases, document.generativeErases().map { it.id })
+    }
+
+    // ---- T62, specs/generative_fill.md §8 --------------------------------
+
+    @Test
+    fun `a fill with no selection is rejected before the plan is shown`() {
+        assertEquals(
+            PlanStep.Fill("a red umbrella"),
+            runner.validate(EditPlan(listOf(PlanStep.Fill("a red umbrella"))), document()),
+        )
+    }
+
+    @Test
+    fun `an earlier Select satisfies a fill, with no new validation rule`() {
+        val plan = EditPlan(listOf(PlanStep.Select("chair"), PlanStep.Fill("a red umbrella")))
+
+        assertNull(runner.validate(plan, document()))
+    }
+
+    @Test
+    fun `a fill runs against the selection the plan made and stores the prompt`() = runTest {
+        val plan = EditPlan(listOf(PlanStep.Select("chair"), PlanStep.Fill("a red umbrella")))
+
+        val document = lastDocument(plan)
+
+        val fill = document.generativeFills().single()
+        // Unlike the erase, the fill names the selection itself: no margin, so no second mask.
+        assertEquals(document.activeMaskId, fill.maskId)
+        assertEquals(1, document.operations.filterIsInstance<Operation.Mask>().size)
+        assertEquals("a red umbrella", fill.prompt)
+        assertEquals("a red umbrella", filler.lastPrompt)
+        assertEquals(savedFills, listOf(fill.id))
+        assertEquals(ImageRef("/p/fill_${fill.id}.png"), fill.resultRef)
+    }
+
+    @Test
+    fun `a fill with no Select uses the mask the document already had`() = runTest {
+        val plan = EditPlan(listOf(PlanStep.Fill("a wooden bench")))
+
+        val events = runner.run(
+            plan,
+            documentWithMask(),
+            preview(),
+            activeMask = fullMask(),
+            sourceAspect = SOURCE_ASPECT,
+        ).toList()
+
+        val document = events.filterIsInstance<RunEvent.Committed>().last().document
+        assertEquals(document.activeMaskId, document.generativeFills().single().maskId)
+        assertEquals(1, filler.fillCount)
+    }
+
+    @Test
+    fun `a failing fill stops the run and commits nothing for that step`() = runTest {
+        filler.failNext(AppError.Unavailable)
+        val plan = EditPlan(listOf(PlanStep.Select("chair"), PlanStep.Fill("a red umbrella")))
+
+        val events = runner.run(
+            plan,
+            document(),
+            preview(),
+            activeMask = null,
+            sourceAspect = SOURCE_ASPECT,
+        ).toList()
+
+        assertEquals(1, events.filterIsInstance<RunEvent.Committed>().size)
+        assertEquals(AppError.Unavailable, events.filterIsInstance<RunEvent.Stopped>().single().error)
+        assertEquals(emptyList<String>(), savedFills)
     }
 
     /** specs/vibe_edit.md §9.2 + T51: the eraser is told what was removed. */

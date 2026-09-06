@@ -126,8 +126,12 @@ class EditorViewModel @Inject constructor(
         runner = PlanRunner(
             segmentation = ai.segmentation,
             erase = ai.erase,
+            fill = ai.fill,
             dispatchers = dispatchers,
             saveMask = { maskId, mask -> repository.saveMask(projectId, maskId, mask) },
+            saveFillResult = { fillId, result ->
+                repository.saveFillResult(projectId, fillId, result)
+            },
             eraseCommit = eraseCommit,
         ),
         scope = viewModelScope,

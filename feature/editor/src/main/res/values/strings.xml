@@ -54,6 +54,7 @@
     <string name="direct_step_adjust_masked">선택 영역 %1$s %2$d</string>
     <string name="direct_step_erase">선택 영역 지우기</string>
     <string name="direct_step_cutout">배경 지우기</string>
+    <string name="direct_step_fill">선택 영역에 %1$s 채우기</string>
     <string name="direct_step_crop">%1$s 비율로 자르기</string>
 
     <!-- specs/selection_tool.md -->

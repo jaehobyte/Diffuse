@@ -242,7 +242,7 @@ design drifted — block it rather than adding one.
   feature/editor/EditorRoute.kt, feature/editor strings.xml, feature/editor tests,
   feature/editor screenshot goldens
 
-- [ ] T62 `fill_selection` — the planner's seventh function
+- [x] T62 `fill_selection` — the planner's seventh function
   spec: specs/generative_fill.md §8, §9; specs/vibe_edit.md §4, §5, §9.1, §9.2, §11
   deps: T58, T60, T61
   note: T58 is a dep only because both tasks add to the same catalog and this one's test asserts

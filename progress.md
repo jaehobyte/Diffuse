@@ -2,15 +2,20 @@
 
 ## Current
 
-**T61 is done and `check` is green.** 채우기 is a tool with a sheet: a prompt bar for the noun,
-적용 disabled until there is one, and `Operation.GenerativeFill` naming the user's own selection.
-The mask is not dilated — that margin is the eraser's, and here it would overshoot the region the
-user drew.
+**T62 is done and `check` is green.** The planner has seven functions; `fill_selection(prompt)`
+decodes to one `PlanStep.Fill` and runs through the same provider and the same undilated selection
+the 채우기 tool uses, so a plan and a tap produce the same document. `validate` gained no clause.
 
-**Next: T62** `fill_selection`, the planner's seventh function. T63–T65 follow (확대); T57 and T66
-stay `[!]`.
+**Next: T63** `Operation.Outpaint` — read outpaint.md §2–§3 before writing a line. T64, T65 follow;
+T57 and T66 stay `[!]`.
 
 ## Done
+
+- T62 `fill_selection` — the planner's seventh function. `PlanStep.Fill(prompt)` beside `Erase`,
+  declared between `cut_out_selection` and `crop_ratio`, and one instruction rule: fill replaces,
+  erase removes. A blank or absent `prompt` drops the step and the rest survive. `PlanRunner` gained
+  the provider and a `saveFillResult` lambda and **no validation clause** — `Fill` consumes a
+  selection, which §9.1 already covers. 10 tests.
 
 - T61 채우기 — `Tool.Fill` after `Tool.Erase`, `FillController` (tap intent, run, commit, cancel)
   and `FillSheet` = `EditSheet` + `VoicePromptBar` with 적용 as the sheet's one accent. The op

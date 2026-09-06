@@ -8,6 +8,23 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T62
+
+- **The instruction's new rule is written in English function names, not in 채우기/지우기.**
+  generative_fill.md §8 phrases it with the Korean verbs, and the model does see Korean requests,
+  so the Korean is kept where it belongs — inside the example request and a parenthetical of
+  request-shaped Korean ("...으로 바꿔줘"). The rule itself names the two functions, which is what
+  the model has to choose between.
+
+- **`PlanRunner` took a `@Suppress("LongParameterList")` at seven parameters.** That is vibe_edit.md
+  §9's own signature — three providers, a dispatcher, and one writer per thing a step can produce.
+  Grouping the writers into a holder would have hidden which step writes what, which is the only
+  reason this class takes lambdas instead of `ProjectRepository`.
+
+- **A plan's fill uses the selection undilated, exactly as the tool does (T61).** The `Fill` row
+  therefore adds one operation where `Erase` adds two, and `activeMaskId` is what the op names —
+  a plan and a tap produce the same document, which is the property T53 exists to check.
+
 ### T61
 
 - **`saveFillResult` was added to `ProjectRepository`, outside T61's `touches`.** generative_fill.md

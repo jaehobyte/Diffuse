@@ -118,6 +118,24 @@ class DirectSheetTest {
         compose.onNodeWithText("2. 9:16 비율로 자르기").assertExists()
     }
 
+    /** specs/generative_fill.md §8, §11: the prompt is English and the template is Korean. */
+    @Test
+    fun `a fill step names what will be put there`() {
+        show(
+            DirectState(
+                plan = EditPlan(
+                    listOf(
+                        PlanStep.Select("chair"),
+                        PlanStep.Fill("a red umbrella"),
+                    ),
+                ),
+            ),
+        )
+
+        compose.onNodeWithText("1. chair 선택").assertExists()
+        compose.onNodeWithText("2. 선택 영역에 a red umbrella 채우기").assertExists()
+    }
+
     @Test
     fun `적용 is disabled until a plan arrives`() {
         show(DirectState())

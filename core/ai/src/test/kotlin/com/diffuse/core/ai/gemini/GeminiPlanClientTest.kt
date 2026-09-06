@@ -103,7 +103,7 @@ class GeminiPlanClientTest {
     }
 
     @Test
-    fun `the body declares the four functions and forces a call`() = runTest {
+    fun `the body declares the seven functions and forces a call`() = runTest {
         server.enqueue(calls(SELECT_CALL))
 
         client.plan(JPEG, REQUEST)
@@ -118,6 +118,7 @@ class GeminiPlanClientTest {
                 "adjust_color_range",
                 "erase_selection",
                 "cut_out_selection",
+                "fill_selection",
                 "crop_ratio",
             ),
             declarations.map { it.jsonObject["name"]!!.jsonPrimitive.content },
@@ -294,6 +295,69 @@ class GeminiPlanClientTest {
         val plan = client.plan(JPEG, REQUEST).valueOrFail()
 
         assertEquals(listOf(PlanStep.Select("나무"), PlanStep.Erase, PlanStep.CutOut), plan.steps)
+    }
+
+    // ---- T62, specs/generative_fill.md §8 --------------------------------
+
+    @Test
+    fun `a fill_selection call decodes to one Fill step`() = runTest {
+        server.enqueue(
+            calls(
+                """{"functionCall":{"name":"select_region","args":{"phrase":"chair"}}}""",
+                FILL_CALL,
+            ),
+        )
+
+        assertEquals(
+            listOf(PlanStep.Select("chair"), PlanStep.Fill("a red umbrella")),
+            client.plan(JPEG, "의자를 빨간 우산으로 바꿔줘").valueOrFail().steps,
+        )
+    }
+
+    @Test
+    fun `a blank or absent prompt drops the fill and the rest survive`() = runTest {
+        server.enqueue(
+            calls(
+                """{"functionCall":{"name":"fill_selection","args":{}}}""",
+                """{"functionCall":{"name":"fill_selection","args":{"prompt":"   "}}}""",
+                ADJUST_CALL,
+            ),
+        )
+
+        assertEquals(
+            listOf(PlanStep.Adjust(AdjustKind.Saturation, 0.3f, masked = true)),
+            client.plan(JPEG, REQUEST).valueOrFail().steps,
+        )
+    }
+
+    @Test
+    fun `the fill declaration asks for an English prompt`() = runTest {
+        server.enqueue(calls(SELECT_CALL))
+
+        client.plan(JPEG, REQUEST)
+
+        val body = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject
+        val fill = body["tools"]!!.jsonArray[0].jsonObject["functionDeclarations"]!!
+            .jsonArray.single { it.jsonObject["name"]!!.jsonPrimitive.content == "fill_selection" }
+            .jsonObject
+        val prompt = fill["parameters"]!!.jsonObject["properties"]!!
+            .jsonObject["prompt"]!!.jsonObject["description"]!!.jsonPrimitive.content
+        assertTrue(prompt.contains("Always English"))
+    }
+
+    /** §8: the one rule the instruction gains — the two generative tools are opposites. */
+    @Test
+    fun `the instruction says which of fill and erase to call`() {
+        assertTrue(
+            PLAN_SYSTEM_INSTRUCTION.contains(
+                "fill_selection replaces, erase_selection removes",
+            ),
+        )
+        assertTrue(
+            PLAN_SYSTEM_INSTRUCTION.contains(
+                """fill_selection(prompt="a red umbrella")""",
+            ),
+        )
     }
 
     @Test
@@ -676,6 +740,9 @@ class GeminiPlanClientTest {
     }
 
     private companion object {
+        const val FILL_CALL =
+            """{"functionCall":{"name":"fill_selection","args":{"prompt":"a red umbrella"}}}"""
+
         const val API_KEY = "AIza-test-key"
         const val REQUEST = "나무를 좀 더 푸르게 해줘"
         val JPEG = byteArrayOf(1, 2, 3, 4)

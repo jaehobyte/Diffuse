@@ -3,6 +3,7 @@ package com.diffuse.feature.editor.tools.direct
 import android.graphics.Bitmap
 import com.diffuse.core.ai.EditPlan
 import com.diffuse.core.ai.EraseProvider
+import com.diffuse.core.ai.FillProvider
 import com.diffuse.core.ai.PlanStep
 import com.diffuse.core.ai.SegSession
 import com.diffuse.core.ai.SegmentationProvider
@@ -44,12 +45,20 @@ sealed interface RunEvent {
  * `EditorViewModel`'s `SavedStateHandle`, the shape `EraseController` already uses. And it emits
  * events rather than pushing history, because only `EditorViewModel` holds the `HistoryStack`.
  */
+// The seventh parameter is specs/vibe_edit.md §9's own signature: three providers, a dispatcher
+// and one writer per thing a step can produce. Grouping the writers would hide which step writes
+// what, which is the only reason this class takes lambdas rather than the repository.
+@Suppress("LongParameterList")
 class PlanRunner(
     private val segmentation: SegmentationProvider,
     private val erase: EraseProvider,
+    /** T62: a `Fill` step is the only one that uses it (specs/generative_fill.md §8). */
+    private val fill: FillProvider,
     private val dispatchers: DispatcherProvider,
     /** `repository.saveMask(projectId, …)`, bound by the ViewModel. */
     private val saveMask: suspend (String, Bitmap) -> Result<ImageRef>,
+    /** `repository.saveFillResult(projectId, …)`, likewise. */
+    private val saveFillResult: suspend (String, Bitmap) -> Result<ImageRef>,
     /** The 지우기 tool's commit, shared so both paths erase through the same margin (T50). */
     private val eraseCommit: EraseCommit,
 ) {
@@ -140,6 +149,7 @@ class PlanRunner(
                     ),
                 )
                 PlanStep.Erase -> eraseSelection(document)
+                is PlanStep.Fill -> fillSelection(step.prompt, document)
                 PlanStep.CutOut -> cutOut(document)
                 is PlanStep.Crop -> Result.Success(crop(step, document))
             }
@@ -216,6 +226,40 @@ class PlanRunner(
         }
 
         /**
+         * §9.2: the selection the plan is holding, undilated — 채우기 draws inside the region the
+         * `Select` found, where 지우기 needs a margin around what it removes (T50).
+         */
+        private suspend fun fillSelection(
+            prompt: String,
+            document: EditDocument,
+        ): Result<EditDocument> {
+            val selected = mask
+            val maskId = document.activeMaskId
+            return if (maskId == null || selected == null) {
+                missing()
+            } else {
+                when (val result = fill.fill(preview, selected, prompt)) {
+                    is Result.Failure -> result
+                    is Result.Success -> store(document, maskId, prompt, result.value)
+                }
+            }
+        }
+
+        private suspend fun store(
+            document: EditDocument,
+            maskId: String,
+            prompt: String,
+            result: Bitmap,
+        ): Result<EditDocument> {
+            val fillId = newId()
+            return when (val saved = saveFillResult(fillId, result)) {
+                is Result.Failure -> saved
+                is Result.Success ->
+                    Result.Success(document.withGenerativeFill(maskId, saved.value, prompt, fillId))
+            }
+        }
+
+        /**
          * §4.1: the largest centred rect at the requested ratio, through the **same**
          * `CropGeometry.applyPreset` a tap on the chip takes. No geometry is written here.
          */
@@ -253,5 +297,6 @@ private val PlanStep.consumesSelection: Boolean
     get() = when (this) {
         is PlanStep.Select, is PlanStep.Crop -> false
         is PlanStep.Adjust -> masked
+        is PlanStep.Fill -> true
         PlanStep.Erase, PlanStep.CutOut -> true
     }

@@ -25,6 +25,7 @@ internal const val FN_ADJUST = "adjust"
 internal const val FN_ADJUST_COLOR_RANGE = "adjust_color_range"
 internal const val FN_ERASE_SELECTION = "erase_selection"
 internal const val FN_CUT_OUT_SELECTION = "cut_out_selection"
+internal const val FN_FILL_SELECTION = "fill_selection"
 internal const val FN_CROP_RATIO = "crop_ratio"
 
 internal const val ARG_PHRASE = "phrase"
@@ -33,6 +34,7 @@ internal const val ARG_VALUE = "value"
 internal const val ARG_MASKED = "masked"
 internal const val ARG_COLOR = "color"
 internal const val ARG_RATIO = "ratio"
+internal const val ARG_PROMPT = "prompt"
 
 /**
  * §4's ten `AdjustKind` names in lower snake case. Every one of them is a single word, so this is
@@ -104,6 +106,10 @@ internal const val PLAN_SYSTEM_INSTRUCTION =
         "- To change how one colour looks - \"the reds are too strong\", \"make the sky bluer\" " +
         "- call adjust_color_range. It needs no selection: select_region names a thing in the " +
         "photo, never a colour.\n" +
+        "- fill_selection replaces, erase_selection removes: call fill_selection when the " +
+        "request names what should be there instead (\"...으로 바꿔줘\", \"...를 넣어줘\"), and " +
+        "erase_selection when it only asks for something to be gone. Both need select_region " +
+        "first.\n" +
         "- After erase_selection or cut_out_selection, an adjustment meant for the whole photo " +
         "must pass masked=false, because the selection now names a region that is gone.\n" +
         "- Values are relative strengths, not absolute settings: a slight change is 0.2, a clear " +
@@ -122,6 +128,8 @@ internal const val PLAN_SYSTEM_INSTRUCTION =
         "erase_selection(), adjust(kind=\"contrast\", value=0.2, masked=false), " +
         "adjust(kind=\"saturation\", value=0.2, masked=false)\n" +
         "- \"배경 지워줘\" -> select_region(phrase=\"the main subject\"), cut_out_selection()\n" +
+        "- \"의자를 빨간 우산으로 바꿔줘\" -> select_region(phrase=\"chair\"), " +
+        "fill_selection(prompt=\"a red umbrella\")\n" +
         "- \"하늘을 더 파랗게 해줘\" -> adjust_color_range(color=\"blue\", saturation=0.4)\n" +
         "- \"인스타 스토리에 올리게 잘라줘\" -> crop_ratio(ratio=\"story_9_16\")"
 
@@ -216,6 +224,24 @@ internal val PLAN_FUNCTIONS: List<FunctionDeclaration> = listOf(
         name = FN_CUT_OUT_SELECTION,
         description = "Delete everything outside the current selection, leaving it on a " +
             "transparent background.",
+    ),
+    FunctionDeclaration(
+        name = FN_FILL_SELECTION,
+        description = "Replace whatever the current selection covers with a named thing, drawn " +
+            "to match the scene. Use this when the request says what should be there instead; " +
+            "use erase_selection when the request only says something should go.",
+        parameters = Schema(
+            type = TYPE_OBJECT,
+            properties = mapOf(
+                ARG_PROMPT to Schema(
+                    type = TYPE_STRING,
+                    description = "A short English description of what to put there, such as " +
+                        "\"a red umbrella\" or \"a wooden bench\". Always English, even when " +
+                        "the request is in another language.",
+                ),
+            ),
+            required = listOf(ARG_PROMPT),
+        ),
     ),
     FunctionDeclaration(
         name = FN_CROP_RATIO,

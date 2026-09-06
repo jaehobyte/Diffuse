@@ -134,6 +134,11 @@ internal class GeminiPlanClient(
             FN_ADJUST_COLOR_RANGE -> colorRange(call.args)
             FN_ERASE_SELECTION -> listOf(PlanStep.Erase)
             FN_CUT_OUT_SELECTION -> listOf(PlanStep.CutOut)
+            FN_FILL_SELECTION -> listOfNotNull(
+                call.args.string(ARG_PROMPT)
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let(PlanStep::Fill),
+            )
             FN_CROP_RATIO -> listOfNotNull(
                 call.args.string(ARG_RATIO)?.let(::cropRatioOf)?.let(PlanStep::Crop),
             )

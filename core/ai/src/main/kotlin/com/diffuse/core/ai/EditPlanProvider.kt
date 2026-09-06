@@ -24,6 +24,12 @@ sealed interface PlanStep {
     data object CutOut : PlanStep
 
     /**
+     * specs/generative_fill.md §8. The one step that carries a noun the **model** wrote: it is
+     * English, for the reason every phrase argument is (specs/vibe_edit.md §4).
+     */
+    data class Fill(val prompt: String) : PlanStep
+
+    /**
      * specs/vibe_edit.md §4.1. The model picks a **ratio**, never a rectangle: the rect is
      * computed from the preset the 자르기 chips already use, and the 자르기 tool opens straight
      * afterwards so the user chooses the framing.
