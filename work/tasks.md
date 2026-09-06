@@ -58,7 +58,7 @@ semantics.** A plan is a script for tools that exist. If a task looks like it ne
 `Operation` or a new `AppError` case, that is a signal the design drifted — block it rather than
 adding one. specs/vibe_edit.md is the whole feature.
 
-- [ ] T44 `EditPlanProvider` and the plan model
+- [x] T44 `EditPlanProvider` and the plan model
   spec: specs/vibe_edit.md §7, specs/ai_provider.md §2, §3, §6
   deps: —
   done when:

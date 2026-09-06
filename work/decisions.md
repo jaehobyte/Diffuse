@@ -8,6 +8,21 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T44 — `data object` for the argument-less steps, and `DEFAULT_PLAN` on the companion
+
+specs/vibe_edit.md §7 writes `object Erase` / `object CutOut`; the code uses `data object`, which
+is what `AppError` already does for its argument-less cases and what makes `PlanStep.Erase` print
+as itself in a failed assertion. No behavioural difference.
+
+`FakePlanProvider.DEFAULT_PLAN` is public on the companion rather than private, because the tests
+that assert "the second call fell back to the default" would otherwise have to re-spell the plan
+and drift from it. `planCount` mirrors `FakeEraseProvider.eraseCount`; nothing else was added, so
+`next` and `failNext` each override exactly one call and nothing accumulates between tests.
+
+`core/ai/build.gradle.kts` took `implementation(projects.core.imaging)` and not `api`, as T44 says.
+`AdjustKind` does appear in `EditPlanProvider`'s signature, but `feature:editor` — the only
+consumer — already declares `core:imaging` itself, so nothing needs the edge transitively.
+
 ### T43 — `EraseTap` is returned, not acted on
 
 §9 wants a missing key to open the 서버 설정 sheet, and that sheet is `SelectionController`'s:

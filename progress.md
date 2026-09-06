@@ -2,26 +2,14 @@
 
 ## Current
 
-**Phase 8 is complete; Phase 9 (`지시` tool) is specified and open.**
-
-The eraser calls `gemini-2.5-flash-image` from the device (ADR-011) and the proxy transport is gone.
-`work/tasks.md` now holds T44–T48: one planning call to `gemini-2.5-flash` with the four editing
-functions declared, a preview of the steps it returns, and a runner that executes them against the
-providers the manual tools already use. specs/vibe_edit.md is the whole feature; ADR-012 records why
-it is one shot and not a multi-turn loop.
-
-**Mask-scoped local editing needs no work** — T29–T33 shipped it (selection_tool.md §8.1), and
-Phase 9 consumes it rather than rebuilding it.
-
-What a human still owes, in order:
-
-1. Paste a Gemini API key into the 서버 설정 sheet and point `sam3.baseUrl` / `sam3.token` at a
-   running service. Nothing in v2 or v3 has run against a real model from the app.
-2. Try the tools on a device. `check` is green offline with the fakes, which is exactly why this
-   is still open.
-3. The APK is over the 15MB budget; see "Open issues for a human".
+**T44 done. Next: T45 `GeminiPlanClient`** — the function-calling layer (specs/vibe_edit.md §4–§6).
 
 ## Done
+
+- T44 `EditPlanProvider` — `PlanStep` (`Select` / `Adjust` / `Erase` / `CutOut`), `EditPlan` and
+  the provider interface in `core/ai`; `Adjust` carries `AdjustKind`, which makes
+  `core:ai → core:imaging` a real build edge for the first time (one line, root file untouched).
+  `FakePlanProvider` with ai_provider.md §6's default plan. 4 tests.
 
 - T43 지우기 tells the user which thing is missing — `EraseTap` (Run / OpenSettings / Refused),
   `erase_needs_key` opening the 서버 설정 sheet the way 선택 does, a `blocked:` detail showing
