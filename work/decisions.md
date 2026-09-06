@@ -8,6 +8,28 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T50 — the margin mask is a second `Mask` op, and the selection stays where it was
+
+The margin has to be on the mask the *document* stores, not only on the pixels sent to Gemini: the
+renderer composes `lerp(in, result, maskAlpha)` (generative_erase.md §10), so anything the model
+filled outside the stored mask is restored from the source and the halo survives. So an erase now
+appends `Mask(dilated)` and a `GenerativeErase` that names it — two ops, still one `history.push`,
+so one undo still takes the whole erase back.
+
+`activeMaskId` deliberately does **not** move to the margin mask. What the user selected is what a
+following adjust or cut-out should use; a cut-out especially wants the tight edge, which is the
+opposite of what an inpainting boundary wants. `withMask` moves the active id, so the commit puts
+it back with a `copy` rather than growing `EditDocument`'s API for one caller.
+
+That forced `EraseController.runAndCommit` to take the document instead of a `maskId` plus two save
+lambdas — six parameters, which detekt caps at five. The two saves became `EraseCommit`, which the
+지시 tool's `Erase` step uses too, so "which mask did we erase through" has exactly one answer.
+
+The margin is `max(4px, 1.5% of the short edge)` — about a dozen pixels at preview resolution,
+which is what an antialiased fringe plus a contact shadow actually measures. Dilation is two
+separable passes with a square kernel: O(n·r) instead of a disc's O(n·r²), and at a dozen pixels
+nobody can see the difference between a square and a disc in an inpainting boundary.
+
 ### T49 — one walk over the list, and `Crop` stays the only exception
 
 `applyOperations` filtered the list into `adjustments` / `erases` / `cutOuts` and ran the three

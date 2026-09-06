@@ -2,13 +2,16 @@
 
 ## Current
 
-**T49 done. Next: T50 — the erase mask margin.**
+**T50 done. Next: T51 — the erase instruction and the no-op guard.**
 
-Phase 10's remaining tasks are T50 (dilate, and store the dilated mask so the blend agrees), T51
-(erase instruction + a no-op guard), T52 (English phrases, complete plans) and T53 (the
-combinations, proven).
+Then T52 (English phrases, complete plans) and T53 (the combinations, proven end to end).
 
 ## Done
+
+- T50 The erase runs through the selection **plus a margin** — `MaskOps.dilated` (separable,
+  binary), `EraseMask` owning the one radius, and `EraseCommit` storing the dilated mask beside
+  the result so the renderer composes through the same mask the model was shown. Both erase paths
+  share it; `activeMaskId` stays on the user's own selection. 7 dilation tests + updated tool tests.
 
 - T49 The renderer walks `document.operations` once, in list order, instead of grouping by type.
   A masked adjustment committed after an erase used to be computed and then overwritten by the

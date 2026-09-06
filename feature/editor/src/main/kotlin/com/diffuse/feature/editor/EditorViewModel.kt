@@ -24,6 +24,7 @@ import com.diffuse.feature.editor.tools.direct.DirectHost
 import com.diffuse.feature.editor.tools.direct.DirectState
 import com.diffuse.feature.editor.tools.direct.DirectTap
 import com.diffuse.feature.editor.tools.direct.PlanRunner
+import com.diffuse.feature.editor.tools.erase.EraseCommit
 import com.diffuse.feature.editor.tools.erase.EraseController
 import com.diffuse.feature.editor.tools.erase.EraseState
 import com.diffuse.feature.editor.tools.erase.EraseTap
@@ -92,8 +93,14 @@ class EditorViewModel @Inject constructor(
     /** specs/prompt_input.md §3: handed straight to the prompt bar; the VM never drives it. */
     val speech: SpeechInput = ai.speech
 
-    /** specs/generative_erase.md: runs the model; this class is what commits the result. */
-    val erase = EraseController(ai.erase, viewModelScope)
+    /** specs/generative_erase.md §10, T50: one commit shape for both erase paths. */
+    private val eraseCommit = EraseCommit(
+        saveMask = { maskId, mask -> repository.saveMask(projectId, maskId, mask) },
+        saveResult = { eraseId, result -> repository.saveEraseResult(projectId, eraseId, result) },
+    )
+
+    /** specs/generative_erase.md: runs the model; this class is what pushes the result. */
+    val erase = EraseController(ai.erase, eraseCommit, viewModelScope)
 
     /**
      * specs/vibe_edit.md §3, §9. The tool owns the plan and the run; what it cannot know is
@@ -107,9 +114,7 @@ class EditorViewModel @Inject constructor(
             erase = ai.erase,
             dispatchers = dispatchers,
             saveMask = { maskId, mask -> repository.saveMask(projectId, maskId, mask) },
-            saveEraseResult = { eraseId, result ->
-                repository.saveEraseResult(projectId, eraseId, result)
-            },
+            eraseCommit = eraseCommit,
         ),
         scope = viewModelScope,
         host = object : DirectHost {
@@ -257,14 +262,8 @@ class EditorViewModel @Inject constructor(
             EraseTap.Run -> erase.runAndCommit(
                 image = state.preview?.asAndroidBitmap(),
                 mask = state.activeMask,
-                maskId = state.document?.activeMaskId,
-                save = { eraseId, result -> repository.saveEraseResult(projectId, eraseId, result) },
-                commit = { maskId, ref, eraseId ->
-                    history?.run {
-                        push(current.value.withGenerativeErase(maskId, ref, eraseId))
-                        commitCoalesce()
-                    }
-                },
+                document = state.document,
+                onCommitted = { document -> history?.push(document) },
             )
         }
     }

@@ -13,11 +13,14 @@ import com.diffuse.core.imaging.model.AdjustKind
 import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.core.imaging.model.ImageRef
 import com.diffuse.core.imaging.model.Operation
+import com.diffuse.feature.editor.tools.erase.EraseCommit
+import com.diffuse.feature.editor.tools.select.MaskOps
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -53,10 +56,13 @@ class PlanRunnerTest {
                 Result.Success(ImageRef("/p/mask_$maskId.png"))
             }
         },
-        saveEraseResult = { eraseId, _ ->
-            savedErases += eraseId
-            Result.Success(ImageRef("/p/erase_$eraseId.png"))
-        },
+        eraseCommit = EraseCommit(
+            saveMask = { maskId, _ -> Result.Success(ImageRef("/p/mask_$maskId.png")) },
+            saveResult = { eraseId, _ ->
+                savedErases += eraseId
+                Result.Success(ImageRef("/p/erase_$eraseId.png"))
+            },
+        ),
     )
 
     // ---- §9.1 validation --------------------------------------------------
@@ -179,11 +185,34 @@ class PlanRunnerTest {
 
         val document = lastDocument(plan)
 
-        val maskId = document.activeMaskId
-        assertEquals(maskId, document.generativeErases().single().maskId)
-        assertEquals(maskId, document.cutOuts().single().maskId)
+        // T50: the erase references the margin mask it was actually run through, while the
+        // selection the plan made stays active for the cut-out that follows.
+        val selected = document.activeMaskId
+        val erase = document.generativeErases().single()
+        assertNotEquals(selected, erase.maskId)
+        assertEquals(selected, document.cutOuts().single().maskId)
+        assertEquals(2, document.operations.filterIsInstance<Operation.Mask>().size)
         assertEquals(1, eraser.eraseCount)
         assertEquals(savedErases, document.generativeErases().map { it.id })
+    }
+
+    @Test
+    fun `the mask the eraser was shown is larger than the selection`() = runTest {
+        val plan = EditPlan(listOf(PlanStep.Select("나무"), PlanStep.Erase))
+
+        lastDocument(plan)
+
+        // FakeSegmentationProvider's circles are the selection; what the eraser was handed is
+        // that union grown by EraseMask's margin, so it covers strictly more pixels.
+        val handed = eraser.lastMask!!
+        val selection = MaskOps.union(
+            segmentation.byText(session(), "나무").let { (it as Result.Success).value }
+                .map { mask -> mask.alpha },
+        )!!
+        assertTrue(
+            "the eraser was handed ${setPixels(handed)} px for a ${setPixels(selection)} px selection",
+            setPixels(handed) > setPixels(selection),
+        )
     }
 
     @Test
@@ -194,7 +223,11 @@ class PlanRunnerTest {
         val events = runner.run(plan, document, preview(), activeMask = fullMask()).toList()
 
         val committed = events.filterIsInstance<RunEvent.Committed>().single()
-        assertEquals(document.activeMaskId, committed.document.generativeErases().single().maskId)
+        // T50: the erase stores the margin mask it ran through, and leaves the user's selection
+        // active for whatever comes next.
+        assertEquals(document.activeMaskId, committed.document.activeMaskId)
+        assertNotEquals(document.activeMaskId, committed.document.generativeErases().single().maskId)
+        assertEquals(1, eraser.eraseCount)
         assertEquals(RunEvent.Completed, events.last())
     }
 
@@ -314,6 +347,19 @@ class PlanRunnerTest {
 
     private fun preview(): Bitmap =
         Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888)
+
+    private suspend fun session() =
+        (segmentation.open(preview()) as Result.Success).value
+
+    private fun setPixels(mask: Bitmap): Int {
+        var count = 0
+        for (y in 0 until mask.height) {
+            for (x in 0 until mask.width) {
+                if ((mask.getPixel(x, y) ushr ALPHA_SHIFT) != 0) count++
+            }
+        }
+        return count
+    }
 
     private fun fullMask(): Bitmap =
         Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ALPHA_8).apply {

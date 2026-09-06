@@ -12,6 +12,8 @@ import com.diffuse.core.common.Result
 import com.diffuse.core.common.newId
 import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.core.imaging.model.ImageRef
+import com.diffuse.feature.editor.tools.erase.EraseCommit
+import com.diffuse.feature.editor.tools.erase.EraseMask
 import com.diffuse.feature.editor.tools.select.MaskOps
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
@@ -46,8 +48,8 @@ class PlanRunner(
     private val dispatchers: DispatcherProvider,
     /** `repository.saveMask(projectId, …)`, bound by the ViewModel. */
     private val saveMask: suspend (String, Bitmap) -> Result<ImageRef>,
-    /** `repository.saveEraseResult(projectId, …)`, likewise. */
-    private val saveEraseResult: suspend (String, Bitmap) -> Result<ImageRef>,
+    /** The 지우기 tool's commit, shared so both paths erase through the same margin (T50). */
+    private val eraseCommit: EraseCommit,
 ) {
 
     /**
@@ -184,14 +186,14 @@ class PlanRunner(
         }
 
         private suspend fun eraseSelection(document: EditDocument): Result<EditDocument> {
-            val maskId = document.activeMaskId
             val selected = mask
-            return if (maskId == null || selected == null) {
+            return if (document.activeMaskId == null || selected == null) {
                 missing()
             } else {
-                when (val result = erase.erase(preview, selected, hint = null)) {
+                val dilated = EraseMask.dilated(selected)
+                when (val result = erase.erase(preview, dilated, hint = null)) {
                     is Result.Failure -> result
-                    is Result.Success -> storeErase(maskId, result.value, document)
+                    is Result.Success -> eraseCommit.apply(document, dilated, result.value)
                 }
             }
         }
@@ -199,19 +201,6 @@ class PlanRunner(
         private fun cutOut(document: EditDocument): Result<EditDocument> {
             val maskId = document.activeMaskId
             return if (maskId == null) missing() else Result.Success(document.withCutOut(maskId))
-        }
-
-        private suspend fun storeErase(
-            maskId: String,
-            result: Bitmap,
-            document: EditDocument,
-        ): Result<EditDocument> {
-            val eraseId = newId()
-            return when (val saved = saveEraseResult(eraseId, result)) {
-                is Result.Failure -> saved
-                is Result.Success ->
-                    Result.Success(document.withGenerativeErase(maskId, saved.value, eraseId))
-            }
         }
 
         /**

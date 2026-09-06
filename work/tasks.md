@@ -235,7 +235,7 @@ straight spec-conformance bug; the rest are a mask margin, two prompt rewrites a
       before an `Adjust` keeps the alpha it cut; two erases stack in list order
   touches: core/imaging/render/Renderer.kt, core/imaging tests
 
-- [ ] T50 The erase mask gets a margin
+- [x] T50 The erase mask gets a margin
   spec: specs/generative_erase.md §3, §4, §10; specs/selection_tool.md §4
   deps: —
   report: "세그먼테이션 시에 가장자리가 좀 나는 경우가 있어서 마진을 좀 더 줘야할 것 같아" — the
