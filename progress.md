@@ -142,12 +142,9 @@ Moved to `work/decisions.md`, one entry per task, newest first.
   15 MB when ADR-008 was struck, so this is live again). `isMinifyEnabled = false`, so R8 strips
   nothing. Enabling R8 is the obvious first move.
 
-- **specs/render.md and specs/architecture.md disagree on error style.** render.md throws
-  `RenderException.MissingSource`; §9 mandates `Result` + `AppError`. architecture.md
-  says it wins on conflict, and imaging.md follows it — render.md is left untouched.
-- **`photo_12mp.jpg` is 1.42 MB, not the "~3MB" testing.md §7 states.** It is 4000×3000
-  with EXIF orientation 6 as required; it compresses well because it is upscaled from a
-  768×512 source. Say so if the byte size itself matters to a test.
-- **`fixtures/`, `scripts/check.sh` and `core:common` were authored as Phase 0 human
-  deliverables**, matching tasks.md's "done by a human before the loop starts"; all sit
-  outside the `touches` lists of the tasks that specify them.
+- **specs/render.md and architecture.md disagree on error style**: render.md throws, §9 mandates
+  `Result` + `AppError`. architecture.md wins on conflict, so render.md is simply stale.
+- **`photo_12mp.jpg` is 1.42 MB, not the "~3MB" testing.md §7 states** — 4000×3000 with EXIF
+  orientation 6 as required, but upscaled from 768×512, so it compresses well.
+- **`fixtures/`, `scripts/check.sh` and `core:common` are Phase 0 human deliverables**, so they
+  sit outside the `touches` lists of the tasks that specify them.
