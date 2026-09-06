@@ -8,6 +8,19 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T46 — `GeminiImageCodec` was reused without a change, as §8 asked
+
+The task said a codec change would be a signal to block. None was needed: `downscale` takes a
+bitmap and `encode` takes a bitmap, and only `downscaleMask` / `WhiteFill` are mask-specific, so
+the planner calls the two it needs and touches neither. The provider mirrors `GeminiEraseProvider`
+line for line — same `stateIn` on `settings.config`, same `availabilityFor`, same
+`withContext(io)` + `ensureActive()` order — because a second shape here would be a second thing
+to reason about, not a simplification.
+
+`AiModule` gained a `@Provides` for `GeminiPlanClient` beside the other two, for the reason the
+existing comment gives: the client is `internal`, so no feature can reach past the provider to
+the wire.
+
 ### T45 — the §6 table moved into `GeminiHttp.kt` rather than being copied
 
 vibe_edit.md §6 says the planner maps errors "identical to generative_erase.md §6, row for row".

@@ -3,6 +3,8 @@ package com.diffuse.core.ai
 import com.diffuse.core.ai.gemini.GeminiConfigSource
 import com.diffuse.core.ai.gemini.GeminiEraseClient
 import com.diffuse.core.ai.gemini.GeminiEraseProvider
+import com.diffuse.core.ai.gemini.GeminiPlanClient
+import com.diffuse.core.ai.gemini.GeminiPlanProvider
 import com.diffuse.core.ai.gemini.GeminiSettings
 import com.diffuse.core.ai.sam3.Sam3Client
 import com.diffuse.core.ai.sam3.Sam3ConfigSource
@@ -39,6 +41,9 @@ internal abstract class AiModule {
     @Binds
     abstract fun erase(impl: GeminiEraseProvider): EraseProvider
 
+    @Binds
+    abstract fun plan(impl: GeminiPlanProvider): EditPlanProvider
+
     companion object {
         @Provides
         @Singleton
@@ -67,5 +72,15 @@ internal abstract class AiModule {
             okHttp: OkHttpClient,
             logger: com.diffuse.core.common.Logger,
         ): GeminiEraseClient = GeminiEraseClient(config, dispatchers, okHttp, logger)
+
+        /** Provided for the same reason the other two clients are. */
+        @Provides
+        @Singleton
+        fun geminiPlanClient(
+            config: GeminiConfigSource,
+            dispatchers: DispatcherProvider,
+            okHttp: OkHttpClient,
+            logger: com.diffuse.core.common.Logger,
+        ): GeminiPlanClient = GeminiPlanClient(config, dispatchers, okHttp, logger)
     }
 }

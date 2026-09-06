@@ -106,7 +106,7 @@ adding one. specs/vibe_edit.md is the whole feature.
       them being skipped, an unknown name dropped while the rest survive, and cancellation mid-flight
   touches: core/ai/gemini
 
-- [ ] T46 `GeminiPlanProvider`
+- [x] T46 `GeminiPlanProvider`
   spec: specs/vibe_edit.md §8, specs/ai_provider.md §7
   deps: T45
   done when:

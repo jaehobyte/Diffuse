@@ -2,10 +2,14 @@
 
 ## Current
 
-**T45 done. Next: T46 `GeminiPlanProvider`** — §8's four steps, availability off the key, the
-`AiModule` binding.
+**T46 done. Next: T47 `PlanRunner`** — validation, step execution, and the partial-run guarantee
+(vibe_edit.md §9).
 
 ## Done
+
+- T46 `GeminiPlanProvider` — blank request refused before any encoding, `GeminiImageCodec` reused
+  unchanged (no mask), `ensureActive()` before the call, probe-free availability off the key, and
+  the `EditPlanProvider` binding in `AiModule`. 8 tests.
 
 - T45 `GeminiPlanClient` — `POST …/gemini-2.5-flash:generateContent` (the text model), the four
   §4 declarations plus the system instruction as English `internal` constants, `toolConfig.mode
