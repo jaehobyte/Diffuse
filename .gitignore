@@ -9,3 +9,7 @@ captures/
 .cxx
 *.hprof
 .env
+
+# dist/README.md: from v0.2.0 on, APKs are attached to their release rather than
+# committed. diffuse-0.1.0-debug.apk predates that and stays tracked.
+dist/*.apk
