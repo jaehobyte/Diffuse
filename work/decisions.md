@@ -20,6 +20,29 @@ Nothing in `work/tasks.md` is left. What a human still owes:
 
 ## Decisions
 
+### T40 — one `Part` shape for both directions, and `explicitNulls = false`
+
+A request part carries `inlineData` **or** `text`; a response part carries the same two. Two
+classes would have identical fields, so there is one `Part` with both nullable. That only works
+because the `Json` sets `explicitNulls = false`: otherwise the request body would carry
+`"text": null` alongside the image, which the API rejects as an empty part. A test asserts the
+unused field is absent rather than null, because nothing else would catch that setting being lost.
+
+### T40 — `GeminiConfigSource` rather than injecting `GeminiSettings` into the client
+
+`GeminiSettings` hard-codes `DEFAULT_BASE_URL`, which is the point (§8: no user-editable host).
+The test still has to reach `MockWebServer`, so the client takes a `fun interface
+GeminiConfigSource` and the test hands it `{ GeminiConfig(key, server.url) }`. Exactly the seam
+`Sam3ConfigSource` already is, for exactly the same reason.
+
+### T40 — the client rejects a blank key before the wire, though availability already does
+
+§7 makes `availability` blank-key-aware, so in the app this branch is unreachable. It is here
+anyway because `Sam3Client` has the same guard for the base URL, and because a client that
+silently sends `x-goog-api-key: ` would fail as a 401 — an error that reads like a *wrong* key
+rather than a missing one.
+
+
 ### T39 — the Gemini key rides in `SelectionController`, and two tests took a constructor arg
 
 `work/tasks.md` lists T39's `touches` as `core/ai/gemini`, `Sam3SettingsSheet.kt`,

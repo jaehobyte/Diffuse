@@ -2,13 +2,14 @@
 
 ## Current
 
-**T39 — `GeminiSettings` and the key field.**
-1. `core/ai/gemini`: `GeminiConfig(apiKey, baseUrl = DEFAULT_BASE_URL)` + `GeminiSettings` over
-   `SharedPreferences` file `gemini_settings`, key `api_key`, default `""` → verify: round-trip test.
-2. No `BuildConfig` field, no `local.properties` read, `baseUrl` a constant with a ctor seam only.
-3. `Sam3SettingsSheet` gains a masked `Gemini API 키` field; `onSave` carries three values.
-4. Wire it: `EditorAi` → `SelectionController` (it already owns the sheet) → `EditorRoute`.
-5. Verify: `scripts/check.sh` green.
+**T40 — `GeminiEraseClient`, the HTTP layer.**
+1. `GeminiDto.kt`: camelCase request/response shapes, `explicitNulls = false` so a null part is
+   simply absent → verify: the body-shape test.
+2. `GeminiEraseClient`: POST `{baseUrl}/v1beta/models/gemini-2.5-flash-image:generateContent`,
+   key in `x-goog-api-key`, connect 10s / read 60s, cancellable, on `dispatchers.io`.
+3. The instruction is an `internal` English constant; the hint sentence appends only when set.
+4. §6's table verbatim, existing `AppError` cases only; a block is `Invalid("blocked:<reason>")`.
+5. Verify: `GeminiEraseClientTest` on `MockWebServer`, then `scripts/check.sh` green.
 
 ## Done
 

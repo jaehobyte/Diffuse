@@ -62,7 +62,7 @@ generative_erase.md §13 lists the three files that come out, and nothing else m
   touches: core/ai/gemini, feature/editor/tools/select/Sam3SettingsSheet.kt,
   feature/editor/EditorRoute.kt, feature/editor strings.xml
 
-- [ ] T40 `GeminiEraseClient` — the HTTP layer
+- [x] T40 `GeminiEraseClient` — the HTTP layer
   spec: specs/generative_erase.md §5, §6
   deps: T39
   done when:
