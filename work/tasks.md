@@ -294,7 +294,7 @@ design drifted — block it rather than adding one.
   core/imaging/render/Renderer.kt, core/imaging tests,
   core/imaging/src/test/resources/golden, core/imaging/src/test/resources/golden_manifest.txt
 
-- [ ] T64 `WhitePad` and `OutpaintProvider`
+- [x] T64 `WhitePad` and `OutpaintProvider`
   spec: specs/outpaint.md §5, §8; specs/ai_provider.md §3; specs/generative_erase.md §4
   deps: —
   done when:

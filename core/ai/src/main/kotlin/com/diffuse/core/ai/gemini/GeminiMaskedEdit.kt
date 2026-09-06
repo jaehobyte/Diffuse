@@ -2,7 +2,6 @@ package com.diffuse.core.ai.gemini
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Color
 import com.diffuse.core.ai.Availability
 import com.diffuse.core.common.AppError
 import com.diffuse.core.common.DispatcherProvider
@@ -17,8 +16,8 @@ import kotlin.coroutines.coroutineContext
  * and refuse an answer that is still a hole.
  *
  * The two tools differ only in the sentence they send (specs/generative_fill.md §2, §3), so this
- * is where they meet. In particular the still-white guard's threshold lives here **once**: two
- * copies of it is how two paths drift apart, the argument T50 already made about the erase margin.
+ * is where they meet. The still-white guard itself moved to `StillWhite` when 확대 needed it over
+ * a border rather than a mask (outpaint.md §5); the threshold is still in one place.
  */
 internal class GeminiMaskedEdit(
     private val client: GeminiEraseClient,
@@ -74,59 +73,20 @@ internal class GeminiMaskedEdit(
         )
     }
 
-    /**
-     * T51: the model sometimes answers with the whitened input, unchanged — on the device that
-     * showed up as a flat white patch where the object used to be. A patch that is still white is
-     * not a result, so it fails and the user can retry rather than committing a hole to history.
-     *
-     * The one photo where this misfires is the one §4 already calls out as benign — a white wall,
-     * snow, an overexposed sky — and there the cost is a retry, not lost work.
-     */
+    /** T51's guard, in `StillWhite` since T64 so 확대 measures its border at the same threshold. */
     private fun filled(result: Result<Bitmap>, mask: Bitmap): Result<Bitmap> = when (result) {
         is Result.Failure -> result
-        is Result.Success ->
-            if (stillAHole(result.value, mask)) Result.Failure(AppError.Unavailable) else result
-    }
-
-    /** Sampled every [SAMPLE_STEP] pixels: this runs on the main result path, not in a test. */
-    private fun stillAHole(result: Bitmap, mask: Bitmap): Boolean {
-        val counts = IntArray(2)
-        var y = 0
-        while (y < result.height) {
-            sampleRow(result, mask, y, counts)
-            y += SAMPLE_STEP
-        }
-        val masked = counts[MASKED_COUNT]
-        return masked > 0 && counts[WHITE_COUNT].toFloat() / masked >= WHITE_RESULT_THRESHOLD
-    }
-
-    private fun sampleRow(result: Bitmap, mask: Bitmap, y: Int, counts: IntArray) {
-        var x = 0
-        while (x < result.width) {
-            val inside = (mask.getPixel(x, y) ushr ALPHA_SHIFT) != 0
-            if (inside) counts[MASKED_COUNT]++
-            if (inside && isNearWhite(result.getPixel(x, y))) counts[WHITE_COUNT]++
-            x += SAMPLE_STEP
+        is Result.Success -> if (
+            StillWhite.fills(result.value) { x, y -> (mask.getPixel(x, y) ushr ALPHA_SHIFT) != 0 }
+        ) {
+            Result.Failure(AppError.Unavailable)
+        } else {
+            result
         }
     }
-
-    private fun isNearWhite(pixel: Int): Boolean =
-        Color.red(pixel) >= NEAR_WHITE_CHANNEL &&
-            Color.green(pixel) >= NEAR_WHITE_CHANNEL &&
-            Color.blue(pixel) >= NEAR_WHITE_CHANNEL
 
     private companion object {
-        /** Within 2/255 of pure white, which is what a JPEG round trip leaves of #FFFFFF. */
-        const val NEAR_WHITE_CHANNEL = 253
-
-        /** Below this the model did fill something, even if it filled it badly. */
-        const val WHITE_RESULT_THRESHOLD = 0.9f
-
-        const val SAMPLE_STEP = 4
         const val ALPHA_SHIFT = 24
-        const val MASKED_COUNT = 0
-        const val WHITE_COUNT = 1
-
     }
 }
 

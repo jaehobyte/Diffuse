@@ -1,8 +1,19 @@
 ## Current
 
-_Idle._ T63 is committed; the next `[ ]` task is T64 (`WhitePad` and `OutpaintProvider`).
+_Idle._ T64 is committed; the next `[ ]` task is T65 (확대 — the overlay and the sheet), whose deps
+T63 and T64 are now both `[x]`.
 
 ## Done
+
+- T64 `WhitePad` and `OutpaintProvider` — the mask trick generalized: `WhiteFill` paints a region
+  white, `WhitePad` paints a **border** white, and the padded image goes out through T60's
+  `GeminiEraseClient.edit` seam behind `OUTPAINT_INSTRUCTION`. §5's two guards are what make this
+  more than a third instruction: an answer whose aspect is more than 2% off the canvas that was
+  sent is `Unsupported` rather than scaled into place, because scaling it would move the user's
+  photograph; and T51's still-white guard now measures a border. That guard moved into
+  `StillWhite`, which takes a region predicate, so 지우기, 채우기 and 확대 share the one threshold.
+  `core:ai` declares its own `Margins` per ai_provider.md §3. 17 tests, one `@Binds`,
+  `FakeOutpaintProvider` in testShared.
 
 - T63 `Operation.Outpaint` — the only op that makes the canvas bigger, and so the only one that is
   always `operations[0]`. `Margins` holds four fractions and `MAX_MARGIN_FRACTION = 0.5f`;
@@ -69,9 +80,8 @@ _Idle._ T63 is committed; the next `[ ]` task is T64 (`WhitePad` and `OutpaintPr
 
 ## Next
 
-T64 `WhitePad` and `OutpaintProvider` — no deps, and it needs nothing T63 added: `Margins` is
-declared a second time in `core:ai` per ai_provider.md §3, because `core:ai` does not depend on
-`core:imaging`.
+T65 확대 — the overlay and the sheet. The last of Phase 12 that the loop can pick up: T57 and T66
+are both `[!]` and need a human.
 
 ## Decisions
 

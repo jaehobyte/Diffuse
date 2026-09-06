@@ -8,6 +8,45 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T64
+
+- **`GeminiOutpaintProvider` does not reuse `GeminiMaskedEdit`.** It would have fit: pad the image,
+  build an ALPHA_8 mask over the border, and the masked path does the rest. But that path scales
+  whatever comes back to the caller's size, and §5's whole point is that the aspect is *checked*
+  rather than assumed — a model that answered at a different ratio shifts the photograph. It would
+  also have routed the padded image through `WhiteFill`, re-painting pixels `WhitePad` had already
+  made white, which is exactly the second white-fill generative_erase.md §4 says not to write.
+  What is shared instead is everything that would otherwise drift: `GeminiImageCodec`, the
+  transport, and the still-white threshold.
+
+- **T51's guard moved out of `GeminiMaskedEdit` into `StillWhite`, which takes a region
+  predicate.** The task says "at the same threshold constant — not a second one"; 지우기 and 채우기
+  ask about a mask, 확대 about a border, so the region is the argument and the number stays in one
+  place. Behaviour is unchanged — same sampling step, same near-white channel, same 0.9.
+
+- **`core:ai` declares its own `Margins`, as ai_provider.md §3 asks.** T63 put one in
+  `core:imaging` too. They are not the same type on purpose: `core:ai` reaches into `core:imaging`
+  for `AdjustKind` and nothing else (§2), the imaging one is a coordinate space a `Crop`
+  re-normalizes against, and this one is a request argument. `feature:editor` converts, exactly as
+  T58 made it convert `CropRatio` to `AspectPreset`.
+
+- **`WhitePad` owns the padded-size arithmetic rather than `Margins`.** ai_provider.md §3 declares
+  `Margins` as four floats and nothing else, and `WhitePad` is the only thing in `core:ai` that
+  needs pixel counts. It rounds each margin on its own and sums — `padLeft + width + padRight`, not
+  `(1 + left + right) * width` — matching `core:imaging`'s own arithmetic so the interior always
+  fits exactly.
+
+- **No empty-margins guard, unlike T60's blank-prompt one.** §8 requires `WhitePad` to return a
+  pixel-identical copy at zero margins, so zero is a supported input rather than a mistake, and
+  T65's 적용 is disabled there anyway. A negative margin *is* refused, with a `require` in
+  `WhitePad` for the reason `WhiteFill` has one: it would silently crop the photograph.
+
+- **The provider returns the answer at the padded size it sent, not at the caller's size.**
+  outpaint.md §3 says `resultRef` is "the whole expanded image, working resolution", and T63's
+  renderer derives its seam ramp from that file's own long edge. Returning the caller's expanded
+  size instead would have upscaled the model's ~1024px answer before it was ever stored, which is
+  the resolution loss §3 rejected flattening to avoid.
+
 ### T63
 
 - **The interior-fidelity case is a pixel-exact assertion, not a second golden.** outpaint.md §8

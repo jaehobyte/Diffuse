@@ -56,3 +56,19 @@ internal const val FILL_INSTRUCTION_TEMPLATE =
 
 internal fun fillInstruction(prompt: String): String =
     FILL_INSTRUCTION_TEMPLATE.format(prompt.trim())
+
+/**
+ * specs/outpaint.md §5. The same idea as the other two — the white area is where to paint — with
+ * the border in place of a region.
+ *
+ * The last clause carries more weight here than anywhere else: the provider maps the answer onto
+ * a canvas whose aspect it has already computed, so a model that returns a different ratio would
+ * shift the user's photograph. `GeminiOutpaintProvider` refuses that answer rather than scaling
+ * it, which is why the sentence and the guard are written together.
+ */
+internal const val OUTPAINT_INSTRUCTION =
+    "The image has a solid pure-white border around a photograph. Extend the photograph into " +
+        "that border so the whole image looks like one wider photograph taken from the same " +
+        "position: continue the scene's geometry, horizon, lighting, texture, focus and grain " +
+        "outward. Do not add a new subject, text or watermark. Do not alter the photograph " +
+        "inside the border. Return only the edited image, at the same aspect ratio as the input."
