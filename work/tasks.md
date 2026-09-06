@@ -52,21 +52,23 @@ Only the server endpoint is still outstanding. If a task hits a missing prerequi
     - tests for the fake; Hilt binding picks the fake in tests, the real provider in the app
   touches: core/ai, settings.gradle.kts (only to add the module — this one exception is pre-approved), feature/editor build file
 
-- [ ] T27 `Sam3Client` — the HTTP layer
+- [x] T27 `Sam3Client` — the HTTP layer
   spec: specs/segmentation.md, ~/sam3-server specs/api.md
   deps: T26
   done when:
     - `Sam3Client` (OkHttp + kotlinx.serialization) covers `POST /v1/images` (multipart),
       `POST /v1/images/{id}/segment/points`, `.../segment/text`, `DELETE /v1/images/{id}`, `GET /healthz`
-    - every request uses `format = "png"`, so the response carries a base64 8-bit alpha PNG at
-      original resolution. **No COCO RLE decoder is written** — the server already offers the
-      format we need, and RLE would be dead code
+    - every request uses `format = "png"`, so the response carries a base64 8-bit grayscale PNG at
+      original resolution, which decodes to an opaque bitmap whose **luminance** is the mask.
+      **No COCO RLE decoder is written** — the server already offers a usable format, and RLE
+      would be dead code
     - bearer token on every `/v1/` call; requests are cancellable and run on `DispatcherProvider.io`
     - error mapping onto the `AppError` cases in architecture.md §9: 400 → `Invalid`, 401 → `Unauthorized`,
       410 → session expiry (handled below, never surfaced as-is), 413 → `TooLarge`,
       415 → `Unsupported`, 503 → `Unavailable`, transport failure → `Io`
-    - `410 session_expired` is absorbed here: re-upload the image **once**, replay the prompt, and
-      only then surface a failure. api.md states a client must be ready for 410 at any time
+    - `410` is surfaced as a distinct `Sam3Error.SessionExpired` rather than an `AppError`, so T28's
+      provider — which holds the uploaded bytes and is the only layer able to replay — can absorb it
+      (specs/segmentation.md §5)
     - images are downscaled before upload so the body stays under 20 MB
     - `Sam3ClientTest` with `MockWebServer`: each route, each error code, the 410 replay path,
       base64 alpha decoding, and normalized-coordinate encoding. No external host is contacted

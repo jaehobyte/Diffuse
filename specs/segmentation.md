@@ -18,12 +18,16 @@ exist server-side (`points`, `box`, `text`); v2 uses **points** and **text**. `b
 | Auth | `Authorization: Bearer <token>` on every `/v1/` route |
 | Coordinates sent | normalized 0..1 against the uploaded image |
 | Geometry received | original-image pixels |
-| Mask encoding | always `format = "png"` — base64 8-bit alpha PNG at original resolution |
+| Mask encoding | always `format = "png"` — base64 8-bit **grayscale** PNG at original resolution, 0 or 255 |
 | Upload limit | 20 MB, JPEG or PNG |
 | Session TTL | 600 s server-side, refreshed on each use, LRU-evicted above 8 |
 
 **No COCO RLE decoder is written.** The server offers a PNG encoding of the same mask, so RLE would
 be dead code. If a future need appears, add it then.
+
+api.md calls the PNG encoding an "alpha PNG", but `app/masks.py` writes PIL mode `L` — 8-bit
+grayscale, `mask * 255`. Decoding it on Android therefore yields an opaque `ARGB_8888` bitmap whose
+**luminance**, not alpha, carries the mask. The decoder reads the red channel and thresholds at 128.
 
 ## 2. `Sam3Client` (T27)
 OkHttp + kotlinx.serialization. One class, one `OkHttpClient` instance, no interceptor stack beyond
@@ -60,14 +64,20 @@ class Sam3Client(...) {
 | 410 | `session_expired` | absorbed — see §5 |
 | 413 | `image_too_large` | `TooLarge` |
 | 415 | `unsupported_media_type` | `Unsupported` |
+| 429 | `rate_limited` / `busy` | `Unavailable` |
 | 503 | `not_ready` / `out_of_memory` | `Unavailable` |
 | transport / decode | — | `Io(cause)` |
+
+`429` carries `Retry-After`, and the server's design refuses rather than queueing. The client does
+the same: it maps to `Unavailable` and lets the UI show a snackbar, rather than sleeping for a
+duration the server chose. Only `410` is retried (§5).
 
 The error body is always `{ "error": ..., "detail": ... }`. `detail` goes into the log and into
 `Invalid`, never into a user-facing string — user strings are Korean and live in `strings.xml`.
 
 ## 5. Session expiry is absorbed, never surfaced
-api.md states a client must be prepared for `410` at any time. The provider handles it:
+api.md states a client must be prepared for `410` at any time. The **provider** handles it, not the
+client — the replay needs the uploaded bytes, and only the provider retains those:
 
 ```
 prompt → 410 → re-upload the same bitmap (once) → replay the same prompt → result

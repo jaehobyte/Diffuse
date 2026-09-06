@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.diffuse.android.library)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 android {
@@ -13,4 +14,9 @@ android {
 
 dependencies {
     api(projects.core.common)
+    implementation(libs.okhttp)
+    implementation(libs.kotlinx.serialization.json)
+
+    // Localhost only; CLAUDE.md forbids reaching an external host from a test.
+    testImplementation(libs.okhttp.mockwebserver)
 }

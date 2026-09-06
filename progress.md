@@ -14,9 +14,12 @@ Specs are written and consistent: `ai_provider.md`, `segmentation.md`, `selectio
 (rewritten), `prompt_input.md`, `generative_erase.md` (new), plus amendments to `edit_model.md`,
 `architecture.md` (§2, §6, §8, §9, §10) and `DESIGN.md` (§1 accent ruling, §4 prompt bar).
 
-**T26 is done and every prerequisite except the server endpoint is landed.** Next is T27.
+**T26-T27 done**; every prerequisite except the server's `/v1/edit/erase` is landed. Next is T28.
 
 ## Done
+
+- T27 `Sam3Client` — OkHttp + kotlinx.serialization over the five SAM 3 routes, `Sam3Outcome`
+  with `SessionExpired` as its own case, and `MaskCodec`. 17 MockWebServer tests, localhost only.
 
 - T26 `core:ai` module — `SegmentationProvider` (`open`/`byPoints`/`byText`/`close`) and
   `EraseProvider` behind `Availability`, plus the two fakes in `src/testShared/kotlin` so
@@ -54,7 +57,7 @@ _T01–T14 trimmed per CLAUDE.md (keep the last 10). Their decisions are still i
 
 ## Next
 
-T27 `Sam3Client` — the HTTP layer, with `MockWebServer`. Then T28 completes the network line.
+T28 `Sam3SegmentationProvider` and server settings, which completes the network line.
 T29 and T34 have no deps and can go at any time.
 
 ## Decisions
