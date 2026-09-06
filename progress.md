@@ -1,9 +1,20 @@
 ## Current
 
-_Idle._ **The queue is exhausted for the loop.** T70 and T77 are committed; every remaining `[ ]`
-task depends on a `[!]` one.
+_Idle._ T72 is committed and Phase 14's queue is open again: T73 is the first `[ ]` whose deps are
+all `[x]`.
 
 ## Done
+
+- T72 The style catalog. `styles.json` (12 styles × 41 variants) ships — the human confirmed
+  `PhotoTune_v1` is their own, and chose all twelve rather than the subset that survives T71 intact,
+  which fixes T74's enum at twelve ids. §3's `nameRes` could not go on `StylePreset`: `core:imaging`
+  is a library with `assets` and no `res/`. The name is attached at the `feature:editor` boundary
+  instead — the edge T58 drew for `CropRatio` — so a missing id **fails to compile**, and
+  `StyleLabelsTest` catches what a compiler cannot see, a new preset arriving unnamed. `StyleParams`
+  is the one place either scale is named: exposure divides by the 2 EV `LightOps` spans, everything
+  else by Lightroom's 100, and **vignette by −100** — Lightroom darkens on a negative amount,
+  `DetailOps` on a positive one, and `AdjustKind.Vignette.range` is what caught it. `hsl` was never
+  a gap. The dropped four are exactly §3.1's. 14 tests.
 
 - T70 채우기 belongs under the adjust stack too — and so did the 지시 tool's `Erase` step, which
   `e3b00c5` never reached. The rule now has one home, `tools/AdjustStack.kt`: `generativeInput`
@@ -46,25 +57,19 @@ task depends on a `[!]` one.
   argument, for a bigger region). `activeMaskId` stays on the user's selection. Both fill paths
   share it. 10 tests, and three old assertions rewritten because they asserted the old rule.
 
-- T65 확대 — `Tool.Expand` after `Tool.Fill`, `ExpandController` (tap intent, drag, run, commit,
-  cancel), `ExpandSheet` = `EditSheet` + the `mono` ratio readout, **no prompt bar**, and an overlay
-  that is only four handles. The pending area needed no drawing code: `OverlayTransform` gained
-  `margins`, so the canvas fits the expanded frame, draws the photo into its interior, and its
-  existing checkerboard shows through the rest — DESIGN.md §2's word for "no pixels here", reused
-  rather than reinvented. Handles drag **outward only**, clamped at `MAX_MARGIN_FRACTION`; a drag
-  away from one pans. The mask-op guard is `EditDocument.canOutpaint`, passed in rather than
-  re-implemented. 38 tests, goldens `expand_overlay` / `expand_sheet_open`; every existing golden
-  passed unrecorded, `editor_shell_default` included — the strip already overflowed at nine items.
+- T65 확대 — the tool, the four-handle overlay and `ExpandSheet`. The pending area needed no drawing
+  code: `OverlayTransform` gained `margins` and the existing checkerboard shows through, DESIGN.md
+  §2's word for "no pixels here". 38 tests, goldens `expand_overlay` / `expand_sheet_open`.
 
 ## Next
 
-**Nothing the loop can pick up.** T73, T74 and T75 all declare `deps: T72`, and T72 is `[!]` on a
-human's answer: `styles.json` comes from `Dujjoncam/PhotoTune_v1`, a private repo with no LICENSE
-file, and it is the *whole* input to the task. Its open decision 2 — twelve styles or only the ones
-that survive T71 intact — changes the enum T74 declares, so it cannot be guessed either. T57 and T66
-stay `[!]` for the reasons in `blocked.md`.
+**T73 스타일 — the tool and its tiles**, then T74 and T75, which both depend on T73 as well as T72.
+The catalog they need is in `core/imaging/style` and its twelve ids are the enum T74 declares.
 
-Unblocking T72 unblocks the rest of Phase 14 in one move.
+T57 and T66 stay `[!]`. T66 now has **one** prerequisite left rather than two: the bench ran and the
+budget is missed (2 adjusts 77ms, six HSL 406ms against a 100ms p50 budget), so "close it as not
+needed" is off the table and only minSdk 26 → 33 is outstanding — a product decision on a file
+CLAUDE.md freezes.
 
 ## Decisions
 

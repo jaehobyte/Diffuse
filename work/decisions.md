@@ -8,6 +8,53 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T72
+
+- **`StylePreset` carries no `nameRes`, because `core:imaging` has no `res/`.** §3 draws the field
+  on the data class; the module is a plain library with `assets` and no resources, so a resource id
+  cannot be resolved there and `feature:editor`'s `R` is not visible to it either. The name is
+  attached at the `feature:editor` boundary instead — `styleNameRes(id)`, the same edge T58 drew for
+  `CropRatio → AspectPreset`. The join stays what §3 says it is: the `id`.
+
+- **A missing name fails to compile, which is stronger than the test §9 asks for.** `STYLE_NAMES` is
+  a `Map<String, Int>` of `R.string` constants, so an id with no `style_name_<id>` cannot be written
+  down. `StyleLabelsTest` covers the case a compiler cannot see — a *new* preset appearing in
+  `styles.json` with no Korean beside it — by walking the parsed catalog.
+
+- **The vignette conversion flips the sign, and that is the table's job, not a preset's.** Lightroom
+  darkens corners on a **negative** amount; `DetailOps.vignette` darkens on a **positive** one over
+  0..1 (`gain = exposureGain(-value × 0.6 × weight)`). Three presets ask for `-30` and mean "darker",
+  so the divisor is `-100`. Reading the file literally would have brightened corners in every style
+  that has one, and `AdjustKind.Vignette.range` would have rejected it — which is how it was caught.
+
+- **`EXPOSURE_STOPS = 2f` is written down twice, and a test holds the two together.** `LightOps` is
+  `internal` and its constant `private`, and `core/imaging/render` is not in T72's `touches`, so the
+  divisor could not simply reference it. `StyleParamsTest` renders mid-grey through
+  `LightOps.exposure(bitmap, 0.5f)` and asserts it doubles: if either constant moves, the test
+  fails rather than every preset quietly gaining or losing exposure.
+
+- **JSON order is kept.** `params` is a `LinkedHashMap` in the order the preset's author wrote it,
+  not sorted by `AdjustKind` ordinal. The renderer walks operations in list order (T49), so the
+  order is a decision about pixels; the author's is the only one with an argument behind it.
+
+- **A variant's id is `<styleId>-<n>`, one-based.** `styles.json` gives a variant a Korean `name`
+  and no key, and §3 makes it a first-class part of the preset. A derived id is what lets T73 join a
+  variant to a string without the JSON's own Korean reaching the UI, which §3 forbids.
+
+- **`intensity` inside `params` is ignored, not dropped.** 내추럴's 셔터 그대로 variant carries
+  `"intensity": 50` among its parameters. §3 says intensity is not a parameter — it scales the whole
+  preset — so it is neither an `AdjustKind` nor a §3.1 gap, and putting it on the drop list would
+  have recorded it as a missing feature. It is a key the table knows to skip.
+
+- **Intensity 0 returns an empty map rather than a map of zeros.** §9 asks that 0 be the identity.
+  `AdjustKind.isNeutral` already means "no operation" and edit_model.md does not store neutral
+  values, so filtering is what makes 0 the identity in the document and not only in the arithmetic.
+
+- **`hsl` was never a gap.** §3.1 lists nine unmapped keys and `hsl` is not among them, which is
+  right: `styles.json`'s nested `{band: {sat, lum, hue}}` maps onto the 24 entries T54 added, and
+  five styles use it. The dropped four are exactly §3.1's: `grain`, `color_grading`, `dehaze`,
+  `bw_filter`.
+
 ### T66 (prerequisite 2 — the bench number)
 
 - **The budget is missed, and the six-HSL case is where.** gpu_render.md §1 asked for this

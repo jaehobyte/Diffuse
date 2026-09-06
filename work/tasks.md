@@ -13,9 +13,9 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `[H]` human-only, loop must
 
 ## Queue
 
-**Phase 14, T71–T78**, with T70 still open from Phase 13. T57, T66, T72 and T76 are `[!]` — each
-needs a human; T72's and T76's `blocked:` lines say exactly what. Pick the first `[ ]` whose deps
-are all `[x]`, as always.
+**Phase 14, T71–T78.** T73–T75 are open and their dep T72 is now `[x]`. T57 and T66 are `[!]`;
+T66 has one prerequisite left, not two — the bench number is in `work/decisions.md` and it says the
+budget is missed. Pick the first `[ ]` whose deps are all `[x]`, as always.
 
 ---
 
@@ -521,13 +521,12 @@ have, and all twelve styles use at least one of them. Nothing in T72–T77 can b
   core/imaging/src/test/resources/golden, core/imaging/src/test/resources/golden_manifest.txt,
   core/ai/gemini/GeminiPlanCatalog.kt, feature/editor/tools, feature/editor strings.xml
 
-- [!] T72 The style catalog
+- [x] T72 The style catalog
   spec: specs/style_match.md §2, §3, §3.1, §9
   deps: T71
-  blocked: **open decision 1** — `Dujjoncam/PhotoTune_v1` is a private repo with no LICENSE file,
-  and `styles.json` is the whole input to this task. If it is the same author's work this is a copy
-  within one project; if not, it cannot ship. A human says which. **Open decision 2** rides along:
-  twelve styles or only the ones that survive T71 intact, which changes the enum T74 declares.
+  decided: **open decision 1** — the human confirmed `PhotoTune_v1` is their own, so this is a copy
+  within one project and `styles.json` ships. **Open decision 2** — all twelve, not the subset that
+  survives T71 intact; that fixes the enum T74 declares at twelve ids.
   done when:
     - `styles.json` imported as an asset and parsed into `StylePreset` per §3, with the Korean in
       `strings.xml` and the JSON's own names ignored — `id` is the join
