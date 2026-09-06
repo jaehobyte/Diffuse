@@ -2,10 +2,15 @@
 
 ## Current
 
-**T46 done. Next: T47 `PlanRunner`** — validation, step execution, and the partial-run guarantee
-(vibe_edit.md §9).
+**T47 done. Next: T48** — the 지시 tool itself: the sheet, the placeholder parameter on `PromptBar`,
+the step-list templates, and the two goldens.
 
 ## Done
+
+- T47 `PlanRunner` — `validate` enforcing §9.1's one rule (a step that consumes a selection must
+  have one), `run` as a cold flow chaining each step onto the last, one `SegSession` for the whole
+  run, save lambdas instead of `ProjectRepository`, and the partial-run guarantee: a failure or a
+  cancellation ends the run with everything before it committed. 16 tests.
 
 - T46 `GeminiPlanProvider` — blank request refused before any encoding, `GeminiImageCodec` reused
   unchanged (no mask), `ensureActive()` before the call, probe-free availability off the key, and

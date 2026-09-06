@@ -8,6 +8,30 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T47 — `run` takes the resolved `activeMask`, because §9's signature could not reach one
+
+vibe_edit.md §9.2 says an `Erase` step calls `erase.erase(preview, mask, hint = null)`, but the
+constructor it lists has no `Renderer` and no mask resolver, so a plan whose selection came from
+the *document* rather than from an earlier `Select` had no pixels to erase. `run` therefore takes
+`activeMask: Bitmap?` beside `preview`. `EditorViewModel` already resolves exactly that on every
+document change (`EditorUiState.activeMask`) and already hands it to `EraseController` the same
+way, so this adds no dependency and no second resolution path. A `Select` step replaces it for the
+steps that follow.
+
+### T47 — "found nothing" travels as an `AppError.Invalid` with a prefix
+
+§10 needs three different messages out of one `Stopped` event: `direct_not_found` naming the word,
+`direct_blocked`, and the generic failure. A new `AppError` case is forbidden by the phase header,
+so an empty `byText` becomes `Invalid("not found:<phrase>")` — the shape `blocked:` already uses,
+and `PlanRunner.NOT_FOUND_PREFIX` is where T48 reads it back. The phrase has to be in the error
+because the tool shows *which* word failed.
+
+### T47 — the session closes under `NonCancellable`
+
+`close` is best-effort (ai_provider.md §4), but a cancelled run's `finally` cannot suspend, and
+without the wrapper cancelling a run would leak the session for the backend's whole TTL — the very
+thing `SelectionController.release` exists to avoid.
+
 ### T46 — `GeminiImageCodec` was reused without a change, as §8 asked
 
 The task said a codec change would be a signal to block. None was needed: `downscale` takes a

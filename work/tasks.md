@@ -125,7 +125,7 @@ adding one. specs/vibe_edit.md is the whole feature.
       gives an empty `EditPlan` rather than a failure
   touches: core/ai/gemini, core/ai/AiModule.kt, core/ai tests
 
-- [ ] T47 `PlanRunner` — executing the steps
+- [x] T47 `PlanRunner` — executing the steps
   spec: specs/vibe_edit.md §9
   deps: T44
   done when:

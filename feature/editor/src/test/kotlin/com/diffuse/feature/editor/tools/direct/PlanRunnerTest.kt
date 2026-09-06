@@ -1,0 +1,330 @@
+package com.diffuse.feature.editor.tools.direct
+
+import android.graphics.Bitmap
+import app.cash.turbine.test
+import com.diffuse.core.ai.EditPlan
+import com.diffuse.core.ai.FakeEraseProvider
+import com.diffuse.core.ai.FakeSegmentationProvider
+import com.diffuse.core.ai.PlanStep
+import com.diffuse.core.common.AppError
+import com.diffuse.core.common.DispatcherProvider
+import com.diffuse.core.common.Result
+import com.diffuse.core.imaging.model.AdjustKind
+import com.diffuse.core.imaging.model.EditDocument
+import com.diffuse.core.imaging.model.ImageRef
+import com.diffuse.core.imaging.model.Operation
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.GraphicsMode
+
+/** specs/vibe_edit.md §9, §12. */
+@RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+class PlanRunnerTest {
+
+    private val segmentation = FakeSegmentationProvider(openDelayMs = 0)
+    private val eraser = FakeEraseProvider()
+    private val savedMasks = mutableListOf<String>()
+    private val savedErases = mutableListOf<String>()
+    private var failMaskWrite = false
+
+    private val dispatchers = object : DispatcherProvider {
+        override val default: CoroutineDispatcher get() = Dispatchers.Unconfined
+        override val io: CoroutineDispatcher get() = Dispatchers.Unconfined
+    }
+
+    private val runner = PlanRunner(
+        segmentation = segmentation,
+        erase = eraser,
+        dispatchers = dispatchers,
+        saveMask = { maskId, _ ->
+            if (failMaskWrite) {
+                Result.Failure(AppError.Unavailable)
+            } else {
+                savedMasks += maskId
+                Result.Success(ImageRef("/p/mask_$maskId.png"))
+            }
+        },
+        saveEraseResult = { eraseId, _ ->
+            savedErases += eraseId
+            Result.Success(ImageRef("/p/erase_$eraseId.png"))
+        },
+    )
+
+    // ---- §9.1 validation --------------------------------------------------
+
+    @Test
+    fun `a masked adjust with no selection anywhere is rejected`() {
+        val step = PlanStep.Adjust(AdjustKind.Saturation, 0.3f, masked = true)
+
+        assertEquals(step, runner.validate(EditPlan(listOf(step)), document()))
+    }
+
+    @Test
+    fun `an erase and a cut-out with no selection are rejected`() {
+        assertEquals(
+            PlanStep.Erase,
+            runner.validate(EditPlan(listOf(PlanStep.Erase)), document()),
+        )
+        assertEquals(
+            PlanStep.CutOut,
+            runner.validate(EditPlan(listOf(PlanStep.CutOut)), document()),
+        )
+    }
+
+    @Test
+    fun `an earlier Select in the same plan satisfies all three`() {
+        val plan = EditPlan(
+            listOf(
+                PlanStep.Select("나무"),
+                PlanStep.Adjust(AdjustKind.Saturation, 0.3f, masked = true),
+                PlanStep.Erase,
+                PlanStep.CutOut,
+            ),
+        )
+
+        assertNull(runner.validate(plan, document()))
+    }
+
+    @Test
+    fun `an active mask on the document satisfies all three`() {
+        val document = documentWithMask()
+
+        assertNull(
+            runner.validate(
+                EditPlan(
+                    listOf(
+                        PlanStep.Adjust(AdjustKind.Saturation, 0.3f, masked = true),
+                        PlanStep.Erase,
+                        PlanStep.CutOut,
+                    ),
+                ),
+                document,
+            ),
+        )
+    }
+
+    @Test
+    fun `an unmasked adjust needs no selection at all`() {
+        val plan = EditPlan(listOf(PlanStep.Adjust(AdjustKind.Exposure, 0.5f, masked = false)))
+
+        assertNull(runner.validate(plan, document()))
+    }
+
+    // ---- §9.2, §9.3 running -----------------------------------------------
+
+    @Test
+    fun `the happy path emits Started and Committed per step, then Completed`() = runTest {
+        val plan = EditPlan(
+            listOf(
+                PlanStep.Select("나무"),
+                PlanStep.Adjust(AdjustKind.Saturation, 0.3f, masked = true),
+            ),
+        )
+
+        runner.run(plan, document(), preview(), activeMask = null).test {
+            assertEquals(RunEvent.Started(0), awaitItem())
+            val first = awaitItem() as RunEvent.Committed
+            assertEquals(1, first.document.operations.size)
+            assertEquals(RunEvent.Started(1), awaitItem())
+            val second = awaitItem() as RunEvent.Committed
+            assertEquals(2, second.document.operations.size)
+            assertEquals(RunEvent.Completed, awaitItem())
+            awaitComplete()
+        }
+    }
+
+    @Test
+    fun `a masked adjust carries the mask the Select just made`() = runTest {
+        val plan = EditPlan(
+            listOf(
+                PlanStep.Select("나무"),
+                PlanStep.Adjust(AdjustKind.Saturation, 0.3f, masked = true),
+            ),
+        )
+
+        val document = lastDocument(plan)
+
+        val mask = document.operations.filterIsInstance<Operation.Mask>().single()
+        val adjust = document.operations.filterIsInstance<Operation.Adjust>().single()
+        assertEquals(mask.id, document.activeMaskId)
+        assertEquals(mask.id, adjust.maskId)
+    }
+
+    @Test
+    fun `an unmasked adjust carries no mask id`() = runTest {
+        val plan = EditPlan(
+            listOf(
+                PlanStep.Select("나무"),
+                PlanStep.Adjust(AdjustKind.Exposure, 0.5f, masked = false),
+            ),
+        )
+
+        val adjust = lastDocument(plan).operations.filterIsInstance<Operation.Adjust>().single()
+
+        assertNull(adjust.maskId)
+    }
+
+    @Test
+    fun `an erase and a cut-out run against the selection the plan made`() = runTest {
+        val plan = EditPlan(listOf(PlanStep.Select("나무"), PlanStep.Erase, PlanStep.CutOut))
+
+        val document = lastDocument(plan)
+
+        val maskId = document.activeMaskId
+        assertEquals(maskId, document.generativeErases().single().maskId)
+        assertEquals(maskId, document.cutOuts().single().maskId)
+        assertEquals(1, eraser.eraseCount)
+        assertEquals(savedErases, document.generativeErases().map { it.id })
+    }
+
+    @Test
+    fun `an erase with no Select uses the mask the document already had`() = runTest {
+        val plan = EditPlan(listOf(PlanStep.Erase))
+        val document = documentWithMask()
+
+        val events = runner.run(plan, document, preview(), activeMask = fullMask()).toList()
+
+        val committed = events.filterIsInstance<RunEvent.Committed>().single()
+        assertEquals(document.activeMaskId, committed.document.generativeErases().single().maskId)
+        assertEquals(RunEvent.Completed, events.last())
+    }
+
+    @Test
+    fun `a Select that finds nothing stops the run before anything is committed`() = runTest {
+        val plan = EditPlan(
+            listOf(PlanStep.Select("없음"), PlanStep.Adjust(AdjustKind.Saturation, 0.3f, true)),
+        )
+
+        val events = runner.run(plan, document(), preview(), activeMask = null).toList()
+
+        assertEquals(
+            listOf(
+                RunEvent.Started(0),
+                RunEvent.Stopped(0, AppError.Invalid("${PlanRunner.NOT_FOUND_PREFIX}없음")),
+            ),
+            events,
+        )
+    }
+
+    @Test
+    fun `a failure at step 2 leaves step 1 committed`() = runTest {
+        val plan = EditPlan(
+            listOf(
+                PlanStep.Adjust(AdjustKind.Exposure, 0.5f, masked = false),
+                PlanStep.Select("나무"),
+                PlanStep.Adjust(AdjustKind.Saturation, 0.3f, masked = true),
+            ),
+        )
+        failMaskWrite = true
+
+        val events = runner.run(plan, document(), preview(), activeMask = null).toList()
+
+        val committed = events.filterIsInstance<RunEvent.Committed>().single()
+        assertEquals(0, committed.index)
+        assertEquals(1, committed.document.operations.size)
+        assertEquals(RunEvent.Stopped(1, AppError.Unavailable), events.last())
+    }
+
+    @Test
+    fun `a failing step reports its own error and nothing after it runs`() = runTest {
+        val plan = EditPlan(
+            listOf(
+                PlanStep.Select("나무"),
+                PlanStep.Erase,
+                PlanStep.Adjust(AdjustKind.Exposure, 0.5f, masked = false),
+            ),
+        )
+        eraser.failNext(AppError.Invalid("blocked:SAFETY"))
+
+        val events = runner.run(plan, document(), preview(), activeMask = null).toList()
+
+        assertEquals(RunEvent.Stopped(1, AppError.Invalid("blocked:SAFETY")), events.last())
+        assertEquals(1, events.filterIsInstance<RunEvent.Committed>().size)
+    }
+
+    @Test
+    fun `cancelling mid-step commits nothing for that step`() = runTest {
+        val plan = EditPlan(
+            listOf(
+                PlanStep.Adjust(AdjustKind.Exposure, 0.5f, masked = false),
+                PlanStep.Select("나무"),
+            ),
+        )
+
+        val events = mutableListOf<RunEvent>()
+        runner.run(plan, document(), preview(), activeMask = null).test {
+            events += awaitItem()
+            events += awaitItem()
+            events += awaitItem()
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        assertEquals(RunEvent.Started(1), events.last())
+        assertTrue(events.filterIsInstance<RunEvent.Committed>().none { it.index == 1 })
+    }
+
+    // ---- §9.2: the session ------------------------------------------------
+
+    @Test
+    fun `one session is opened for the whole run and closed when it ends`() = runTest {
+        val plan = EditPlan(listOf(PlanStep.Select("나무"), PlanStep.Select("하늘")))
+
+        runner.run(plan, document(), preview(), activeMask = null).toList()
+
+        assertEquals(1, segmentation.openCount)
+        assertEquals(emptyList<Any>(), segmentation.openSessions)
+    }
+
+    @Test
+    fun `a plan with no Select opens no session at all`() = runTest {
+        val plan = EditPlan(listOf(PlanStep.Adjust(AdjustKind.Exposure, 0.5f, masked = false)))
+
+        runner.run(plan, document(), preview(), activeMask = null).toList()
+
+        assertEquals(0, segmentation.openCount)
+    }
+
+    // ---- fixtures ---------------------------------------------------------
+
+    private suspend fun lastDocument(plan: EditPlan): EditDocument =
+        runner.run(plan, document(), preview(), activeMask = null)
+            .toList()
+            .filterIsInstance<RunEvent.Committed>()
+            .last()
+            .document
+
+    private fun document() = EditDocument(
+        id = "p",
+        source = ImageRef("/p.jpg"),
+        createdAt = 0L,
+        updatedAt = 0L,
+    )
+
+    private fun documentWithMask() = document()
+        .withMask(ImageRef("/p/mask_m.png"), id = "m")
+
+    private fun preview(): Bitmap =
+        Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888)
+
+    private fun fullMask(): Bitmap =
+        Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ALPHA_8).apply {
+            for (pixel in 0 until SIZE * SIZE) {
+                setPixel(pixel % SIZE, pixel / SIZE, OPAQUE shl ALPHA_SHIFT)
+            }
+        }
+
+    private companion object {
+        const val SIZE = 32
+        const val OPAQUE = 255
+        const val ALPHA_SHIFT = 24
+    }
+}
