@@ -2,11 +2,15 @@ package com.diffuse.feature.editor
 
 import android.graphics.RectF
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.diffuse.core.ai.SegmentationProvider
+import com.diffuse.core.ai.sam3.Sam3Settings
 import com.diffuse.core.common.Result
+import com.diffuse.core.common.newId
 import com.diffuse.core.data.ProjectAutosave
 import com.diffuse.core.data.ProjectRepository
 import com.diffuse.core.imaging.history.HistoryStack
@@ -14,6 +18,8 @@ import com.diffuse.core.imaging.model.AdjustKind
 import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.core.imaging.render.Renderer
 import com.diffuse.feature.editor.tools.crop.CropState
+import com.diffuse.feature.editor.tools.select.SelectionController
+import com.diffuse.feature.editor.tools.select.SelectionState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,6 +40,8 @@ data class EditorUiState(
     val selectedTool: Tool? = null,
     val cropState: CropState = CropState(),
     val document: EditDocument? = null,
+    /** specs/selection_tool.md §3: sheet state; nothing here is in the document until Apply. */
+    val selection: SelectionState = SelectionState(),
 )
 
 /** specs/editor_shell.md: one ViewModel per screen, UI sends intents, VM reduces to state. */
@@ -41,6 +49,8 @@ data class EditorUiState(
 class EditorViewModel @Inject constructor(
     private val repository: ProjectRepository,
     private val renderer: Renderer,
+    segmentation: SegmentationProvider,
+    sam3Settings: Sam3Settings,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -59,8 +69,14 @@ class EditorViewModel @Inject constructor(
     private var sheetBaseline: EditDocument? = null
     private var previewJob: Job? = null
 
+    /** specs/selection_tool.md: the tool owns its own state, session and undo stack. */
+    val selection = SelectionController(segmentation, sam3Settings, viewModelScope)
+
     init {
         viewModelScope.launch { load() }
+        viewModelScope.launch {
+            selection.state.collect { _uiState.value = _uiState.value.copy(selection = it) }
+        }
     }
 
     private suspend fun load() {
@@ -118,6 +134,8 @@ class EditorViewModel @Inject constructor(
         val state = _uiState.value
         if (state.selectedTool == tool) {
             cancelSheet()
+        } else if (tool == Tool.Select && !selection.onToolTapped()) {
+            return
         } else {
             sheetBaseline = state.document
             _uiState.value = state.copy(
@@ -126,6 +144,7 @@ class EditorViewModel @Inject constructor(
                     ?.let { CropState.from(it, sourceAspect()) }
                     ?: CropState(),
             )
+            if (tool == Tool.Select) state.preview?.let { selection.open(it.asAndroidBitmap()) }
         }
     }
 
@@ -164,12 +183,17 @@ class EditorViewModel @Inject constructor(
             stack.commitCoalesce()
         }
         sheetBaseline = null
+        selection.closeSheet()
         _uiState.value = _uiState.value.copy(selectedTool = null)
     }
 
     fun applySheet() {
         val stack = history
         val state = _uiState.value
+        if (state.selectedTool == Tool.Select) {
+            applySelection()
+            return
+        }
         if (state.selectedTool == Tool.Crop && stack != null) {
             stack.push(state.cropState.applyTo(stack.current.value))
         }
@@ -178,9 +202,42 @@ class EditorViewModel @Inject constructor(
         _uiState.value = state.copy(selectedTool = null)
     }
 
+    /**
+     * specs/selection_tool.md §6: the mask becomes a file and one history entry. Writing it
+     * first means a failed write leaves the sheet open with the selection intact, rather than
+     * a document pointing at a file that is not there.
+     */
+    private fun applySelection() {
+        val stack = history ?: return
+        val mask = _uiState.value.selection.mask ?: return
+        val maskId = newId()
+        viewModelScope.launch {
+            when (val saved = repository.saveMask(projectId, maskId, mask)) {
+                is Result.Success -> {
+                    stack.push(stack.current.value.withMask(saved.value, maskId))
+                    stack.commitCoalesce()
+                    sheetBaseline = null
+                    selection.closeSheet()
+                    _uiState.value = _uiState.value.copy(selectedTool = null)
+                }
+                is Result.Failure -> selection.showMessage(R.string.select_failed)
+            }
+        }
+    }
+
     fun reset() = history?.resetToOriginal() ?: Unit
 
-    fun undo() = history?.undo() ?: Unit
+    /**
+     * specs/selection_tool.md §4: while the select sheet is open the top-bar Undo drives the
+     * tool's own points, not the document. Points are not operations until Apply.
+     */
+    fun undo() {
+        if (_uiState.value.selectedTool == Tool.Select) {
+            selection.undoPoint()
+        } else {
+            history?.undo()
+        }
+    }
 
     fun redo() = history?.redo() ?: Unit
 

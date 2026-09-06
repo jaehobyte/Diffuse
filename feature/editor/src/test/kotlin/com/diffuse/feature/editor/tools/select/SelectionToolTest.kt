@@ -1,0 +1,338 @@
+package com.diffuse.feature.editor.tools.select
+
+import android.graphics.Bitmap
+import androidx.lifecycle.SavedStateHandle
+import androidx.test.core.app.ApplicationProvider
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.diffuse.core.ai.Availability
+import com.diffuse.core.ai.FakeSegmentationProvider
+import com.diffuse.core.ai.MaskBitmaps
+import com.diffuse.core.ai.sam3.Sam3Settings
+import com.diffuse.core.common.AppError
+import com.diffuse.core.common.Result
+import com.diffuse.core.data.ProjectRepository
+import com.diffuse.core.data.ProjectSummary
+import com.diffuse.core.imaging.load.SourceImage
+import com.diffuse.core.imaging.model.EditDocument
+import com.diffuse.core.imaging.model.ImageRef
+import com.diffuse.core.imaging.model.Operation
+import com.diffuse.core.imaging.render.Renderer
+import com.diffuse.feature.editor.EditorViewModel
+import com.diffuse.feature.editor.Tool
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.annotation.GraphicsMode
+
+/**
+ * specs/selection_tool.md §10. Everything runs on `FakeSegmentationProvider`; no test outside
+ * `core:ai` may touch a socket (CLAUDE.md hard limits).
+ */
+@RunWith(AndroidJUnit4::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+class SelectionToolTest {
+
+    private val provider = FakeSegmentationProvider(openDelayMs = 0)
+    private lateinit var repository: RecordingRepository
+    private lateinit var settings: Sam3Settings
+
+    @Before
+    fun setUp() {
+        Dispatchers.setMain(UnconfinedTestDispatcher())
+        repository = RecordingRepository()
+        settings = Sam3Settings(ApplicationProvider.getApplicationContext())
+        settings.update("http://localhost:8080", "token")
+    }
+
+    @After
+    fun tearDown() = Dispatchers.resetMain()
+
+    // ---- availability ----------------------------------------------------
+
+    @Test
+    fun `the tool is disabled while the provider is unavailable`() = runTest {
+        provider.setAvailability(Availability.Unavailable(AppError.Unavailable))
+        val viewModel = viewModel()
+
+        assertFalse(viewModel.uiState.value.selection.enabled)
+    }
+
+    @Test
+    fun `tapping an unreachable tool explains itself instead of opening`() = runTest {
+        provider.setAvailability(Availability.Unavailable(AppError.Unavailable))
+        val viewModel = viewModel()
+
+        viewModel.onToolClick(Tool.Select)
+
+        assertNull(viewModel.uiState.value.selectedTool)
+        assertNotNull(viewModel.uiState.value.selection.message)
+    }
+
+    @Test
+    fun `an unconfigured provider opens the settings sheet rather than a snackbar`() = runTest {
+        provider.setAvailability(Availability.Unavailable(AppError.Invalid("not configured")))
+        val viewModel = viewModel()
+
+        viewModel.onToolClick(Tool.Select)
+
+        assertTrue(viewModel.uiState.value.selection.showSettings)
+        assertNull(viewModel.uiState.value.selection.message)
+    }
+
+    // ---- sessions --------------------------------------------------------
+
+    @Test
+    fun `the session is opened once per editor session, not once per sheet`() = runTest {
+        val viewModel = viewModel()
+
+        viewModel.onToolClick(Tool.Select)
+        viewModel.cancelSheet()
+        viewModel.onToolClick(Tool.Select)
+
+        assertEquals(1, provider.openCount)
+    }
+
+    // ---- points ----------------------------------------------------------
+
+    @Test
+    fun `a tap produces a mask`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onToolClick(Tool.Select)
+
+        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
+
+        val selection = viewModel.uiState.value.selection
+        assertEquals(1, selection.points.size)
+        assertEquals(listOf(true), selection.labels)
+        assertNotNull(selection.mask)
+    }
+
+    @Test
+    fun `a long press adds a background point and shrinks the mask`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onToolClick(Tool.Select)
+        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
+        val before = MaskBitmaps.coverage(viewModel.uiState.value.selection.mask!!)
+
+        viewModel.selection.addPoint(0.52f, 0.5f, foreground = false)
+
+        val selection = viewModel.uiState.value.selection
+        assertEquals(listOf(true, false), selection.labels)
+        assertTrue(MaskBitmaps.coverage(selection.mask!!) < before)
+    }
+
+    @Test
+    fun `undo drops the last point and re-segments`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onToolClick(Tool.Select)
+        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
+        val oneCoverage = MaskBitmaps.coverage(viewModel.uiState.value.selection.mask!!)
+        viewModel.selection.addPoint(0.52f, 0.5f, foreground = false)
+
+        viewModel.undo()
+
+        val selection = viewModel.uiState.value.selection
+        assertEquals(1, selection.points.size)
+        assertEquals(oneCoverage, MaskBitmaps.coverage(selection.mask!!), 0f)
+    }
+
+    @Test
+    fun `undoing the only point clears the mask instead of prompting with nothing`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onToolClick(Tool.Select)
+        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
+
+        viewModel.undo()
+
+        assertNull(viewModel.uiState.value.selection.mask)
+        assertTrue(viewModel.uiState.value.selection.points.isEmpty())
+    }
+
+    @Test
+    fun `undo leaves the document alone while the sheet is open`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onToolClick(Tool.Select)
+        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
+
+        viewModel.undo()
+
+        assertEquals(emptyList<Operation>(), viewModel.uiState.value.document?.operations)
+    }
+
+    // ---- 반전 / 지우기 -----------------------------------------------------
+
+    @Test
+    fun `invert flips the mask and is its own inverse`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onToolClick(Tool.Select)
+        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
+        val original = MaskBitmaps.coverage(viewModel.uiState.value.selection.mask!!)
+
+        viewModel.selection.invert()
+        val inverted = MaskBitmaps.coverage(viewModel.uiState.value.selection.mask!!)
+        viewModel.selection.invert()
+
+        assertEquals(1f - original, inverted, 0.001f)
+        assertEquals(original, MaskBitmaps.coverage(viewModel.uiState.value.selection.mask!!), 0f)
+    }
+
+    @Test
+    fun `clear drops the selection but keeps the session`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onToolClick(Tool.Select)
+        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
+
+        viewModel.selection.clear()
+
+        val selection = viewModel.uiState.value.selection
+        assertNull(selection.mask)
+        assertTrue(selection.points.isEmpty())
+        assertNotNull(selection.session)
+    }
+
+    // ---- apply / cancel --------------------------------------------------
+
+    @Test
+    fun `apply writes one mask file and one Mask op, and makes it active`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onToolClick(Tool.Select)
+        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
+
+        viewModel.applySheet()
+
+        val document = viewModel.uiState.value.document!!
+        val masks = document.operations.filterIsInstance<Operation.Mask>()
+        assertEquals(1, masks.size)
+        assertEquals(masks.single().id, document.activeMaskId)
+        assertEquals(1, repository.savedMasks.size)
+        assertEquals(masks.single().id, repository.savedMasks.single())
+        assertNull(viewModel.uiState.value.selectedTool)
+    }
+
+    @Test
+    fun `a failed mask write leaves the sheet open with the selection intact`() = runTest {
+        repository.failMaskWrite = true
+        val viewModel = viewModel()
+        viewModel.onToolClick(Tool.Select)
+        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
+
+        viewModel.applySheet()
+
+        assertEquals(Tool.Select, viewModel.uiState.value.selectedTool)
+        assertNotNull(viewModel.uiState.value.selection.mask)
+        assertNotNull(viewModel.uiState.value.selection.message)
+        assertEquals(emptyList<Operation>(), viewModel.uiState.value.document?.operations)
+    }
+
+    @Test
+    fun `cancel leaves the document untouched`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onToolClick(Tool.Select)
+        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
+
+        viewModel.cancelSheet()
+
+        assertEquals(emptyList<Operation>(), viewModel.uiState.value.document?.operations)
+        assertNull(viewModel.uiState.value.selection.mask)
+        assertNull(viewModel.uiState.value.selectedTool)
+    }
+
+    // ---- failures --------------------------------------------------------
+
+    @Test
+    fun `a failed prompt keeps the mask the user already had`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onToolClick(Tool.Select)
+        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
+        val before = viewModel.uiState.value.selection.mask
+        provider.failNext(AppError.Unavailable)
+
+        viewModel.selection.addPoint(0.2f, 0.2f, foreground = true)
+
+        assertEquals(before, viewModel.uiState.value.selection.mask)
+        assertNotNull(viewModel.uiState.value.selection.message)
+    }
+
+    @Test
+    fun `saving settings closes the sheet and re-probes`() = runTest {
+        provider.setAvailability(Availability.Unavailable(AppError.Invalid("not configured")))
+        val viewModel = viewModel()
+        viewModel.onToolClick(Tool.Select)
+
+        viewModel.selection.saveSettings("http://10.0.2.2:8080", "tok")
+
+        assertFalse(viewModel.uiState.value.selection.showSettings)
+        assertEquals("http://10.0.2.2:8080", settings.current().baseUrl)
+        assertTrue(provider.refreshCount > 0)
+    }
+
+    // ---- fixtures --------------------------------------------------------
+
+    private fun viewModel() = EditorViewModel(
+        repository = repository,
+        renderer = FakeRenderer(),
+        segmentation = provider,
+        sam3Settings = settings,
+        savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),
+    )
+
+    private class FakeRenderer : Renderer {
+        override suspend fun preview(document: EditDocument, targetLongEdgePx: Int) =
+            Result.Success(Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888))
+
+        override suspend fun full(document: EditDocument, onProgress: (Float) -> Unit) =
+            Result.Success(Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888))
+
+        override suspend fun resolveMask(document: EditDocument, maskId: String): Bitmap? = null
+    }
+
+    private class RecordingRepository : ProjectRepository {
+        val savedMasks = mutableListOf<String>()
+        var failMaskWrite = false
+        private var document = EditDocument(
+            id = PROJECT_ID,
+            source = ImageRef("/p.jpg"),
+            createdAt = 0L,
+            updatedAt = 0L,
+        )
+
+        override fun observeAll(): Flow<List<ProjectSummary>> = flowOf(emptyList())
+        override suspend fun create(source: SourceImage): Result<String> = Result.Success(PROJECT_ID)
+        override suspend fun load(id: String): Result<EditDocument> = Result.Success(document)
+        override suspend fun save(document: EditDocument): Result<Unit> {
+            this.document = document
+            return Result.Success(Unit)
+        }
+
+        override suspend fun saveMask(
+            projectId: String,
+            maskId: String,
+            alpha: Bitmap,
+        ): Result<ImageRef> {
+            if (failMaskWrite) return Result.Failure(AppError.Io(java.io.IOException("disk full")))
+            savedMasks += maskId
+            return Result.Success(ImageRef("/projects/$projectId/mask_$maskId.png"))
+        }
+
+        override suspend fun duplicate(id: String): Result<String> = Result.Success("copy")
+        override suspend fun delete(id: String): Result<Unit> = Result.Success(Unit)
+    }
+
+    private companion object {
+        const val PROJECT_ID = "p"
+        const val SIZE = 64
+    }
+}

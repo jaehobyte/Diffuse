@@ -4,6 +4,7 @@ import com.diffuse.core.ai.sam3.Sam3Client
 import com.diffuse.core.ai.sam3.Sam3ConfigSource
 import com.diffuse.core.ai.sam3.Sam3SegmentationProvider
 import com.diffuse.core.ai.sam3.Sam3Settings
+import com.diffuse.core.common.DispatcherProvider
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -27,5 +28,18 @@ internal abstract class AiModule {
         @Provides
         @Singleton
         fun okHttp(): OkHttpClient = Sam3Client.defaultOkHttp()
+
+        /**
+         * Provided rather than `@Inject`-constructed: `Sam3Client` is internal to this module,
+         * and keeping it out of the graph's public surface means no feature can reach past
+         * `SegmentationProvider` to the wire.
+         */
+        @Provides
+        @Singleton
+        fun sam3Client(
+            config: Sam3ConfigSource,
+            dispatchers: DispatcherProvider,
+            okHttp: OkHttpClient,
+        ): Sam3Client = Sam3Client(config, dispatchers, okHttp)
     }
 }

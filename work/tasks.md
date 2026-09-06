@@ -104,7 +104,7 @@ Only the server endpoint is still outstanding. If a task hits a missing prerequi
     - at most one **active** mask per document (`EditDocument.activeMaskId`); older masks stay for undo
   touches: core/imaging/model, core/imaging/render, core/data
 
-- [ ] T30 "선택" tool: tap-to-segment with a darkened preview
+- [x] T30 "선택" tool: tap-to-segment with a darkened preview
   spec: specs/selection_tool.md, DESIGN.md §4
   deps: T26, T29
   done when:
@@ -121,7 +121,8 @@ Only the server endpoint is still outstanding. If a task hits a missing prerequi
     - Apply writes `Operation.Mask` and sets `activeMaskId`; Cancel discards; Apply disabled with no mask
     - fully driven by `FakeSegmentationProvider` in tests; UI test covers add fg, add bg, undo, apply, cancel
     - goldens: `select_sheet_open`, `select_mask_preview`
-  note: the canvas gesture-mode field and `overlayTransform` already exist from T24 (see progress.md)
+  note: the canvas gesture-mode field and `overlayTransform` already exist from T24 (see progress.md).
+        T28's deferred SAM 3 settings sheet lands here, since this is the first screen that needs it
   touches: feature/editor/tools/select, feature/editor/canvas (gesture mode + mask overlay draw only)
 
 - [ ] T31 Accumulated mask merging with add / subtract

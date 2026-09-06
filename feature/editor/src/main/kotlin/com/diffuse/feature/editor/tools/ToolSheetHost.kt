@@ -33,7 +33,7 @@ fun ToolSheetHost(
         Tool.Detail -> DetailSheet(
             document, onValueChange, onValueChangeFinished, onCancel, onApply, modifier,
         )
-        // Crop carries its own state, so T21 hosts it alongside the editor's.
-        Tool.Crop, null -> Unit
+        // Crop and Select carry their own state, so the route hosts them alongside the editor's.
+        Tool.Crop, Tool.Select, null -> Unit
     }
 }

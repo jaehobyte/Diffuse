@@ -14,9 +14,16 @@ Specs are written and consistent: `ai_provider.md`, `segmentation.md`, `selectio
 (rewritten), `prompt_input.md`, `generative_erase.md` (new), plus amendments to `edit_model.md`,
 `architecture.md` (§2, §6, §8, §9, §10) and `DESIGN.md` (§1 accent ruling, §4 prompt bar).
 
-**T26-T29 done.** The network line and the mask model are in. Next is T30, the selection tool.
+**T26-T30 done.** The selection tool works end to end against the SAM 3 service. Next is T31,
+accumulated mask merging.
 
 ## Done
+
+- T30 "선택" tool — `SelectionController` owns the whole tool (availability, session, points,
+  mask, settings sheet); `EditorViewModel` only commits it. Canvas `gestureMode = SelectPoint`
+  with normalized taps, `MaskOutline` tracing the scrim and the outline from one `Region` path,
+  the AI dot and greyed-tool state in the strip, and the SAM 3 settings sheet T28 deferred.
+  20 tests + goldens `select_sheet_open`, `select_mask_preview`.
 
 - T29 `Operation.Mask` — the op, `EditDocument.activeMaskId` / `withMask` / `referencesResolve`,
   JSON, `MaskIo` (ALPHA_8 ↔ PNG), `Renderer.resolveMask` with a 2-entry cache, and
@@ -66,10 +73,27 @@ _T01–T14 trimmed per CLAUDE.md (keep the last 10). Their decisions are still i
 
 ## Next
 
-T30 "선택" tool. It needs the `:core:ai` testShared srcDir wired into `:feature:editor`, and it
-carries the SAM 3 settings sheet that T28 deferred. T34 (`PromptBar`) is still free-standing.
+T31 accumulated mask merging with [추가 | 빼기]. T34 (`PromptBar`) is still free-standing and can
+go at any time.
 
 ## Decisions
+
+### T30
+
+- **The tool is a `SelectionController`, not more `EditorViewModel`.** detekt caught the ViewModel
+  at 29 functions and `EditorScreen` at 69 lines, which was the right signal: the selection tool
+  has its own lifecycle (the session outlives the sheet) and its own undo stack, and mixing them
+  made both harder to read. Raising the thresholds would have hidden a real design problem.
+- **The scrim and the outline are one path.** `MaskOutline` unions the mask's row runs into a
+  `Region` and takes its boundary; the scrim is that path clipped out of the image rect, the
+  outline is the same path stroked. They cannot drift apart, and stroking after the screen
+  transform keeps the outline 1dp at any zoom.
+- **Prompt points are stored normalized.** They then survive a zoom, a re-render at a different
+  resolution, and the upload's own downscale, so nothing has to be re-mapped.
+- **`Sam3Client` is `@Provides`-d, not `@Inject`-constructed.** Keeping it out of the graph's
+  public surface means no feature can reach past `SegmentationProvider` to the wire.
+- **An unconfigured provider opens the settings sheet, not a snackbar.** A snackbar saying "set
+  the server address" with no way to set it is a dead end.
 
 ### T29
 

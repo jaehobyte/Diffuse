@@ -8,11 +8,17 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.res.stringResource
+import com.diffuse.feature.editor.canvas.CanvasGestureMode
+import com.diffuse.feature.editor.canvas.CanvasPointTaps
 import com.diffuse.feature.editor.canvas.OverlayTransform
 import com.diffuse.feature.editor.canvas.cropOverlaySlot
+import com.diffuse.feature.editor.canvas.selectionOverlaySlot
 import com.diffuse.feature.editor.tools.ToolSheetHost
 import com.diffuse.feature.editor.tools.crop.CropSheet
 import com.diffuse.feature.editor.tools.crop.STRAIGHTEN_MAX_DEG
+import com.diffuse.feature.editor.tools.select.Sam3SettingsSheet
+import com.diffuse.feature.editor.tools.select.SelectSheet
 import kotlinx.coroutines.launch
 
 /**
@@ -52,32 +58,91 @@ fun EditorRoute(
             onCompareChange = {},
             onExport = onExport,
             overlayTransform = cropTransform(state),
-            cropOverlay = if (state.selectedTool == Tool.Crop) {
-                cropOverlaySlot(
-                    rect = state.cropState.rect,
-                    onRectChange = viewModel::onCropRectChange,
-                    aspect = state.cropState.preset,
-                )
+            disabledTools = if (state.selection.enabled) emptySet() else setOf(Tool.Select),
+            gestureMode = if (state.selectedTool == Tool.Select) {
+                CanvasGestureMode.SelectPoint
             } else {
+                CanvasGestureMode.Pan
+            },
+            pointTaps = if (state.selectedTool != Tool.Select) {
                 null
+            } else {
+                CanvasPointTaps(
+                    onForeground = { viewModel.selection.addPoint(it.x, it.y, foreground = true) },
+                    onBackground = { viewModel.selection.addPoint(it.x, it.y, foreground = false) },
+                )
             },
-            sheet = document?.let { doc ->
-                {
-                    if (state.selectedTool == Tool.Crop) {
-                        CropToolSheet(state = state, viewModel = viewModel)
-                    } else {
-                        ToolSheetHost(
-                            selectedTool = state.selectedTool,
-                            document = doc,
-                            onValueChange = viewModel::onAdjust,
-                            onValueChangeFinished = viewModel::onAdjustFinished,
-                            onCancel = viewModel::cancelSheet,
-                            onApply = viewModel::applySheet,
-                        )
-                    }
-                }
-            },
+            // specs/selection_tool.md §5: while `busy` the previous mask stays; only the
+            // one-off `open` earns the overlay.
+            busy = state.selection.preparing,
+            onCancelWork = viewModel.selection::cancelWork,
+            message = state.selection.message?.let { stringResource(it) },
+            onMessageShown = viewModel.selection::onMessageShown,
+            canvasOverlay = canvasOverlay(state, viewModel),
+            sheet = sheetFor(state, document, viewModel),
         )
+    }
+}
+
+/** specs/canvas.md: one overlay slot, claimed by whichever tool is open. */
+@Composable
+private fun canvasOverlay(
+    state: EditorUiState,
+    viewModel: EditorViewModel,
+): (@Composable androidx.compose.foundation.layout.BoxScope.() -> Unit)? = when (state.selectedTool) {
+    Tool.Crop -> cropOverlaySlot(
+        rect = state.cropState.rect,
+        onRectChange = viewModel::onCropRectChange,
+        aspect = state.cropState.preset,
+    )
+    Tool.Select -> selectionOverlaySlot(
+        mask = state.selection.mask,
+        points = state.selection.points,
+        labels = state.selection.labels,
+    )
+    else -> null
+}
+
+/**
+ * The settings sheet wins over any tool sheet: it is the only way out of an unconfigured
+ * provider (specs/segmentation.md §6).
+ */
+@Composable
+private fun sheetFor(
+    state: EditorUiState,
+    document: com.diffuse.core.imaging.model.EditDocument?,
+    viewModel: EditorViewModel,
+): (@Composable () -> Unit)? {
+    if (state.selection.showSettings) {
+        return {
+            Sam3SettingsSheet(
+                config = state.selection.config,
+                onSave = viewModel.selection::saveSettings,
+                onCancel = viewModel.selection::dismissSettings,
+            )
+        }
+    }
+    return document?.let { doc ->
+        {
+            when (state.selectedTool) {
+                Tool.Crop -> CropToolSheet(state = state, viewModel = viewModel)
+                Tool.Select -> SelectSheet(
+                    state = state.selection,
+                    onInvert = viewModel.selection::invert,
+                    onClear = viewModel.selection::clear,
+                    onCancel = viewModel::cancelSheet,
+                    onApply = viewModel::applySheet,
+                )
+                else -> ToolSheetHost(
+                    selectedTool = state.selectedTool,
+                    document = doc,
+                    onValueChange = viewModel::onAdjust,
+                    onValueChangeFinished = viewModel::onAdjustFinished,
+                    onCancel = viewModel::cancelSheet,
+                    onApply = viewModel::applySheet,
+                )
+            }
+        }
     }
 }
 

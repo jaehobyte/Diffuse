@@ -6,6 +6,10 @@ plugins {
 
 android {
     namespace = "com.diffuse.feature.editor"
+
+    // specs/ai_provider.md §6: the shared fakes are a source directory, not testFixtures,
+    // which Kotlin has no compilation for under AGP 8.13 (progress.md, T05).
+    sourceSets.getByName("test").java.srcDir(rootProject.file("core/ai/src/testShared/kotlin"))
 }
 
 dependencies {
