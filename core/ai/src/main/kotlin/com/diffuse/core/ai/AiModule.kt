@@ -8,6 +8,10 @@ import com.diffuse.core.ai.gemini.GeminiOutpaintProvider
 import com.diffuse.core.ai.gemini.GeminiPlanClient
 import com.diffuse.core.ai.gemini.GeminiPlanProvider
 import com.diffuse.core.ai.gemini.GeminiSettings
+import com.diffuse.core.ai.monet.MonetClient
+import com.diffuse.core.ai.monet.MonetConfigSource
+import com.diffuse.core.ai.monet.MonetAutoEnhanceProvider
+import com.diffuse.core.ai.monet.MonetSettings
 import com.diffuse.core.ai.sam3.Sam3Client
 import com.diffuse.core.ai.sam3.Sam3ConfigSource
 import com.diffuse.core.ai.sam3.Sam3SegmentationProvider
@@ -50,6 +54,12 @@ internal abstract class AiModule {
     abstract fun outpaint(impl: GeminiOutpaintProvider): OutpaintProvider
 
     @Binds
+    abstract fun monetConfig(impl: MonetSettings): MonetConfigSource
+
+    @Binds
+    abstract fun autoEnhance(impl: MonetAutoEnhanceProvider): AutoEnhanceProvider
+
+    @Binds
     abstract fun plan(impl: GeminiPlanProvider): EditPlanProvider
 
     companion object {
@@ -80,6 +90,16 @@ internal abstract class AiModule {
             okHttp: OkHttpClient,
             logger: com.diffuse.core.common.Logger,
         ): GeminiEraseClient = GeminiEraseClient(config, dispatchers, okHttp, logger)
+
+        /** Provided for the same reason the other clients are: the wire stays in this module. */
+        @Provides
+        @Singleton
+        fun monetClient(
+            config: MonetConfigSource,
+            dispatchers: DispatcherProvider,
+            okHttp: OkHttpClient,
+            logger: com.diffuse.core.common.Logger,
+        ): MonetClient = MonetClient(config, dispatchers, okHttp, logger)
 
         /** Provided for the same reason the other two clients are. */
         @Provides

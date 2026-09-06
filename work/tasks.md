@@ -600,11 +600,11 @@ have, and all twelve styles use at least one of them. Nothing in T72–T77 can b
   core/ai/src/testShared, core/ai tests, core/imaging/style, feature/editor/tools/style,
   feature/editor tests
 
-- [!] T76 `AutoEnhanceProvider` — MonetGPT on the wire
+- [x] T76 `AutoEnhanceProvider` — MonetGPT on the wire
   spec: specs/auto_enhance.md §2, §3, §4, §5, §8; specs/segmentation.md (the config pattern);
   specs/ai_provider.md §3
   deps: T71
-  blocked: **auto_enhance.md open decision 1** — somebody has to run the server. SAM 3 already
+  note: auto_enhance.md **open decision 1 is still open** — somebody has to run the server. SAM 3 already
   needs one and has no shipped address; this is a second self-hosted service, and whether it shares
   a host is an ops decision. Until there is an address to point at, `check` can prove the client
   and nothing else. **Open decision 3** rides along: three style chips or only `balanced`.
