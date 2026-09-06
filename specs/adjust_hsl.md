@@ -210,9 +210,16 @@ adjust_color_range(
     hue:        number,          // optional, −1…1
     saturation: number,          // optional, −1…1
     luminance:  number,          // optional, −1…1
-    masked:     boolean,         // optional, default true, as `adjust`
+    masked:     boolean,         // optional, default **false** — see below
 )
 ```
+
+**`masked` defaults to `false` here, unlike `adjust`.** This section first said "default true, as
+`adjust`", and implementing it showed that to be wrong: `PlanRunner.validate` rejects an
+`Adjust(masked = true)` with no `Select` before it and no `activeMaskId` (vibe_edit.md §9.1), so
+"하늘을 더 파랗게" — the example this function exists for — would have failed the whole plan with
+"무엇을 할지 모르겠어요". A colour range is chosen by colour rather than by region; it is already a
+kind of selection. A model that wants both says `masked=true` explicitly.
 
 `GeminiPlanClient` **expands one call into up to three ordinary `PlanStep.Adjust` steps**, in the
 fixed order hue → saturation → luminance, each with the `AdjustKind` for `(band, channel)` and the

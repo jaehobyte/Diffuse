@@ -415,7 +415,7 @@ Neither blocks T54–T56: the tasks proceed on the spec as written.
   feature/editor/tools/direct/DirectSheet.kt, feature/editor/Tool.kt, feature/editor strings.xml,
   feature/editor tests, feature/editor screenshot goldens
 
-- [ ] T56 `adjust_color_range` — the planner's fifth function
+- [x] T56 `adjust_color_range` — the planner's fifth function
   spec: specs/adjust_hsl.md §8, §10; specs/vibe_edit.md §4, §5
   deps: T54
   done when:
@@ -432,6 +432,9 @@ Neither blocks T54–T56: the tasks proceed on the spec as written.
       exactly ten names. The `wireName` KDoc ("§4's ten `AdjustKind` names") is updated to say why
       the HSL kinds never travel that path
     - `PLAN_SYSTEM_INSTRUCTION` gains §8's one rule and one example, and nothing else
+    - `masked` defaults to **false** on this function (§8, amended during T56): a masked adjust
+      with no selection is a plan `PlanRunner.validate` rejects outright, and this function's whole
+      point is that it needs no selection
     - tests: §10's planner list, including the recorded body listing ten `kind` values with no HSL
       among them, and `blue` + two channels decoding to two steps in order
   touches: core/ai/gemini/GeminiPlanCatalog.kt, core/ai/gemini/GeminiPlanClient.kt, core/ai tests
@@ -443,8 +446,10 @@ Neither blocks T54–T56: the tasks proceed on the spec as written.
 _Empty._ Phase 10 closed what the first device run found. The next queue comes from the **second**
 device run: T51 and T52 are prompt rewrites, and only a real model can say whether they hold.
 
-Still waiting on that second device run; Phase 11 is queued ahead of it because it needs no device
-and no key — every one of its tests is a golden, a property or `MockWebServer`.
+Still waiting on that second device run, and **Phase 11 now needs one too**: T56's rules are a
+prompt change, and only a real model can say whether the planner reaches for `adjust_color_range`
+instead of trying to select a colour. Everything else in Phase 11 is proven by goldens and
+properties.
 
 ---
 

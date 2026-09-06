@@ -65,6 +65,22 @@ class DirectSheetTest {
         compose.onNodeWithText("3. 배경 지우기").assertExists()
     }
 
+    /** specs/adjust_hsl.md §8: a 혼합 step needs its band, because there is no chip beside it. */
+    @Test
+    fun `a colour range step names the band as well as the channel`() {
+        show(
+            DirectState(
+                plan = EditPlan(
+                    listOf(
+                        PlanStep.Adjust(AdjustKind.HslRedSaturation, 0.4f, masked = false),
+                    ),
+                ),
+            ),
+        )
+
+        compose.onNodeWithText("1. 빨강 채도 40").assertExists()
+    }
+
     /** T52: the phrase is English on the wire, so it is English in the template too. */
     @Test
     fun `an English phrase renders through the Korean template`() {

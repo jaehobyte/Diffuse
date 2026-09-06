@@ -8,6 +8,20 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T56 — the spec's `masked` default was wrong, and the wire enum had quietly grown
+
+**`adjust_color_range` defaults `masked` to false; adjust_hsl.md §8 said true.** Writing the decoder
+made the consequence obvious: `PlanRunner.validate` rejects a masked adjust that has no `Select`
+before it and no `activeMaskId` (vibe_edit.md §9.1), so the one example the function exists for —
+"하늘을 더 파랗게 해줘" — would have failed the entire plan rather than doing anything. The spec was
+amended rather than the code bent around it: a colour range is chosen by colour, not by region.
+
+**T54 had already widened the wire enum to 34 values without a test noticing.** `adjust`'s `kind`
+enum was `AdjustKind.entries.map { wireName }`, and the test asserting it compared against the same
+expression, so both sides grew together and stayed green. It is now `plannableKinds` on both sides,
+and the test asserts the literal count as well as the list — a self-referential assertion is not an
+assertion.
+
 ### T55 — two things the eighth tool exposed
 
 **The tool strip is a `LazyRow`, so an eighth tool stopped composing the last one.** `EditorShellTest`

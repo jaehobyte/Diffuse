@@ -7,6 +7,7 @@ import com.diffuse.core.common.AppError
 import com.diffuse.core.common.DispatcherProvider
 import com.diffuse.core.common.Logger
 import com.diffuse.core.common.Result
+import com.diffuse.core.imaging.model.HslChannel
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
@@ -113,7 +114,7 @@ internal class GeminiPlanClient(
         } else {
             val steps = response.candidates.firstOrNull()?.content?.parts.orEmpty()
                 .mapNotNull { it.functionCall }
-                .mapNotNull(::step)
+                .flatMap(::steps)
             Result.Success(EditPlan(steps))
         }
     }
@@ -122,18 +123,21 @@ internal class GeminiPlanClient(
      * §5: an unknown name, a missing required argument or a non-finite value drops **that** step
      * and keeps the rest — the rule `EditDocumentJson` uses for an unknown operation.
      */
-    private fun step(call: FunctionCall): PlanStep? {
-        val step = when (call.name) {
-            FN_SELECT_REGION -> call.args.string(ARG_PHRASE)
-                ?.takeIf { it.isNotBlank() }
-                ?.let(PlanStep::Select)
-            FN_ADJUST -> adjust(call.args)
-            FN_ERASE_SELECTION -> PlanStep.Erase
-            FN_CUT_OUT_SELECTION -> PlanStep.CutOut
-            else -> null
+    private fun steps(call: FunctionCall): List<PlanStep> {
+        val steps = when (call.name) {
+            FN_SELECT_REGION -> listOfNotNull(
+                call.args.string(ARG_PHRASE)
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let(PlanStep::Select),
+            )
+            FN_ADJUST -> listOfNotNull(adjust(call.args))
+            FN_ADJUST_COLOR_RANGE -> colorRange(call.args)
+            FN_ERASE_SELECTION -> listOf(PlanStep.Erase)
+            FN_CUT_OUT_SELECTION -> listOf(PlanStep.CutOut)
+            else -> emptyList()
         }
-        if (step == null) logger?.warn(TAG, "dropped function call '${call.name}' ${call.args}")
-        return step
+        if (steps.isEmpty()) logger?.warn(TAG, "dropped function call '${call.name}' ${call.args}")
+        return steps
     }
 
     private fun adjust(args: JsonObject): PlanStep.Adjust? {
@@ -143,6 +147,27 @@ internal class GeminiPlanClient(
             null
         } else {
             PlanStep.Adjust(kind, kind.coerce(value), args.boolean(ARG_MASKED) ?: true)
+        }
+    }
+
+    /**
+     * specs/adjust_hsl.md §8: one call becomes up to three ordinary `Adjust` steps, in the fixed
+     * order hue → saturation → luminance. The runner already knows how to apply an `Adjust`, so
+     * 혼합 costs the plan model nothing.
+     *
+     * `masked` defaults to **false** here, unlike `adjust`: a colour range is chosen by colour
+     * rather than by region, and a masked adjust with no selection is a plan `PlanRunner.validate`
+     * rejects outright (specs/vibe_edit.md §9.1).
+     */
+    private fun colorRange(args: JsonObject): List<PlanStep> {
+        val band = hslBandOf(args.string(ARG_COLOR).orEmpty()) ?: return emptyList()
+        val masked = args.boolean(ARG_MASKED) ?: false
+        return HslChannel.entries.mapNotNull { channel ->
+            val value = args.float(channel.wireName)
+                ?.takeIf { it.isFinite() && it != 0f }
+                ?: return@mapNotNull null
+            val kind = hslKindOf(band, channel)
+            PlanStep.Adjust(kind, kind.coerce(value), masked)
         }
     }
 

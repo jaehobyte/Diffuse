@@ -2,16 +2,22 @@
 
 ## Current
 
-**T54 and T55 are done and `check` is green.** 혼합 is a tool now: eight band chips over
-색조/채도/휘도 sliders, wired through the same `AdjustSheet` the other three sheets use. T56 (the
-planner's `adjust_color_range`) is the last open task of Phase 11 and depends only on T54.
+**Phase 11 is complete. T54–T56 are done and `check` is green.** 혼합 is a tool with eight band
+chips over 색조/채도/휘도, the maths is 24 `AdjustKind` entries and one op function, and the 지시
+planner reaches it through a fifth function, `adjust_color_range`, that decodes into ordinary
+`Adjust` steps.
 
-Two things a human still owns, listed under "Open decisions (Phase 11)" in tasks.md: render.md's
-"a golden per `AdjustKind`" line is no longer what the project does at 34 kinds, and §7's two
-rulings (the selected chip is an `editInk` ring, not the accent; 색조 labels two different sliders)
-were taken on DESIGN.md's behalf.
+What is unproven is the same shape as Phase 10: T56 is a prompt change, so only a device run says
+whether the model calls `adjust_color_range` for "하늘을 더 파랗게" instead of trying to select a
+colour. Two spec-level questions are a human's, under "Open decisions (Phase 11)" in tasks.md.
 
 ## Done
+
+- T56 `adjust_color_range` — the planner's fifth function. One call decodes into up to three
+  ordinary `PlanStep.Adjust`s (hue → saturation → luminance), so `PlanStep`, `PlanRunner` and the
+  step templates are untouched. `adjust`'s `kind` enum is filtered back to its ten non-HSL names,
+  which 34 values had quietly broken in T54. `masked` defaults to false here, and §8 was amended
+  to say why. 7 client tests + the step-label test.
 
 - T55 혼합 is a tool: `Tool.Mix` beside 색, a scrollable row of eight band chips (32dp swatch
   derived from the band's own centre, selected marked by a 2dp `editInk` ring — never the accent,

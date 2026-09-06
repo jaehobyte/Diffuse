@@ -6,6 +6,7 @@ import com.diffuse.core.common.AppError
 import com.diffuse.core.common.DispatcherProvider
 import com.diffuse.core.common.Result
 import com.diffuse.core.imaging.model.AdjustKind
+import com.diffuse.core.imaging.model.HslBand
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -110,7 +111,13 @@ class GeminiPlanClientTest {
         val declarations = body["tools"]!!.jsonArray[0]
             .jsonObject["functionDeclarations"]!!.jsonArray
         assertEquals(
-            listOf("select_region", "adjust", "erase_selection", "cut_out_selection"),
+            listOf(
+                "select_region",
+                "adjust",
+                "adjust_color_range",
+                "erase_selection",
+                "cut_out_selection",
+            ),
             declarations.map { it.jsonObject["name"]!!.jsonPrimitive.content },
         )
         assertEquals(
@@ -131,9 +138,47 @@ class GeminiPlanClientTest {
             .jsonArray[1].jsonObject
         val kinds = adjust["parameters"]!!.jsonObject["properties"]!!
             .jsonObject["kind"]!!.jsonObject["enum"]!!.jsonArray
+        // specs/adjust_hsl.md §8: the 24 혼합 kinds have their own function, and putting them
+        // here too would be 34 values on the argument the model already gets wrong most often.
+        assertEquals(10, kinds.size)
         assertEquals(
-            AdjustKind.entries.map { it.name.lowercase() },
+            AdjustKind.entries.filter { it.hsl == null }.map { it.name.lowercase() },
             kinds.map { it.jsonPrimitive.content },
+        )
+        assertTrue(
+            "no HSL kind may reach the adjust enum",
+            kinds.none { it.jsonPrimitive.content.startsWith("hsl") },
+        )
+    }
+
+    @Test
+    fun `the colour range declaration enumerates the eight bands`() = runTest {
+        server.enqueue(calls(SELECT_CALL))
+
+        client.plan(JPEG, REQUEST)
+
+        val body = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject
+        val declaration = body["tools"]!!.jsonArray[0].jsonObject["functionDeclarations"]!!
+            .jsonArray[2].jsonObject
+        val colours = declaration["parameters"]!!.jsonObject["properties"]!!
+            .jsonObject["color"]!!.jsonObject["enum"]!!.jsonArray
+
+        assertEquals(
+            HslBand.entries.map { it.name.lowercase() },
+            colours.map { it.jsonPrimitive.content },
+        )
+    }
+
+    /** specs/adjust_hsl.md §8: a colour is not a thing to select. */
+    @Test
+    fun `the instruction sends colour requests to the colour range function`() {
+        assertTrue(
+            "a colour range needs no selection",
+            PLAN_SYSTEM_INSTRUCTION.contains("adjust_color_range"),
+        )
+        assertTrue(
+            "the worked example the report asks for",
+            PLAN_SYSTEM_INSTRUCTION.contains("adjust_color_range(color=\"blue\""),
         )
     }
 
@@ -329,6 +374,81 @@ class GeminiPlanClientTest {
 
         assertEquals(
             listOf(PlanStep.Adjust(AdjustKind.Tint, 0.2f, masked = false)),
+            client.plan(JPEG, REQUEST).valueOrFail().steps,
+        )
+    }
+
+    // ---- specs/adjust_hsl.md §8: the fifth function ----------------------
+
+    @Test
+    fun `a colour range expands into one Adjust per channel, in order`() = runTest {
+        server.enqueue(
+            calls(
+                """{"functionCall":{"name":"adjust_color_range",""" +
+                    """"args":{"color":"blue","luminance":-0.2,"saturation":0.4}}}""",
+            ),
+        )
+
+        assertEquals(
+            listOf(
+                PlanStep.Adjust(AdjustKind.HslBlueSaturation, 0.4f, masked = false),
+                PlanStep.Adjust(AdjustKind.HslBlueLuminance, -0.2f, masked = false),
+            ),
+            client.plan(JPEG, REQUEST).valueOrFail().steps,
+        )
+    }
+
+    @Test
+    fun `a colour range edits the whole photo unless it is told otherwise`() = runTest {
+        server.enqueue(
+            calls(
+                """{"functionCall":{"name":"adjust_color_range",""" +
+                    """"args":{"color":"red","hue":0.3,"masked":true}}}""",
+            ),
+        )
+
+        assertEquals(
+            listOf(PlanStep.Adjust(AdjustKind.HslRedHue, 0.3f, masked = true)),
+            client.plan(JPEG, REQUEST).valueOrFail().steps,
+        )
+    }
+
+    @Test
+    fun `an unknown colour drops the whole call and the rest of the plan survives`() = runTest {
+        server.enqueue(
+            calls(
+                """{"functionCall":{"name":"adjust_color_range","args":{"color":"teal","hue":0.3}}}""",
+                ADJUST_CALL,
+            ),
+        )
+
+        assertEquals(1, client.plan(JPEG, REQUEST).valueOrFail().steps.size)
+    }
+
+    @Test
+    fun `a colour range with no channel, or only zeros, contributes no steps`() = runTest {
+        server.enqueue(
+            calls(
+                """{"functionCall":{"name":"adjust_color_range","args":{"color":"green"}}}""",
+                """{"functionCall":{"name":"adjust_color_range","args":{"color":"aqua","hue":0}}}""",
+            ),
+        )
+
+        // specs/vibe_edit.md §7: an empty plan is a valid answer, not a failure.
+        assertEquals(Result.Success(EditPlan(emptyList())), client.plan(JPEG, REQUEST))
+    }
+
+    @Test
+    fun `a colour range drops the non-finite channel and keeps the others`() = runTest {
+        server.enqueue(
+            calls(
+                """{"functionCall":{"name":"adjust_color_range",""" +
+                    """"args":{"color":"purple","hue":"NaN","saturation":4}}}""",
+            ),
+        )
+
+        assertEquals(
+            listOf(PlanStep.Adjust(AdjustKind.HslPurpleSaturation, 1f, masked = false)),
             client.plan(JPEG, REQUEST).valueOrFail().steps,
         )
     }
