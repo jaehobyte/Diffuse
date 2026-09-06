@@ -1,6 +1,7 @@
 package com.diffuse.core.imaging.render
 
 import android.graphics.Bitmap
+import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.roundToInt
 
@@ -21,13 +22,44 @@ internal object DetailOps {
     private const val REFERENCE_PREVIEW_LONG_EDGE = 1080
     private const val MAX_RADIUS = 2
 
+    /** T71: clarity is the same unsharp mask over a much wider radius, so it reads as volume. */
+    private const val CLARITY_AMOUNT = 0.8f
+    private const val CLARITY_RADIUS_SCALE = 8
+    private const val CLARITY_MAX_RADIUS = 16
+
     /** `out = in + amount × (in − blur(in))`, `amount = v × 1.5` */
     fun sharpen(bitmap: Bitmap, value: Float): Bitmap {
         if (value == 0f) return bitmap
         val amount = value * SHARPEN_AMOUNT
-        val radius = kernelRadiusFor(bitmap)
-        val blurred = boxBlur(bitmap, radius)
+        return unsharpMask(bitmap, kernelRadiusFor(bitmap)) { amount }
+    }
 
+    /**
+     * T71, specs/style_match.md §3.1. The same unsharp mask over a radius eight times wider, and
+     * weighted to the midtones — `amount = v × 0.8 × (1 − |2·luma − 1|)`.
+     *
+     * Sharpen finds edges; clarity finds volume. The midtone weight is what separates them from
+     * the viewer's side: it leaves a sky and a shadow alone, where an unweighted wide-radius mask
+     * would halo both.
+     */
+    fun clarity(bitmap: Bitmap, value: Float): Bitmap {
+        if (value == 0f) return bitmap
+        val amount = value * CLARITY_AMOUNT
+        val radius = (kernelRadiusFor(bitmap) * CLARITY_RADIUS_SCALE).coerceAtMost(CLARITY_MAX_RADIUS)
+        return unsharpMask(bitmap, radius) { luma -> amount * (1f - abs(2f * luma - 1f)) }
+    }
+
+    /**
+     * `out = in + amountAt(luma) × (in − blur(in))`. Shared by [sharpen] and [clarity], which
+     * differ only in their radius and in what they weight — two copies of this loop is how the
+     * two would come to disagree about the blur.
+     */
+    private inline fun unsharpMask(
+        bitmap: Bitmap,
+        radius: Int,
+        crossinline amountAt: (luma: Float) -> Float,
+    ): Bitmap {
+        val blurred = boxBlur(bitmap, radius)
         val width = bitmap.width
         val height = bitmap.height
         val original = IntArray(width * height)
@@ -39,10 +71,14 @@ internal object DetailOps {
         for (index in original.indices) {
             val source = original[index]
             val soft = blur[index]
+            val red = channelOf(source, RED)
+            val green = channelOf(source, GREEN)
+            val blue = channelOf(source, BLUE)
+            val amount = amountAt(luma(red, green, blue))
             output[index] = (source and ALPHA_ONLY) or packRgb(
-                unsharp(channelOf(source, RED), channelOf(soft, RED), amount),
-                unsharp(channelOf(source, GREEN), channelOf(soft, GREEN), amount),
-                unsharp(channelOf(source, BLUE), channelOf(soft, BLUE), amount),
+                red + amount * (red - channelOf(soft, RED)),
+                green + amount * (green - channelOf(soft, GREEN)),
+                blue + amount * (blue - channelOf(soft, BLUE)),
             )
         }
         return Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also {
@@ -79,9 +115,6 @@ internal object DetailOps {
             it.setPixels(pixels, 0, width, 0, 0, width, height)
         }
     }
-
-    private fun unsharp(source: Float, blurred: Float, amount: Float): Float =
-        source + amount * (source - blurred)
 
     private fun kernelRadiusFor(bitmap: Bitmap): Int {
         val longEdge = maxOf(bitmap.width, bitmap.height)

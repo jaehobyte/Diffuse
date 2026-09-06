@@ -46,8 +46,26 @@ internal const val ARG_PROMPT = "prompt"
  */
 internal val AdjustKind.wireName: String get() = name.lowercase()
 
-/** The kinds `adjust` offers: everything that is not one band of specs/adjust_hsl.md's 혼합. */
-internal val plannableKinds: List<AdjustKind> = AdjustKind.entries.filter { it.hsl == null }
+private val NOT_PLANNABLE = setOf(
+    AdjustKind.Blacks,
+    AdjustKind.Whites,
+    AdjustKind.Fade,
+    AdjustKind.SCurve,
+    AdjustKind.Clarity,
+)
+
+/**
+ * The kinds `adjust` offers: everything that is not one band of specs/adjust_hsl.md's 혼합, and
+ * not one of T71's five.
+ *
+ * T71 added `Blacks`, `Whites`, `Fade`, `SCurve` and `Clarity` for specs/style_match.md and
+ * specs/auto_enhance.md, which reach them through a preset and a server rather than through this
+ * function. Widening `adjust`'s enum is a change to what the planner is asked for, so it belongs
+ * to a task about the planner and to a device run that can say whether the model uses them well —
+ * the same care T56 took when it filtered the 24 HSL kinds back out of this list.
+ */
+internal val plannableKinds: List<AdjustKind> =
+    AdjustKind.entries.filter { it.hsl == null && it !in NOT_PLANNABLE }
 
 internal fun adjustKindOf(wire: String): AdjustKind? =
     plannableKinds.firstOrNull { it.wireName == wire }

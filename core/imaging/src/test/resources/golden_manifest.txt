@@ -45,6 +45,18 @@ generative_fill_render.png
 # T63 (specs/outpaint.md §4)
 outpaint_render.png
 
+# T71 (specs/style_match.md §3.1, specs/auto_enhance.md §3)
+blacks_+0.5.png
+blacks_-0.5.png
+whites_+0.5.png
+whites_-0.5.png
+fade_+0.5.png
+fade_-0.5.png
+s_curve_+0.5.png
+s_curve_-0.5.png
+clarity_+0.5.png
+clarity_-0.5.png
+
 # T54 (specs/adjust_hsl.md §10)
 hsl_blue_saturation_+0.5.png
 hsl_blue_saturation_-0.5.png

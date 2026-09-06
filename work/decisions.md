@@ -8,6 +8,48 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T71
+
+- **The endpoints needed their own stops factor, not just a tighter band.** The first attempt made
+  `Blacks` `Shadows` over `smoothstep(0, 0.2)` and `Whites` `Highlights` over
+  `smoothstep(0.8, 1.0)`, and the test that says an endpoint reaches deeper than its sibling
+  failed: at luma 0.03 both weights are already ~1, and `Shadows`' gentler ramp is fractionally the
+  higher of the two. `ENDPOINT_STOPS = 1.5` is what actually makes an endpoint one — it moves the
+  last few values *further*, while the tighter band keeps it out of the mid-shadows where
+  `Shadows` belongs. The failing test found this, which is the argument for having written it.
+
+- **`Fade` is symmetric.** `lift = v × 0.25`, and a negative lift pushes the floor below zero where
+  `packRgb` clamps it into deeper blacks. A fade-only-upward op would have been the literal
+  reading of the preset parameter and would have made half of a zero-centred range dead.
+
+- **`SCurve` is `c + v × (smoothstep(0,1,c) − c)`.** One curve rather than two chained adjusts, and
+  it leaves 0 and 1 exactly where they are — which is the whole difference from `Contrast`, whose
+  linear pivot clips both ends before it has bitten in the middle.
+
+- **`Clarity` shares `sharpen`'s unsharp mask** through one private `unsharpMask` taking a
+  per-pixel amount. They differ in radius (×8) and in the midtone weight `1 − |2·luma − 1|`. Two
+  copies of that loop is how the two would come to disagree about the blur.
+
+- **The five kinds are deliberately off the planner's `adjust` enum.** `plannableKinds` was
+  `entries.filter { hsl == null }`, so they would have joined it silently — a change to what the
+  model is asked for, arriving as a side effect of adding ops. `NOT_PLANNABLE` names them, and
+  widening the enum belongs to a task about the planner plus a device run that can say whether the
+  model uses them well. T56 took the same care filtering the 24 HSL kinds back out.
+
+- **No sheet offers them yet.** style_match.md §2 argues a style is worth more than a LUT because
+  the user can disagree with it one slider at a time, which wants sliders. But the 라이트 and
+  디테일 sheets' contents are spec'd by frozen files, adding them moves three goldens, and nothing
+  user-facing sets these kinds until T73 or T77 exists. They have labels, so they can already
+  appear in the 지시 step list; the sliders are T73's to add.
+
+- **Two exhaustive `when`s were split by family.** `Ops.globalAdjust` and `ToolLabels`'
+  `globalLabelRes` both went past detekt's cyclomatic ceiling at 15 branches. Both are dispatch
+  tables rather than logic, which is the shape that metric misjudges; splitting them by the spec
+  that owns each kind costs three null checks and reads as the three specs it is.
+
+- **`EditDocumentJsonTest`'s "unknown kind" was the string `"Clarity"`.** It is `"NotAnAdjustKind"`
+  now, with a comment saying why the name has to stay meaningless.
+
 ### T78
 
 - **The level lives in `EditorRoute`, not in `EditorViewModel`.** tool_groups.md §3 called it

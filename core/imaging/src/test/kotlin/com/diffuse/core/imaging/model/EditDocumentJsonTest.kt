@@ -56,11 +56,12 @@ class EditDocumentJsonTest {
     }
 
     @Test
+    // The name has to be meaningless on purpose: this test used "Clarity" until T71 added it.
     fun `an unknown AdjustKind is dropped and the document still loads`() {
         val text = """
             {"v":1,"id":"doc-1","source":"/p.jpg","createdAt":111,"updatedAt":222,
              "operations":[
-               {"type":"adjust","id":"a","kind":"Clarity","value":0.5},
+               {"type":"adjust","id":"a","kind":"NotAnAdjustKind","value":0.5},
                {"type":"adjust","id":"b","kind":"Contrast","value":0.25}
              ]}
         """.trimIndent()

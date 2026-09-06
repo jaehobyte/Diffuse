@@ -489,7 +489,7 @@ the fourth exists.
 **T71 is the gate.** Both `styles.json` and MonetGPT speak in tone operations `AdjustKind` does not
 have, and all twelve styles use at least one of them. Nothing in T72–T77 can be honest before it.
 
-- [ ] T71 The tone ops a preset needs: Blacks, Whites, Fade, SCurve, Clarity
+- [x] T71 The tone ops a preset needs: Blacks, Whites, Fade, SCurve, Clarity
   spec: specs/style_match.md §3.1; specs/auto_enhance.md §3; specs/adjust_light.md;
   specs/render.md; specs/adjust_hsl.md §5 (the ordering argument)
   deps: —
