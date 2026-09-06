@@ -18,7 +18,17 @@ interface OpRegistry {
 /** The v1 CPU registry: one entry per [AdjustKind], plus the crop. */
 object Ops : OpRegistry {
 
-    override fun adjust(kind: AdjustKind): (Bitmap, Float) -> Bitmap = when (kind) {
+    /**
+     * specs/adjust_hsl.md §3: the 24 혼합 kinds are dispatched by their target in one branch,
+     * so adding a band or a channel adds no entry here.
+     */
+    override fun adjust(kind: AdjustKind): (Bitmap, Float) -> Bitmap {
+        val hsl = kind.hsl
+        if (hsl != null) return { bitmap, value -> HslOps.apply(hsl, bitmap, value) }
+        return globalAdjust(kind)
+    }
+
+    private fun globalAdjust(kind: AdjustKind): (Bitmap, Float) -> Bitmap = when (kind) {
         // specs/adjust_light.md
         AdjustKind.Exposure -> LightOps::exposure
         AdjustKind.Contrast -> LightOps::contrast
@@ -34,6 +44,8 @@ object Ops : OpRegistry {
         // specs/adjust_detail.md
         AdjustKind.Sharpen -> DetailOps::sharpen
         AdjustKind.Vignette -> DetailOps::vignette
+
+        else -> error("$kind carries an HslTarget and is handled by HslOps")
     }
 
     override fun crop(bitmap: Bitmap, operation: Operation.Crop): Bitmap =

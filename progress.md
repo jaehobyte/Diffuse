@@ -2,15 +2,35 @@
 
 ## Current
 
-**Phase 10 is complete. T49–T53 are done and `check` is green; `work/tasks.md` is empty again.**
+**Phase 11 is complete. T54–T56 are done and `check` is green.** 혼합 is a tool with eight band
+chips over 색조/채도/휘도, the maths is 24 `AdjustKind` entries and one op function, and the 지시
+planner reaches it through a fifth function, `adjust_color_range`, that decodes into ordinary
+`Adjust` steps.
 
-Every defect the 2026-09-06 device run found is fixed, and none of it was where it first looked:
-the missing adjustment was a renderer that grouped operations by type instead of walking the list,
-and the halo was a mask that had no margin on the copy the *document* stores. What is still
-unproven is the same thing as before — this is all fakes and `MockWebServer`, so the next device
-run is what says whether the two prompt rewrites (T51, T52) actually hold.
+What is unproven is the same shape as Phase 10: T56 is a prompt change, so only a device run says
+whether the model calls `adjust_color_range` for "하늘을 더 파랗게" instead of trying to select a
+colour. Two spec-level questions are a human's, under "Open decisions (Phase 11)" in tasks.md.
 
 ## Done
+
+- T56 `adjust_color_range` — the planner's fifth function. One call decodes into up to three
+  ordinary `PlanStep.Adjust`s (hue → saturation → luminance), so `PlanStep`, `PlanRunner` and the
+  step templates are untouched. `adjust`'s `kind` enum is filtered back to its ten non-HSL names,
+  which 34 values had quietly broken in T54. `masked` defaults to false here, and §8 was amended
+  to say why. 7 client tests + the step-label test.
+
+- T55 혼합 is a tool: `Tool.Mix` beside 색, a scrollable row of eight band chips (32dp swatch
+  derived from the band's own centre, selected marked by a 2dp `editInk` ring — never the accent,
+  which stays on 적용), and the selected band's three sliders. `AdjustSheet` gained one optional
+  `header` slot and nothing else, so the other three sheet goldens did not move. `stepLabel()`
+  gives the 지시 step list its band prefix. 2 new screenshot goldens, 6 sheet tests.
+
+- T54 혼합's maths: `HslBand` (eight centres, the only place those degrees live), `HslChannel`,
+  `HslColor`, and 24 appended `AdjustKind` entries carrying an `HslTarget`. `HslOps` weights each
+  pixel by a linear tent between neighbouring centres — the weights sum to 1 and are exactly 0 at
+  every other centre — gated by `smoothstep(0.05, 0.20, saturation)` so neutrals never move. The
+  renderer, the serializer and the document model were **not** touched. 8 goldens, 11 property
+  tests. `labelRes()` came along because 24 new kinds make its `when` non-exhaustive.
 
 - T53 The generative + adjust combinations are proven rather than assumed: erase → global adjust,
   erase → cut-out and the export-resolution path against the **real** renderer and the fixtures,
@@ -61,33 +81,6 @@ run is what says whether the two prompt rewrites (T51, T52) actually hold.
   nearest-neighbour), §7's five steps on `dispatchers.io`, probe-free availability off the key,
   and the `AiModule` binding swapped. The proxy's four files deleted. 15 tests, including the
   one that decodes the recorded request body and finds the masked pixels white.
-
-- T41 `WhiteFill` — masked pixels to opaque `#FFFFFFFF`, everything else copied verbatim, the
-  input never mutated, a wrong-size mask throwing. 6 tests.
-
-- T40 `GeminiEraseClient` — `POST …:generateContent`, the key in `x-goog-api-key` and never in
-  the URL, camelCase in and out, the English instruction constant with its optional hint
-  sentence, the first `inlineData` part winning over text parts, and §6's table row for row.
-  23 MockWebServer tests.
-
-- T37 `EraseProvider` — `Sam3EraseClient` posting image + mask + hint to `/v1/edit/erase` with
-  a 60s read timeout, `Sam3EraseProvider` reusing segmentation's availability, and `MaskPng`.
-  10 MockWebServer tests. **Superseded by ADR-011**: T42 deleted all four of those files. The
-  `EraseProvider` interface it declared stays, and so does everything T38 built on it.
-
-- T36 Prompt or speech → mask — the selection sheet hosts `VoicePromptBar`, a phrase runs
-  `byText`, its instances union into one mask and merge by the current mode, and `count == 0`
-  is the 찾지 못했어요 hint rather than an error. 9 tests + golden `select_prompt_result`.
-
-- T35 Voice input — `SpeechInput` / `SpeechState`, `AndroidSpeechInput` over the OS recogniser
-  in `ko-KR` with partial results, `FakeSpeechInput`, and `VoicePromptBar` owning the
-  RECORD_AUDIO grant. 7 tests.
-
-- T34 `PromptBar` — 48dp / 16dp radius / `editSurfaceRaised`, mic and send at 48dp hit areas,
-  Korean placeholder, IME Done submitting the trimmed value, and the mic turning accent only
-  while listening. 8 tests + goldens `prompt_bar_empty` / `_filled` / `_listening`.
-
-_T01–T45 trimmed per CLAUDE.md (keep the last 10)._
 
 ## Decisions
 

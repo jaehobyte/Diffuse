@@ -16,7 +16,9 @@ import com.diffuse.core.ui.components.EditSheetTestTag
 import com.diffuse.feature.editor.EditorScreen
 import com.diffuse.feature.editor.Tool
 import com.diffuse.feature.editor.canvas.testImage
+import com.diffuse.core.imaging.model.HslBand
 import com.diffuse.feature.editor.tools.color.ColorKinds
+import com.diffuse.feature.editor.tools.mix.mixKinds
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
 import org.junit.Rule
 import org.junit.Test
@@ -90,6 +92,17 @@ class ToolSheetHostTest {
         compose.waitForIdle()
 
         compose.onNodeWithTag(adjustSliderTag(AdjustKind.Exposure)).assertExists()
+    }
+
+    @Test
+    fun `tapping 혼합 opens the mix sheet on its first band`() {
+        showEditor()
+
+        compose.onNodeWithTag(toolTag(Tool.Mix)).performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(EditSheetTestTag).assertExists()
+        mixKinds(HslBand.Red).forEach { compose.onNodeWithTag(adjustSliderTag(it)).assertExists() }
     }
 
     @Test

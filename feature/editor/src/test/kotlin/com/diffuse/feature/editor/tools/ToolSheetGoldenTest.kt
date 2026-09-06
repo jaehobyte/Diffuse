@@ -7,7 +7,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.diffuse.core.imaging.model.AdjustKind
 import com.diffuse.core.imaging.model.EditDocument
@@ -17,8 +19,11 @@ import com.diffuse.core.ui.theme.AppTheme
 import com.diffuse.core.ui.theme.ThemeMode
 import com.diffuse.core.ui.theme.Tokens
 import com.diffuse.feature.editor.tools.color.ColorSheet
+import com.diffuse.core.imaging.model.HslBand
 import com.diffuse.feature.editor.tools.detail.DetailSheet
 import com.diffuse.feature.editor.tools.light.LightSheet
+import com.diffuse.feature.editor.tools.mix.MixSheet
+import com.diffuse.feature.editor.tools.mix.mixBandChipTag
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Rule
@@ -40,6 +45,7 @@ class ToolSheetGoldenTest {
         .withAdjust(AdjustKind.Shadows, -0.2f)
         .withAdjust(AdjustKind.Saturation, 0.3f)
         .withAdjust(AdjustKind.Sharpen, 0.45f)
+        .withAdjust(AdjustKind.HslBlueSaturation, 0.4f)
 
     private fun showSheet(content: @Composable (EditDocument) -> Unit) {
         compose.setContent {
@@ -87,6 +93,39 @@ class ToolSheetGoldenTest {
         }
 
         capture("color_sheet_open")
+    }
+
+    @Test
+    fun mixSheetOpen() {
+        showSheet { document ->
+            MixSheet(
+                document = document,
+                onValueChange = { _, _ -> },
+                onValueChangeFinished = {},
+                onCancel = {},
+                onApply = {},
+            )
+        }
+
+        capture("mix_sheet_open")
+    }
+
+    @Test
+    fun mixSheetBandSelected() {
+        showSheet { document ->
+            MixSheet(
+                document = document,
+                onValueChange = { _, _ -> },
+                onValueChangeFinished = {},
+                onCancel = {},
+                onApply = {},
+            )
+        }
+
+        compose.onNodeWithTag(mixBandChipTag(HslBand.Blue)).performClick()
+        compose.waitForIdle()
+
+        capture("mix_sheet_band_selected")
     }
 
     @Test

@@ -28,6 +28,10 @@ class FakeEraseProvider : EraseProvider {
     var lastHint: String? = null
         private set
 
+    /** Which frame the caller chose to show the model — adjusted or not. */
+    var lastImage: Bitmap? = null
+        private set
+
     private var nextError: AppError? = null
 
     fun failNext(error: AppError) {
@@ -44,6 +48,7 @@ class FakeEraseProvider : EraseProvider {
             "mask must be the image's size"
         }
         eraseCount++
+        lastImage = image
         lastMask = mask
         lastHint = hint
         val fill = meanColourOutsideMask(image, mask)

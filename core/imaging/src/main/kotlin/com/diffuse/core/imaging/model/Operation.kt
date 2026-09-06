@@ -6,8 +6,17 @@ import android.graphics.RectF
 @JvmInline
 value class ImageRef(val path: String)
 
-/** specs/edit_model.md. Zero-centred kinds live in [-1, 1]; Sharpen and Vignette in [0, 1]. */
-enum class AdjustKind(val range: ClosedFloatingPointRange<Float>) {
+/**
+ * specs/edit_model.md. Zero-centred kinds live in [-1, 1]; Sharpen and Vignette in [0, 1].
+ *
+ * specs/adjust_hsl.md §3: a kind with an [hsl] target is one 혼합 slider. The target is a single
+ * nullable field rather than a band and a channel, so a kind can never be half-declared and
+ * `Ops` dispatches every one of them in one branch.
+ */
+enum class AdjustKind(
+    val range: ClosedFloatingPointRange<Float>,
+    val hsl: HslTarget? = null,
+) {
     // Light
     Exposure(ZERO_CENTRED),
     Contrast(ZERO_CENTRED),
@@ -23,6 +32,32 @@ enum class AdjustKind(val range: ClosedFloatingPointRange<Float>) {
     // Detail
     Sharpen(UNIT_RANGE),
     Vignette(UNIT_RANGE),
+
+    // specs/adjust_hsl.md — 혼합, appended so no existing entry moves
+    HslRedHue(ZERO_CENTRED, HslTarget(HslBand.Red, HslChannel.Hue)),
+    HslRedSaturation(ZERO_CENTRED, HslTarget(HslBand.Red, HslChannel.Saturation)),
+    HslRedLuminance(ZERO_CENTRED, HslTarget(HslBand.Red, HslChannel.Luminance)),
+    HslOrangeHue(ZERO_CENTRED, HslTarget(HslBand.Orange, HslChannel.Hue)),
+    HslOrangeSaturation(ZERO_CENTRED, HslTarget(HslBand.Orange, HslChannel.Saturation)),
+    HslOrangeLuminance(ZERO_CENTRED, HslTarget(HslBand.Orange, HslChannel.Luminance)),
+    HslYellowHue(ZERO_CENTRED, HslTarget(HslBand.Yellow, HslChannel.Hue)),
+    HslYellowSaturation(ZERO_CENTRED, HslTarget(HslBand.Yellow, HslChannel.Saturation)),
+    HslYellowLuminance(ZERO_CENTRED, HslTarget(HslBand.Yellow, HslChannel.Luminance)),
+    HslGreenHue(ZERO_CENTRED, HslTarget(HslBand.Green, HslChannel.Hue)),
+    HslGreenSaturation(ZERO_CENTRED, HslTarget(HslBand.Green, HslChannel.Saturation)),
+    HslGreenLuminance(ZERO_CENTRED, HslTarget(HslBand.Green, HslChannel.Luminance)),
+    HslAquaHue(ZERO_CENTRED, HslTarget(HslBand.Aqua, HslChannel.Hue)),
+    HslAquaSaturation(ZERO_CENTRED, HslTarget(HslBand.Aqua, HslChannel.Saturation)),
+    HslAquaLuminance(ZERO_CENTRED, HslTarget(HslBand.Aqua, HslChannel.Luminance)),
+    HslBlueHue(ZERO_CENTRED, HslTarget(HslBand.Blue, HslChannel.Hue)),
+    HslBlueSaturation(ZERO_CENTRED, HslTarget(HslBand.Blue, HslChannel.Saturation)),
+    HslBlueLuminance(ZERO_CENTRED, HslTarget(HslBand.Blue, HslChannel.Luminance)),
+    HslPurpleHue(ZERO_CENTRED, HslTarget(HslBand.Purple, HslChannel.Hue)),
+    HslPurpleSaturation(ZERO_CENTRED, HslTarget(HslBand.Purple, HslChannel.Saturation)),
+    HslPurpleLuminance(ZERO_CENTRED, HslTarget(HslBand.Purple, HslChannel.Luminance)),
+    HslMagentaHue(ZERO_CENTRED, HslTarget(HslBand.Magenta, HslChannel.Hue)),
+    HslMagentaSaturation(ZERO_CENTRED, HslTarget(HslBand.Magenta, HslChannel.Saturation)),
+    HslMagentaLuminance(ZERO_CENTRED, HslTarget(HslBand.Magenta, HslChannel.Luminance)),
     ;
 
     /** 0 is neutral for every kind, so a zero value means "no operation". */

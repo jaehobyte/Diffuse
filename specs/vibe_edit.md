@@ -93,6 +93,10 @@ not strings a person reads (the same rule generative_erase.md §5 applies to its
 `kind` is the ten `AdjustKind` names in lower snake case: `exposure`, `contrast`, `highlights`,
 `shadows`, `temperature`, `tint`, `saturation`, `vibrance`, `sharpen`, `vignette`.
 
+**A fifth function, `adjust_color_range`, is specified in adjust_hsl.md §8**: it decodes into
+ordinary `PlanStep.Adjust` steps, so §7, §9 and §11 are unchanged, and `kind` above stays these ten
+names and never carries an HSL kind.
+
 **자르기 is deliberately absent.** A crop is a rectangle in normalized coordinates, and a model
 asked for one from a sentence has to invent four numbers it cannot verify against what the user
 meant. A wrong exposure is visible and one undo away; a wrong crop throws away framing the user

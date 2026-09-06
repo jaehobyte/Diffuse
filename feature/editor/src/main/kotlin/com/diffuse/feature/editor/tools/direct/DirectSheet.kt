@@ -13,7 +13,7 @@ import com.diffuse.core.ui.components.EditSheet
 import com.diffuse.core.ui.theme.LocalAppColors
 import com.diffuse.core.ui.theme.Typography
 import com.diffuse.feature.editor.R
-import com.diffuse.feature.editor.tools.labelRes
+import com.diffuse.feature.editor.tools.stepLabel
 import kotlin.math.roundToInt
 
 const val DirectSheetTestTag = "DirectSheet"
@@ -80,7 +80,7 @@ private fun stepLine(step: PlanStep): String = when (step) {
     is PlanStep.Select -> stringResource(R.string.direct_step_select, step.phrase)
     is PlanStep.Adjust -> stringResource(
         if (step.masked) R.string.direct_step_adjust_masked else R.string.direct_step_adjust,
-        stringResource(step.kind.labelRes()),
+        step.kind.stepLabel(),
         (step.value * PERCENT_SCALE).roundToInt(),
     )
     PlanStep.Erase -> stringResource(R.string.direct_step_erase)

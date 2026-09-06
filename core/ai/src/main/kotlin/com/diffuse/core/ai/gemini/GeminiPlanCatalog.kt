@@ -1,6 +1,9 @@
 package com.diffuse.core.ai.gemini
 
 import com.diffuse.core.imaging.model.AdjustKind
+import com.diffuse.core.imaging.model.HslBand
+import com.diffuse.core.imaging.model.HslChannel
+import com.diffuse.core.imaging.model.HslTarget
 
 /**
  * specs/vibe_edit.md §4. Everything the editor can do that a sentence can plausibly ask for,
@@ -15,6 +18,7 @@ import com.diffuse.core.imaging.model.AdjustKind
  */
 internal const val FN_SELECT_REGION = "select_region"
 internal const val FN_ADJUST = "adjust"
+internal const val FN_ADJUST_COLOR_RANGE = "adjust_color_range"
 internal const val FN_ERASE_SELECTION = "erase_selection"
 internal const val FN_CUT_OUT_SELECTION = "cut_out_selection"
 
@@ -22,12 +26,33 @@ internal const val ARG_PHRASE = "phrase"
 internal const val ARG_KIND = "kind"
 internal const val ARG_VALUE = "value"
 internal const val ARG_MASKED = "masked"
+internal const val ARG_COLOR = "color"
 
-/** §4's ten `AdjustKind` names in lower snake case. Every kind is one word, so this is lowercase. */
+/**
+ * §4's ten `AdjustKind` names in lower snake case. Every one of them is a single word, so this is
+ * a plain lowercase.
+ *
+ * The 24 혼합 kinds are **not** on this path: specs/adjust_hsl.md §8 gives them their own function,
+ * because two ways of saying the same thing is how a planner learns to say it badly, and 34 values
+ * on the argument the model already gets wrong most often is the opposite of what T52 fixed.
+ */
 internal val AdjustKind.wireName: String get() = name.lowercase()
 
+/** The kinds `adjust` offers: everything that is not one band of specs/adjust_hsl.md's 혼합. */
+internal val plannableKinds: List<AdjustKind> = AdjustKind.entries.filter { it.hsl == null }
+
 internal fun adjustKindOf(wire: String): AdjustKind? =
-    AdjustKind.entries.firstOrNull { it.wireName == wire }
+    plannableKinds.firstOrNull { it.wireName == wire }
+
+internal val HslBand.wireName: String get() = name.lowercase()
+
+internal val HslChannel.wireName: String get() = name.lowercase()
+
+internal fun hslBandOf(wire: String): HslBand? =
+    HslBand.entries.firstOrNull { it.wireName == wire }
+
+internal fun hslKindOf(band: HslBand, channel: HslChannel): AdjustKind =
+    AdjustKind.entries.first { it.hsl == HslTarget(band, channel) }
 
 /**
  * specs/vibe_edit.md §4, with the three rules T52 added after the first device run:
@@ -55,6 +80,9 @@ internal const val PLAN_SYSTEM_INSTRUCTION =
         "- select_region takes a short English noun phrase naming the thing, never a sentence " +
         "and never a verb. It must always be English, whatever language the request is in: the " +
         "segmentation model understands English concepts only, so translate the user's word.\n" +
+        "- To change how one colour looks - \"the reds are too strong\", \"make the sky bluer\" " +
+        "- call adjust_color_range. It needs no selection: select_region names a thing in the " +
+        "photo, never a colour.\n" +
         "- After erase_selection or cut_out_selection, an adjustment meant for the whole photo " +
         "must pass masked=false, because the selection now names a region that is gone.\n" +
         "- Values are relative strengths, not absolute settings: a slight change is 0.2, a clear " +
@@ -68,7 +96,8 @@ internal const val PLAN_SYSTEM_INSTRUCTION =
         "- \"버스 지우고 사진 예쁘게 만들어줘\" -> select_region(phrase=\"bus\"), " +
         "erase_selection(), adjust(kind=\"contrast\", value=0.2, masked=false), " +
         "adjust(kind=\"saturation\", value=0.2, masked=false)\n" +
-        "- \"배경 지워줘\" -> select_region(phrase=\"the main subject\"), cut_out_selection()"
+        "- \"배경 지워줘\" -> select_region(phrase=\"the main subject\"), cut_out_selection()\n" +
+        "- \"하늘을 더 파랗게 해줘\" -> adjust_color_range(color=\"blue\", saturation=0.4)"
 
 internal val PLAN_FUNCTIONS: List<FunctionDeclaration> = listOf(
     FunctionDeclaration(
@@ -98,7 +127,7 @@ internal val PLAN_FUNCTIONS: List<FunctionDeclaration> = listOf(
                 ARG_KIND to Schema(
                     type = TYPE_STRING,
                     description = "Which adjustment to change.",
-                    enumValues = AdjustKind.entries.map { it.wireName },
+                    enumValues = plannableKinds.map { it.wireName },
                 ),
                 ARG_VALUE to Schema(
                     type = TYPE_NUMBER,
@@ -112,6 +141,44 @@ internal val PLAN_FUNCTIONS: List<FunctionDeclaration> = listOf(
                 ),
             ),
             required = listOf(ARG_KIND, ARG_VALUE),
+        ),
+    ),
+    FunctionDeclaration(
+        name = FN_ADJUST_COLOR_RANGE,
+        description = "Change how one colour range of the photo looks, without selecting " +
+            "anything. Use this when the request is about a colour rather than about a thing in " +
+            "the photo.",
+        parameters = Schema(
+            type = TYPE_OBJECT,
+            properties = mapOf(
+                ARG_COLOR to Schema(
+                    type = TYPE_STRING,
+                    description = "Which colour range to change.",
+                    enumValues = HslBand.entries.map { it.wireName },
+                ),
+                HslChannel.Hue.wireName to Schema(
+                    type = TYPE_NUMBER,
+                    description = "Shift this range towards a neighbouring colour, -1 to 1. " +
+                        "Omit it to leave the hue alone.",
+                ),
+                HslChannel.Saturation.wireName to Schema(
+                    type = TYPE_NUMBER,
+                    description = "How vivid this colour range is, -1 to 1. Omit it to leave " +
+                        "the saturation alone.",
+                ),
+                HslChannel.Luminance.wireName to Schema(
+                    type = TYPE_NUMBER,
+                    description = "How bright this colour range is, -1 to 1. Omit it to leave " +
+                        "the brightness alone.",
+                ),
+                ARG_MASKED to Schema(
+                    type = TYPE_BOOLEAN,
+                    description = "True to change only the current selection. Defaults to " +
+                        "false, because naming a colour is already a way of choosing what to " +
+                        "change.",
+                ),
+            ),
+            required = listOf(ARG_COLOR),
         ),
     ),
     FunctionDeclaration(

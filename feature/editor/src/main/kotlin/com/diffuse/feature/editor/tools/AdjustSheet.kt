@@ -2,6 +2,7 @@ package com.diffuse.feature.editor.tools
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Switch
@@ -48,6 +49,11 @@ fun AdjustSheet(
     onApply: () -> Unit,
     modifier: Modifier = Modifier,
     maskOption: MaskOption = MaskOption.None,
+    /**
+     * specs/adjust_hsl.md §6: 혼합 puts its band chips here. Empty by default, so the three
+     * sheets that came first render exactly as they did.
+     */
+    header: @Composable ColumnScope.() -> Unit = {},
 ) {
     val colors = LocalAppColors.current
     EditSheet(
@@ -74,6 +80,7 @@ fun AdjustSheet(
                 )
             }
         }
+        header()
         kinds.forEach { kind ->
             Column(
                 modifier = Modifier.testTag(adjustSliderTag(kind)),

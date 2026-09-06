@@ -3,11 +3,13 @@ package com.diffuse.feature.editor.tools.select
 import android.graphics.Bitmap
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.diffuse.core.ui.theme.AppTheme
 import com.diffuse.core.ui.theme.ThemeMode
@@ -110,6 +112,8 @@ class SelectSheetTest {
         }
 
         compose.onNodeWithTag(ToolStripTestTag).assertExists()
+        // 선택 sits past the viewport now that the strip has eight tools; it is a LazyRow.
+        compose.onNodeWithTag(ToolStripTestTag).performScrollToNode(hasText("선택"))
         compose.onNodeWithText("선택").performClick()
 
         assertEquals(listOf(Tool.Select), clicks)

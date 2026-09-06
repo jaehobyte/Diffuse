@@ -26,6 +26,7 @@ import com.diffuse.feature.editor.tools.direct.DirectTap
 import com.diffuse.feature.editor.tools.direct.PlanRunner
 import com.diffuse.feature.editor.tools.erase.EraseCommit
 import com.diffuse.feature.editor.tools.erase.EraseController
+import com.diffuse.feature.editor.tools.erase.eraseInput
 import com.diffuse.feature.editor.tools.erase.EraseState
 import com.diffuse.feature.editor.tools.erase.EraseTap
 import com.diffuse.feature.editor.tools.select.SelectionController
@@ -259,12 +260,17 @@ class EditorViewModel @Inject constructor(
         when (erase.onToolTapped(hasSelection = state.document?.activeMaskId != null)) {
             EraseTap.Refused -> Unit
             EraseTap.OpenSettings -> selection.setSettingsVisible(true)
-            EraseTap.Run -> erase.runAndCommit(
-                image = state.preview?.asAndroidBitmap(),
-                mask = state.activeMask,
-                document = state.document,
-                onCommitted = { document -> history?.push(document) },
-            )
+            // The eraser is shown the frame without the adjustments; see [eraseInput].
+            EraseTap.Run -> viewModelScope.launch {
+                val document = state.document
+                erase.runAndCommit(
+                    image = document?.let { eraseInput(renderer, it, PREVIEW_LONG_EDGE_PX) }
+                        ?: state.preview?.asAndroidBitmap(),
+                    mask = state.activeMask,
+                    document = document,
+                    onCommitted = { committed -> history?.push(committed) },
+                )
+            }
         }
     }
 

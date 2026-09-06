@@ -8,6 +8,53 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T56 — the spec's `masked` default was wrong, and the wire enum had quietly grown
+
+**`adjust_color_range` defaults `masked` to false; adjust_hsl.md §8 said true.** Writing the decoder
+made the consequence obvious: `PlanRunner.validate` rejects a masked adjust that has no `Select`
+before it and no `activeMaskId` (vibe_edit.md §9.1), so the one example the function exists for —
+"하늘을 더 파랗게 해줘" — would have failed the entire plan rather than doing anything. The spec was
+amended rather than the code bent around it: a colour range is chosen by colour, not by region.
+
+**T54 had already widened the wire enum to 34 values without a test noticing.** `adjust`'s `kind`
+enum was `AdjustKind.entries.map { wireName }`, and the test asserting it compared against the same
+expression, so both sides grew together and stayed green. It is now `plannableKinds` on both sides,
+and the test asserts the literal count as well as the list — a self-referential assertion is not an
+assertion.
+
+### T55 — two things the eighth tool exposed
+
+**The tool strip is a `LazyRow`, so an eighth tool stopped composing the last one.** `EditorShellTest`
+("all four tools") and `SelectSheetTest` ("greyed but still tappable") both failed the moment 혼합
+was inserted, because 지시 and 선택 now start outside the viewport. Both now
+`performScrollToNode` on the strip before asserting; the assertions themselves are unchanged. This
+is a real property of the screen, not a test workaround — the strip has always been scrollable
+(DESIGN.md §4), it simply had not overflowed before.
+
+**`recordRoborazziDebug` rewrites `canvas_fit`, `canvas_transparent` and `crop_overlay` on every
+run**, even with no code change. They pass `verifyRoborazziDebug` (1% threshold) but are not
+byte-identical, so recording anything re-records them too. They were reverted:
+specs/testing.md §5 says record only the goldens the current task names. Any later task that
+records a golden will see the same three files and should do the same.
+
+### T54 — three things the spec did not settle
+
+**The band centres and the sextant boundaries are named constants.** detekt's MagicNumber does not
+spare enum arguments, and `Red(0f), Orange(30f), …` trips it seven times. The constants sit
+directly under the enum (the shape `AdjustKind`'s `ZERO_CENTRED` already uses), so §2's table is
+still the one place a reader looks.
+
+**`HslColor` packs its own RGB rather than calling `render.packRgb`.** It lives in the model layer,
+which does not depend on the render layer, and importing across that edge to save three lines is a
+worse trade than repeating the clamp. The *conversion* is still defined once, which is the part the
+chips and the ops must agree on.
+
+**`Ops.adjust` and `labelRes()` both early-return on `kind.hsl` and keep an `else -> error(...)` in
+the `when` over the remaining ten.** Listing 24 names in a branch to preserve exhaustiveness is
+noise, and the error message says exactly why the branch is unreachable. This is also what made the
+T54/T55 boundary move: `labelRes()` stops compiling the moment the kinds exist, so its mapping and
+the three `mix_*` strings had to ship with the kinds rather than with the sheet.
+
 ### T53 — the rows T49 already proved were not written twice
 
 tasks.md listed six combinations. Four of them — a masked adjust after an erase, an adjust before
