@@ -16,6 +16,7 @@ import com.diffuse.core.data.ProjectRepository
 import com.diffuse.core.imaging.history.HistoryStack
 import com.diffuse.core.imaging.model.AdjustKind
 import com.diffuse.core.imaging.model.EditDocument
+import com.diffuse.core.imaging.model.Operation
 import com.diffuse.core.imaging.render.Renderer
 import com.diffuse.feature.editor.tools.crop.CropState
 import com.diffuse.core.ai.CropRatio
@@ -44,7 +45,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -202,6 +205,14 @@ class EditorViewModel @Inject constructor(
         viewModelScope.launch {
             expand.state.collect { _uiState.value = _uiState.value.copy(expand = it) }
         }
+        // T69: opening or closing 자르기 changes what the preview should show without changing
+        // the document, so the transition is what is collected — one place rather than a call at
+        // the end of `onToolClick`, `cancelSheet` and `applySheet`, one of which would be missed.
+        viewModelScope.launch {
+            _uiState.map { it.selectedTool == Tool.Crop }
+                .distinctUntilChanged()
+                .collect { _uiState.value.document?.let(::requestPreview) }
+        }
         viewModelScope.launch {
             direct.state.collect { _uiState.value = _uiState.value.copy(direct = it) }
         }
@@ -239,11 +250,23 @@ class EditorViewModel @Inject constructor(
     /**
      * specs/render.md wants a new preview to supersede the one in flight; the renderer is
      * cancellable, and the ViewModel owns the scope, so conflation belongs here.
+     *
+     * T69: while 자르기 is open the `Crop` itself is left out. specs/crop.md says opening the tool
+     * refits to the un-cropped source, and rendering the document as it stands puts the overlay on
+     * an already-cropped photo — which a plan ending in `crop_ratio` made obvious, because it
+     * commits the crop and *then* opens the tool. Nothing else is dropped: an outpaint, an erase
+     * and every adjust still show, because the user is framing the photo they actually have.
      */
     private fun requestPreview(document: EditDocument) {
         previewJob?.cancel()
+        val framing = _uiState.value.selectedTool == Tool.Crop
+        val shown = if (!framing) {
+            document
+        } else {
+            document.copy(operations = document.operations.filterNot { it is Operation.Crop })
+        }
         previewJob = viewModelScope.launch {
-            val rendered = renderer.preview(document, PREVIEW_LONG_EDGE_PX)
+            val rendered = renderer.preview(shown, PREVIEW_LONG_EDGE_PX)
             // Resolved here rather than in its own pass: it is cached, and this is the one
             // place that already knows the document changed.
             val mask = document.activeMaskId?.let { renderer.resolveMask(document, it) }

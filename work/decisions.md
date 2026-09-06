@@ -8,6 +8,24 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T69
+
+- **The transition is a collector on `_uiState`, not a call at the end of three methods.** 자르기
+  can be opened from `onToolClick` and from `DirectHost.onFinished`, and closed from `cancelSheet`
+  and `applySheet`; `applySheet` also pushes the crop, so a call placed after the push would race
+  the document collector that is already re-rendering. Collecting
+  `selectedTool == Tool.Crop`, `distinctUntilChanged`, fires exactly on the transition from every
+  path and costs `EditorViewModel` no function — it is still at detekt's ceiling.
+
+- **Only the `Crop` is dropped, not every operation.** crop.md says the tool "refits to the
+  un-cropped source", and the literal reading — render `document.copy(operations = emptyList())` —
+  would frame a photo the user is not looking at, with the outpaint, the erase and every adjust
+  gone. What the sentence is about is the *frame*, so the frame is what comes off.
+
+- **`CropState.from` was not touched.** The rect was always correct; the reported symptom ("원본
+  이미지가 1:1로 변하고 거기에 크롭 직사각형이 뜨네") is the image underneath it, and a fix that
+  moved the rect would have been fixing the wrong half.
+
 ### T67
 
 - **The rectangle replaces the silhouette on the wire *and* in the document.** Sending a rectangle

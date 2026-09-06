@@ -117,12 +117,6 @@ Moved to `work/decisions.md`, one entry per task, newest first.
   wrong is what we asked for, not how we asked: see T51 and T52. Every test is still
   `MockWebServer`, so `check` will keep passing whatever the prompts say.
 
-- **The crop tool previews the *cropped* image, not the full source.** specs/crop.md says
-  opening 자르기 refits to the un-cropped source; the ViewModel just renders the current
-  document, so an existing Crop is baked into what the overlay sits on. Harmless until
-  T24 made the rotation visible; the fix is to render the document minus its Crop while
-  the sheet is open.
-
 - **Compare in the editor route is not wired to the ViewModel.** `EditorScreen` owns the
   hold state and swaps to `source`, which the VM renders, but `onCompareChange` is a no-op
   at the route level.

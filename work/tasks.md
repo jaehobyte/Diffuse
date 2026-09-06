@@ -425,7 +425,7 @@ report. **T68 is `[!]` pending one human answer** — see its `blocked:` line.
   touches: core/ai/gemini/GeminiPlanCatalog.kt, core/ai tests, and — for option 1 or 3 —
   core/ai/EditPlanProvider.kt, feature/editor/tools/crop, feature/editor screenshot goldens
 
-- [ ] T69 자르기 opens on the cropped image instead of the source
+- [x] T69 자르기 opens on the cropped image instead of the source
   spec: specs/crop.md ("opening 자르기 refits to the un-cropped source"); specs/render.md
   deps: —
   report: "1:1로 안내되긴 하는데 크롭 사각형이 1:1이 아니라 원본 이미지가 1:1로 변하고 거기에
