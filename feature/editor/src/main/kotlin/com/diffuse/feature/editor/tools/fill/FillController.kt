@@ -6,9 +6,7 @@ import com.diffuse.core.ai.Availability
 import com.diffuse.core.ai.FillProvider
 import com.diffuse.core.common.AppError
 import com.diffuse.core.common.Result
-import com.diffuse.core.common.newId
 import com.diffuse.core.imaging.model.EditDocument
-import com.diffuse.core.imaging.model.ImageRef
 import com.diffuse.feature.editor.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -50,12 +48,13 @@ data class FillState(
  * Runs the generative fill and hands the result back. Committing it to the document is
  * `EditorViewModel`'s job, because only it owns the history stack — the same split 지우기 uses.
  *
- * Unlike 지우기 the mask is **not** dilated: a margin is what keeps a removed object from leaving
- * a halo, and here it would make the thing the user asked for larger than the region they chose.
+ * T67: the mask is neither the selection nor a dilation of it, but its **bounding box with a
+ * margin** ([FillMask]). A silhouette tells the model what shape to paint, and the shape of the
+ * thing being replaced is the one shape the new thing should not have.
  */
 class FillController(
     private val provider: FillProvider,
-    private val saveResult: suspend (fillId: String, result: Bitmap) -> Result<ImageRef>,
+    private val commit: FillCommit,
     private val scope: CoroutineScope,
 ) {
 
@@ -111,8 +110,8 @@ class FillController(
         onCommitted: (EditDocument) -> Unit,
     ) {
         val prompt = _state.value.prompt
-        val maskId = document?.activeMaskId
-        if (image == null || mask == null || maskId == null) {
+        val rectangle = mask?.let(FillMask::rectangle)
+        if (image == null || rectangle == null || document?.activeMaskId == null) {
             showMessage(R.string.fill_needs_selection)
             return
         }
@@ -120,8 +119,8 @@ class FillController(
         job?.cancel()
         _state.value = _state.value.copy(busy = true, message = null)
         job = scope.launch {
-            when (val result = provider.fill(image, mask, prompt)) {
-                is Result.Success -> store(document, maskId, prompt, result.value, onCommitted)
+            when (val result = provider.fill(image, rectangle, prompt)) {
+                is Result.Success -> store(document, rectangle, prompt, result.value, onCommitted)
                 is Result.Failure -> _state.value =
                     _state.value.copy(busy = false, message = messageFor(result.error))
             }
@@ -129,21 +128,19 @@ class FillController(
     }
 
     /**
-     * The result file is written first: a document pointing at a file that is not there is worse
-     * than a fill the user has to repeat. The op names the user's own selection, which stays
-     * active — nothing about a fill replaces what was chosen.
+     * `FillCommit` writes the rectangle and the result before the document names either, and the
+     * user's own selection stays active — nothing about a fill replaces what was chosen.
      */
     private suspend fun store(
         document: EditDocument,
-        maskId: String,
+        rectangle: Bitmap,
         prompt: String,
         result: Bitmap,
         onCommitted: (EditDocument) -> Unit,
     ) {
-        val fillId = newId()
-        _state.value = when (val saved = saveResult(fillId, result)) {
+        _state.value = when (val committed = commit.apply(document, rectangle, prompt, result)) {
             is Result.Success -> {
-                onCommitted(document.withGenerativeFill(maskId, saved.value, prompt, fillId))
+                onCommitted(committed.value)
                 _state.value.copy(busy = false, prompt = "")
             }
             is Result.Failure -> _state.value.copy(busy = false, message = R.string.fill_failed)

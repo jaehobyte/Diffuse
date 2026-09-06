@@ -106,7 +106,8 @@ object MaskOps {
         }
     }
 
-    private fun isSet(mask: Bitmap, x: Int, y: Int) = (mask.getPixel(x, y) ushr ALPHA_SHIFT) != 0
+    /** Public since T67: `FillMask` walks a mask to find its bounding box. */
+    fun isSet(mask: Bitmap, x: Int, y: Int) = (mask.getPixel(x, y) ushr ALPHA_SHIFT) != 0
 
     private fun copyOf(mask: Bitmap): Bitmap = mapPixels(mask) { it }
 

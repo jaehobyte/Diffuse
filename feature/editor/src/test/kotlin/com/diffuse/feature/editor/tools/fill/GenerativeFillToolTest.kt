@@ -27,6 +27,7 @@ import com.diffuse.feature.editor.EditorViewModel
 import com.diffuse.feature.editor.R
 import com.diffuse.feature.editor.TestDispatchers
 import com.diffuse.feature.editor.Tool
+import com.diffuse.feature.editor.tools.select.MaskOps
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -38,7 +39,9 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertSame
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -118,16 +121,20 @@ class GenerativeFillToolTest {
 
     // ---- the run ---------------------------------------------------------
 
+    /** T67: the op names the **rectangle**, because that is what the renderer composes through. */
     @Test
-    fun `적용 writes one GenerativeFill naming the selection and the prompt`() = runTest {
+    fun `적용 writes one GenerativeFill naming the rectangle and the prompt`() = runTest {
         val viewModel = withPrompt()
-        val maskId = viewModel.uiState.value.document!!.activeMaskId
+        val selectionId = viewModel.uiState.value.document!!.activeMaskId
 
         viewModel.applySheet()
 
         val document = viewModel.uiState.value.document!!
         val fill = document.generativeFills().single()
-        assertEquals(maskId, fill.maskId)
+        assertNotEquals(selectionId, fill.maskId)
+        assertNotNull(document.mask(fill.maskId))
+        // The user's own selection survives it, so the next tool still has what they chose.
+        assertEquals(selectionId, document.activeMaskId)
         assertEquals(PROMPT, fill.prompt)
         // The op names the file the repository actually wrote, under the fill's own id.
         assertEquals(listOf(fill.id), repository.savedFills)
@@ -135,16 +142,23 @@ class GenerativeFillToolTest {
         assertEquals(1, filler.fillCount)
     }
 
-    /** §6: the fill is not dilated — the region the user chose is the region that changes. */
+    /**
+     * T67: a silhouette tells the model what shape to paint, so 채우기 sends the selection's
+     * bounding box with a margin instead. The blob has a diagonal edge; the rectangle does not.
+     */
     @Test
-    fun `the mask handed to the model is the user's own selection`() = runTest {
+    fun `the mask handed to the model is the padded bounding box, not the silhouette`() = runTest {
         val viewModel = withPrompt()
         // Read before the run: committing re-renders, which resolves a fresh mask bitmap.
-        val selection = viewModel.uiState.value.activeMask
+        val selection = viewModel.uiState.value.activeMask!!
 
         viewModel.applySheet()
 
-        assertSame(selection, filler.lastMask)
+        val sent = filler.lastMask!!
+        assertNotSame(selection, sent)
+        assertEquals(FillMask.rectangle(selection)!!.pixels(), sent.pixels())
+        // Strictly larger than what the user chose, and covering all of it.
+        assertTrue(sent.setCount() > selection.setCount())
         assertEquals(PROMPT, filler.lastPrompt)
     }
 
@@ -270,6 +284,12 @@ class GenerativeFillToolTest {
         return viewModel
     }
 
+    private fun Bitmap.pixels(): List<Int> =
+        IntArray(width * height).also { getPixels(it, 0, width, 0, 0, width, height) }.toList()
+
+    private fun Bitmap.setCount(): Int =
+        (0 until width * height).count { MaskOps.isSet(this, it % width, it / width) }
+
     private fun viewModel() = EditorViewModel(
         repository = repository,
         renderer = FakeRenderer(),
@@ -296,12 +316,21 @@ class GenerativeFillToolTest {
             Result.Success(Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888))
 
         override suspend fun resolveMask(document: EditDocument, maskId: String): Bitmap? =
-            document.mask(maskId)?.let { fullFrameMask() }
+            document.mask(maskId)?.let { blobMask() }
 
-        private fun fullFrameMask(): Bitmap {
+        /**
+         * T67: a small off-centre blob rather than the whole frame, so "the model was shown a
+         * rectangle" is a claim the test can actually fail.
+         */
+        private fun blobMask(): Bitmap {
             val bitmap = Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ALPHA_8)
-            for (pixel in 0 until SIZE * SIZE) {
-                bitmap.setPixel(pixel % SIZE, pixel / SIZE, OPAQUE shl ALPHA_SHIFT)
+            for (y in BLOB_TOP..BLOB_BOTTOM) {
+                for (x in BLOB_LEFT..BLOB_RIGHT) {
+                    // A diagonal edge, so the blob is not itself a rectangle.
+                    if (x - BLOB_LEFT <= y - BLOB_TOP) {
+                        bitmap.setPixel(x, y, OPAQUE shl ALPHA_SHIFT)
+                    }
+                }
             }
             return bitmap
         }
@@ -363,5 +392,9 @@ class GenerativeFillToolTest {
         const val SIZE = 32
         const val OPAQUE = 255
         const val ALPHA_SHIFT = 24
+        const val BLOB_LEFT = 8
+        const val BLOB_TOP = 10
+        const val BLOB_RIGHT = 19
+        const val BLOB_BOTTOM = 21
     }
 }

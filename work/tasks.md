@@ -13,8 +13,8 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `[H]` human-only, loop must
 
 ## Queue
 
-**Phase 12, T61–T65.** T57 and T66 are `[!]` — both need a human. Pick the first `[ ]` whose deps
-are all `[x]`, as always.
+**Phase 13, T67–T69.** T57, T66 and T68 are `[!]` — all three need a human. Pick the first `[ ]`
+whose deps are all `[x]`, as always.
 
 ---
 
@@ -362,9 +362,96 @@ design drifted — block it rather than adding one.
 
 ---
 
+---
+
+## Phase 13 — what the second device run found
+
+The 2026-09-06 evening run, on a second device (SM-S948N). Three defects, two of them in the same
+report. **T68 is `[!]` pending one human answer** — see its `blocked:` line.
+
+- [x] T67 채우기 sends a rectangle, not the silhouette
+  spec: specs/generative_fill.md §2, §4, §6, §9; specs/generative_erase.md §4, §10; specs/vibe_edit.md §9.2
+  deps: —
+  report: "채우기 할때는 segmask를 그대로 이용하면 안되고 mask top x, y, bottom x, y를 이용한
+  바운딩 박스에 마진을 30퍼 정도 준 직사각형 마스크로 해서 생성해야돼."
+  why: a silhouette tells `gemini-2.5-flash-image` to paint the requested thing **into the shape of
+  the thing that was there**. 지우기 wants exactly that (T50's margin only widens it); 채우기 does
+  not — a red umbrella asked for in the shape of a chair comes back as a chair-shaped smear.
+  done when:
+    - `FillMask` in `feature/editor/tools/fill`: the bounding box of the mask's set pixels, each
+      side moved outward by `MARGIN_FRACTION`, clamped to the bitmap, returned as a **binary
+      rectangle** at the mask's size. An empty mask returns null rather than a full-frame rectangle
+    - the rectangle is what the **document stores**, not only what goes on the wire. The renderer
+      composes `lerp(in, result, maskAlpha)`, so a result composited through the silhouette would
+      throw away everything the model painted outside it — T50's argument, re-made for the fill
+    - `FillCommit` beside `EraseCommit`, storing the rectangle as its own `Operation.Mask` and
+      naming it from the `GenerativeFill`. `activeMaskId` **stays on the user's own selection**, so
+      a following adjust or cut-out is still theirs
+    - both fill paths go through it: the 채우기 tool and `PlanRunner`'s `Fill` step. Two copies of
+      "which mask did we fill through" is how the two paths drift apart
+    - `FakeFillProvider` still fills what it is given, so a test asserting the mask is a rectangle
+      asserts it about the real argument
+    - tests: the box of an off-centre blob; the margin; clamping at every edge; an empty mask; the
+      op names the rectangle and not `activeMaskId`; the plan path and the tool path agree
+  touches: feature/editor/tools/fill, feature/editor/tools/direct/PlanRunner.kt,
+  feature/editor/EditorViewModel.kt, feature/editor tests
+
+- [!] T68 "인스타그램 용으로" must not crop to 1:1
+  spec: specs/vibe_edit.md §4, §4.1, §5; specs/crop.md; specs/ai_provider.md §3
+  deps: —
+  report: "바이브로 인스타그램 용으로 만든다고 하면 왜 1:1로 크롭되지? 인스타용은 3:4나 4:3
+  이어야해."
+  blocked: **`CropRatio` has no 3:4 and no 4:3.** The closed set is {square, portrait_4_5,
+  story_9_16, landscape_16_9}, and vibe_edit.md §4.1's whole argument for closing it is that the
+  model contributes no geometry. Adding the two the report names is not a prompt fix: it changes
+  `CropRatio` (ai_provider.md §3) *and* `AspectPreset`, which drives the 자르기 chip row — five
+  chips become seven, and `CropSheet` lays them out in a plain non-scrolling `Row`. So it is a
+  spec amendment plus a layout change plus a re-recorded `crop_sheet_open`, and which ratios the
+  app offers is a product decision. A human picks one:
+    1. **Add `portrait_3_4` and `landscape_4_3`**, make the chip row scroll, re-record the golden.
+       What the report literally asks for.
+    2. **Point Instagram at the existing `portrait_4_5`** — a prompt-only fix. 4:5 is Instagram's
+       own feed portrait standard, and 0.8 against 3:4's 0.75 is a 6% difference. Cheapest, and
+       nothing in the closed set moves.
+    3. Add only `portrait_3_4`, replacing `portrait_4_5`. Keeps the chip count, breaks any
+       document already cropped to 4:5 only in the sense that its `AspectPreset` no longer exists.
+  done when (whichever option is chosen):
+    - `PLAN_SYSTEM_INSTRUCTION` gains the rule that a bare platform name ("인스타", "인스타그램")
+      is a **feed** request and not a square one, plus one worked example. §4's "call it at most
+      once, it always runs last" is unchanged
+    - the existing `"인스타 스토리에 올리게 잘라줘" -> story_9_16` example still holds: a story is
+      still 9:16, and only the bare-feed case moves
+    - tests: §12's planner list, plus a bare "인스타그램에 올릴거야" decoding to the chosen ratio
+  touches: core/ai/gemini/GeminiPlanCatalog.kt, core/ai tests, and — for option 1 or 3 —
+  core/ai/EditPlanProvider.kt, feature/editor/tools/crop, feature/editor screenshot goldens
+
+- [ ] T69 자르기 opens on the cropped image instead of the source
+  spec: specs/crop.md ("opening 자르기 refits to the un-cropped source"); specs/render.md
+  deps: —
+  report: "1:1로 안내되긴 하는데 크롭 사각형이 1:1이 아니라 원본 이미지가 1:1로 변하고 거기에
+  크롭 직사각형이 뜨네..?"
+  why: this is the open issue `progress.md` has carried since T24, made visible by T58. A plan that
+  ends in `crop_ratio` commits the `Crop` and *then* opens 자르기, so the preview the overlay sits
+  on is already cropped — the photo looks squished to the new ratio and the rect sits on top of it.
+  Nothing is wrong with the rect; it is the image underneath.
+  done when:
+    - while 자르기 is open the preview renders the document **minus its `Crop`**. Nothing else is
+      dropped: an outpaint, an erase and every adjust still show, because the user is framing the
+      photo they actually have
+    - the transition is driven from **one** place, not from each of `onToolClick`, `cancelSheet`
+      and `applySheet` — three call sites is how one of them gets forgotten
+    - `CropState.from(document, sourceAspect)` is untouched: the rect was always right
+    - committing 적용 leaves the preview cropped again, and 취소 leaves it exactly as it was
+    - `EditorViewModel` gains **no function**: it is at detekt's ceiling (T65)
+    - tests: opening 자르기 on a document that already has a `Crop` renders the un-cropped
+      document; closing it renders the cropped one; a plan ending in `crop_ratio` lands in the same
+      state as a tap on the tool
+  touches: feature/editor/EditorViewModel.kt, feature/editor tests
+
 ## Backlog
 
-_Empty._ The next queue comes from the **second** device run: T51 and T52 are prompt rewrites, and
+The **second device run happened on 2026-09-06** (SM-S948N, the same reverse-tunnel setup). What it
+found is Phase 13. What it has still not answered: T51 and T52 are prompt rewrites, and
 only a real model can say whether they hold.
 
 **Phase 11 needs that run too**: T56's rules are a prompt change, and only a real model can say

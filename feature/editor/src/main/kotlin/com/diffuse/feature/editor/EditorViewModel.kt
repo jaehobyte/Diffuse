@@ -33,6 +33,7 @@ import com.diffuse.feature.editor.tools.erase.EraseTap
 import com.diffuse.feature.editor.tools.expand.ExpandController
 import com.diffuse.feature.editor.tools.expand.ExpandState
 import com.diffuse.feature.editor.tools.expand.ExpandTap
+import com.diffuse.feature.editor.tools.fill.FillCommit
 import com.diffuse.feature.editor.tools.fill.FillController
 import com.diffuse.feature.editor.tools.fill.FillState
 import com.diffuse.feature.editor.tools.fill.FillTap
@@ -114,12 +115,14 @@ class EditorViewModel @Inject constructor(
     /** specs/generative_erase.md: runs the model; this class is what pushes the result. */
     val erase = EraseController(ai.erase, eraseCommit, viewModelScope)
 
-    /** specs/generative_fill.md §6: same split — the tool runs it, this class commits it. */
-    val fill = FillController(
-        provider = ai.fill,
+    /** T67: one commit shape for both fill paths, the way `EraseCommit` serves both erase ones. */
+    private val fillCommit = FillCommit(
+        saveMask = { maskId, mask -> repository.saveMask(projectId, maskId, mask) },
         saveResult = { fillId, result -> repository.saveFillResult(projectId, fillId, result) },
-        scope = viewModelScope,
     )
+
+    /** specs/generative_fill.md §6: same split — the tool runs it, this class commits it. */
+    val fill = FillController(ai.fill, fillCommit, viewModelScope)
 
     /** specs/outpaint.md §6: same split again — the tool runs it, this class commits it. */
     val expand = ExpandController(
@@ -143,9 +146,7 @@ class EditorViewModel @Inject constructor(
             fill = ai.fill,
             dispatchers = dispatchers,
             saveMask = { maskId, mask -> repository.saveMask(projectId, maskId, mask) },
-            saveFillResult = { fillId, result ->
-                repository.saveFillResult(projectId, fillId, result)
-            },
+            fillCommit = fillCommit,
             eraseCommit = eraseCommit,
         ),
         scope = viewModelScope,

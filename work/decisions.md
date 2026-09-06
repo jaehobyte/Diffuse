@@ -8,6 +8,33 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T67
+
+- **The rectangle replaces the silhouette on the wire *and* in the document.** Sending a rectangle
+  but compositing through the silhouette would have been the smaller change and a useless one: the
+  renderer's `lerp(in, result, maskAlpha)` restores everything outside the stored mask from the
+  source, so every pixel of the new object that fell outside the old object's outline would be
+  thrown away. T50 made this argument for the erase margin; a bounding box makes it louder.
+
+- **The margin is 30% of the box on each side, so the box grows to 1.6×.** The report said "마진을
+  30퍼 정도", and per-side is the reading that gives the model somewhere to put the new thing's
+  shadow, contact point and perspective. It clamps at the bitmap, so a selection near an edge grows
+  only inward. One named constant, `FillMask.MARGIN_FRACTION`.
+
+- **`FillCommit` was written rather than extending `EraseCommit`.** They are the same five lines
+  apart from which op they append and that a fill carries a prompt. Merging them would need a
+  parameter saying which of the two it is, which is the shape ai_provider.md §3 argues against for
+  the providers themselves — and the erase's mask is a dilation while the fill's is a box, so the
+  two would still diverge above the seam.
+
+- **`MaskOps.isSet` became public.** It was already the codebase's definition of "this pixel is
+  selected", privately; `FillMask` needs to walk a mask to find its bounds, and a fourth local
+  copy of `(pixel ushr 24) != 0` is how those drift.
+
+- **`GenerativeFillToolTest`'s fake mask became a diagonal blob.** It resolved every mask to the
+  full frame, which made "the model was shown a rectangle" unfalsifiable — the full frame *is* a
+  rectangle. The blob has an edge no rectangle has.
+
 ### T65
 
 - **The pending area is drawn by `OverlayTransform`, not by the overlay.** §6 says the photo

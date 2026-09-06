@@ -17,6 +17,8 @@ import com.diffuse.feature.editor.tools.crop.CropState
 import com.diffuse.feature.editor.tools.crop.preset
 import com.diffuse.feature.editor.tools.erase.EraseCommit
 import com.diffuse.feature.editor.tools.erase.EraseMask
+import com.diffuse.feature.editor.tools.fill.FillCommit
+import com.diffuse.feature.editor.tools.fill.FillMask
 import com.diffuse.feature.editor.tools.select.MaskOps
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
@@ -57,8 +59,8 @@ class PlanRunner(
     private val dispatchers: DispatcherProvider,
     /** `repository.saveMask(projectId, …)`, bound by the ViewModel. */
     private val saveMask: suspend (String, Bitmap) -> Result<ImageRef>,
-    /** `repository.saveFillResult(projectId, …)`, likewise. */
-    private val saveFillResult: suspend (String, Bitmap) -> Result<ImageRef>,
+    /** T67: 채우기's rectangle and its result, committed the way the tool commits them. */
+    private val fillCommit: FillCommit,
     /** The 지우기 tool's commit, shared so both paths erase through the same margin (T50). */
     private val eraseCommit: EraseCommit,
 ) {
@@ -226,36 +228,23 @@ class PlanRunner(
         }
 
         /**
-         * §9.2: the selection the plan is holding, undilated — 채우기 draws inside the region the
-         * `Select` found, where 지우기 needs a margin around what it removes (T50).
+         * §9.2, T67: the selection's **bounding box with a margin**, exactly as the 채우기 tool
+         * sends it. 지우기 dilates the silhouette because it is reconstructing what was behind a
+         * thing; 채우기 replaces the thing, and a silhouette would dictate the new one's shape.
          */
         private suspend fun fillSelection(
             prompt: String,
             document: EditDocument,
         ): Result<EditDocument> {
-            val selected = mask
-            val maskId = document.activeMaskId
-            return if (maskId == null || selected == null) {
+            val rectangle = mask?.let(FillMask::rectangle)
+            return if (document.activeMaskId == null || rectangle == null) {
                 missing()
             } else {
-                when (val result = fill.fill(preview, selected, prompt)) {
+                when (val result = fill.fill(preview, rectangle, prompt)) {
                     is Result.Failure -> result
-                    is Result.Success -> store(document, maskId, prompt, result.value)
+                    is Result.Success ->
+                        fillCommit.apply(document, rectangle, prompt, result.value)
                 }
-            }
-        }
-
-        private suspend fun store(
-            document: EditDocument,
-            maskId: String,
-            prompt: String,
-            result: Bitmap,
-        ): Result<EditDocument> {
-            val fillId = newId()
-            return when (val saved = saveFillResult(fillId, result)) {
-                is Result.Failure -> saved
-                is Result.Success ->
-                    Result.Success(document.withGenerativeFill(maskId, saved.value, prompt, fillId))
             }
         }
 

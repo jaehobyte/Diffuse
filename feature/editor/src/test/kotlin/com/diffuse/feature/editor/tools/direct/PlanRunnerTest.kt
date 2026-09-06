@@ -16,6 +16,7 @@ import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.core.imaging.model.ImageRef
 import com.diffuse.core.imaging.model.Operation
 import com.diffuse.feature.editor.tools.erase.EraseCommit
+import com.diffuse.feature.editor.tools.fill.FillCommit
 import com.diffuse.feature.editor.tools.select.MaskOps
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -23,6 +24,7 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -61,10 +63,13 @@ class PlanRunnerTest {
                 Result.Success(ImageRef("/p/mask_$maskId.png"))
             }
         },
-        saveFillResult = { fillId, _ ->
-            savedFills += fillId
-            Result.Success(ImageRef("/p/fill_$fillId.png"))
-        },
+        fillCommit = FillCommit(
+            saveMask = { maskId, _ -> Result.Success(ImageRef("/p/mask_$maskId.png")) },
+            saveResult = { fillId, _ ->
+                savedFills += fillId
+                Result.Success(ImageRef("/p/fill_$fillId.png"))
+            },
+        ),
         eraseCommit = EraseCommit(
             saveMask = { maskId, _ -> Result.Success(ImageRef("/p/mask_$maskId.png")) },
             saveResult = { eraseId, _ ->
@@ -229,9 +234,11 @@ class PlanRunnerTest {
         val document = lastDocument(plan)
 
         val fill = document.generativeFills().single()
-        // Unlike the erase, the fill names the selection itself: no margin, so no second mask.
-        assertEquals(document.activeMaskId, fill.maskId)
-        assertEquals(1, document.operations.filterIsInstance<Operation.Mask>().size)
+        // T67: the fill names its own rectangle, so a plan's fill adds a second `Mask` exactly as
+        // an erase does — and the selection the plan made stays active on top of it.
+        assertNotEquals(document.activeMaskId, fill.maskId)
+        assertEquals(2, document.operations.filterIsInstance<Operation.Mask>().size)
+        assertNotNull(document.mask(fill.maskId))
         assertEquals("a red umbrella", fill.prompt)
         assertEquals("a red umbrella", filler.lastPrompt)
         assertEquals(savedFills, listOf(fill.id))
@@ -251,7 +258,9 @@ class PlanRunnerTest {
         ).toList()
 
         val document = events.filterIsInstance<RunEvent.Committed>().last().document
-        assertEquals(document.activeMaskId, document.generativeFills().single().maskId)
+        // The document's own mask is what the rectangle was measured from; it stays active.
+        assertEquals("m", document.activeMaskId)
+        assertNotEquals("m", document.generativeFills().single().maskId)
         assertEquals(1, filler.fillCount)
     }
 
