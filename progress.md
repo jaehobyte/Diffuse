@@ -1,8 +1,18 @@
 ## Current
 
-_Idle._ T73 is committed. T74 (`apply_style`) and T75 (컬러 매칭) both have their deps met now.
+_Idle._ T74 is committed. **T75 컬러 매칭 is the last open task in Phase 14.**
 
 ## Done
+
+- T74 `apply_style` — the planner's eighth function. `StyleId` mirrors the catalog's twelve ids in
+  `core:ai`, because a function declaration has to name its enum values and `core:ai` cannot open an
+  asset; `StyleId.id` is the catalog's own string so the join is the id and not a second spelling,
+  and `StyleIdCatalogTest` — in the one module that can see both — is what keeps the copy honest.
+  `intensity` is optional (a look named with no strength means all of it) and clamps; only an
+  unknown **id** drops the step, which is what §6 asks for. `validate` gained no clause: a style
+  consumes no selection. The runner resolves the id through a `styleParams` lambda, because the
+  catalog is data only the ViewModel can reach — two files outside `touches` moved for it, and
+  `work/decisions.md` says why. 8 tests.
 
 - T73 스타일 — the tool, twelve tiles of the user's own photograph, and one 강도 slider. `Tool.Style`
   sits at the **AI level** on tool_groups.md §2's diagram, which does not contradict style_match.md
@@ -16,35 +26,23 @@ _Idle._ T73 is committed. T74 (`apply_style`) and T75 (컬러 매칭) both have 
   golden passed **unrecorded**, `editor_shell_ai_open` included — which is the second task to
   confirm the strip-golden threshold issue below rather than fix it.
 
-- T72 The style catalog. `styles.json` (12 styles × 41 variants) ships — the human confirmed
-  `PhotoTune_v1` is their own, and chose all twelve rather than the subset that survives T71 intact,
-  which fixes T74's enum at twelve ids. §3's `nameRes` could not go on `StylePreset`: `core:imaging`
-  is a library with `assets` and no `res/`. The name is attached at the `feature:editor` boundary
-  instead — the edge T58 drew for `CropRatio` — so a missing id **fails to compile**, and
-  `StyleLabelsTest` catches what a compiler cannot see, a new preset arriving unnamed. `StyleParams`
-  is the one place either scale is named: exposure divides by the 2 EV `LightOps` spans, everything
-  else by Lightroom's 100, and **vignette by −100** — Lightroom darkens on a negative amount,
-  `DetailOps` on a positive one, and `AdjustKind.Vignette.range` is what caught it. `hsl` was never
-  a gap. The dropped four are exactly §3.1's. 14 tests.
+- T72 The style catalog. `styles.json` (12 styles × 41 variants) ships; the human confirmed
+  `PhotoTune_v1` is their own and chose all twelve. §3's `nameRes` could not go on `StylePreset` —
+  `core:imaging` has no `res/` — so the name attaches at the `feature:editor` boundary and a missing
+  id **fails to compile**. `StyleParams` is the one place either scale is named: exposure by the
+  2 EV `LightOps` spans, the rest by Lightroom's 100, **vignette by −100** (the two darken on
+  opposite signs, which `AdjustKind.Vignette.range` caught). 14 tests.
 
-- T70 채우기 belongs under the adjust stack too — and so did the 지시 tool's `Erase` step, which
-  `e3b00c5` never reached. The rule now has one home, `tools/AdjustStack.kt`: `generativeInput`
-  renders the frame minus the `Adjust` ops and `EditDocument.underTheAdjustments()` places the
-  result under them. Either half alone is wrong, which is why they sit in one file. `PlanRunner`
-  takes the frame as a **lambda per step**, not a bitmap per run — each step chains a new document,
-  so a plan whose first step adjusts still shows its `Fill` a clean frame; the run's `preview` stays
-  the segmentation session's, because a selection is made on what the user is looking at. 확대 was
-  checked rather than assumed: bare source in, `withOutpaint` at index 0, nothing to do. 8 tests.
+- T70 채우기 belongs under the adjust stack too, and so did 지시's `Erase` step. One home,
+  `tools/AdjustStack.kt`: `generativeInput` renders the frame minus the `Adjust` ops and
+  `underTheAdjustments()` places the result under them — either half alone is wrong. `PlanRunner`
+  takes the frame as a **lambda per step**, not a bitmap per run. 8 tests.
 
-- T77 자동 — one tap, and the sheet arrives **after** the call holding MonetGPT's plan. What it
-  commits is ordinary `Adjust` ops (ADR-015 reaching the UI), so the boost is something the user
-  can then disagree with one slider at a time, and 적용 is one `push` — one undo takes the whole
-  thing back. The plan applies **live** while the sheet is open, through T69's collector shape, so
-  강도 is a slider on a result rather than on a number; `AutoState.appliedTo` is the one fold the
-  preview and 적용 share. Changing a chip costs a call and re-runs on the bitmap the *first* call
-  was given, never on the boost it is replacing. `ToolTap` replaced `EraseTap` / `FillTap` /
-  `ExpandTap`, which were three spellings of one enum. 12 tool tests, goldens `auto_sheet_open` /
-  `auto_sheet_result`; every existing golden passed unrecorded.
+- T77 자동 — one tap, and the sheet arrives **after** the call holding MonetGPT's plan. It commits
+  ordinary `Adjust` ops (ADR-015 reaching the UI), so the boost is something the user can disagree
+  with one slider at a time, and 적용 is one `push`. The plan applies **live** through T69's
+  collector shape, so 강도 is a slider on a result rather than on a number. `ToolTap` replaced
+  three spellings of one enum. 12 tests, goldens `auto_sheet_open` / `auto_sheet_result`.
 
 - T68 인스타그램 is a feed post, not a square. Not a prompt fix — `CropRatio` had no 3:4 and no 4:3
   — so the human picked adding them: the row now reads 자유 · 1:1 · 3:4 · 4:5 · 9:16 · 4:3 · 16:9
@@ -64,9 +62,10 @@ _Idle._ T73 is committed. T74 (`apply_style`) and T75 (컬러 매칭) both have 
 
 ## Next
 
-**T74 `apply_style`** — the catalog's twelve ids become the planner's eighth function, a closed
-enum, and `direct_step_style` renders the preset's Korean through `styleNameRes`. Then **T75
-컬러 매칭**, whose local matcher (§5 step 1) is the half that needs no model call.
+**T75 컬러 매칭** — and the load-bearing half is §5 step 1, the **local** matcher: measure the
+reference, score every preset by weighted distance, and offer the nearest with no model call. Only
+past `STYLE_MATCH_THRESHOLD` does it ask `gemini-2.5-flash` for numbers. After that Phase 14 is done
+and only the two `[!]` tasks remain.
 
 T57 and T66 stay `[!]`. T66 now has **one** prerequisite left rather than two: the bench ran and the
 budget is missed (2 adjusts 77ms, six HSL 406ms against a 100ms p50 budget), so "close it as not

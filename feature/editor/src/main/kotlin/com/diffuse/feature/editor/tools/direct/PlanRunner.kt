@@ -7,10 +7,12 @@ import com.diffuse.core.ai.FillProvider
 import com.diffuse.core.ai.PlanStep
 import com.diffuse.core.ai.SegSession
 import com.diffuse.core.ai.SegmentationProvider
+import com.diffuse.core.ai.StyleId
 import com.diffuse.core.common.AppError
 import com.diffuse.core.common.DispatcherProvider
 import com.diffuse.core.common.Result
 import com.diffuse.core.common.newId
+import com.diffuse.core.imaging.model.AdjustKind
 import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.core.imaging.model.ImageRef
 import com.diffuse.feature.editor.tools.crop.CropState
@@ -71,6 +73,12 @@ class PlanRunner(
      * purpose.
      */
     private val generativeInput: suspend (EditDocument) -> Bitmap?,
+    /**
+     * specs/style_match.md §6: a catalogued id and a strength become `AdjustKind` values. The
+     * catalog is an asset the ViewModel can reach and this class cannot, so it arrives as a
+     * lambda — the shape every other thing `PlanRunner` cannot know already takes.
+     */
+    private val styleParams: suspend (StyleId, Int) -> Map<AdjustKind, Float>,
 ) {
 
     /**
@@ -162,6 +170,7 @@ class PlanRunner(
                 is PlanStep.Fill -> fillSelection(step.prompt, document)
                 PlanStep.CutOut -> cutOut(document)
                 is PlanStep.Crop -> Result.Success(crop(step, document))
+                is PlanStep.Style -> Result.Success(style(step, document))
             }
 
         /** §9.2: the session is opened once, on the current preview, and closed with the run. */
@@ -267,6 +276,17 @@ class PlanRunner(
         private fun crop(step: PlanStep.Crop, document: EditDocument): EditDocument =
             CropState.from(document, sourceAspect).withPreset(step.ratio.preset).applyTo(document)
 
+        /**
+         * specs/style_match.md §6: the id resolves to a preset here, at the `feature:editor`
+         * boundary `CropRatio` already crosses, and the preset becomes ordinary `Adjust` ops —
+         * exactly what the 스타일 sheet's 적용 commits. An id the catalog does not have leaves the
+         * document alone; `apply_style`'s enum is closed, so that means the catalog moved.
+         */
+        private suspend fun style(step: PlanStep.Style, document: EditDocument): EditDocument =
+            styleParams(step.style, step.intensity)
+                .entries
+                .fold(document) { acc, (kind, value) -> acc.withAdjust(kind, value, maskId = null) }
+
         private fun cutOut(document: EditDocument): Result<EditDocument> {
             val maskId = document.activeMaskId
             return if (maskId == null) missing() else Result.Success(document.withCutOut(maskId))
@@ -296,7 +316,8 @@ class PlanRunner(
  */
 private val PlanStep.consumesSelection: Boolean
     get() = when (this) {
-        is PlanStep.Select, is PlanStep.Crop -> false
+        // §6: a style consumes no selection either, and needed no new `validate` clause.
+        is PlanStep.Select, is PlanStep.Crop, is PlanStep.Style -> false
         is PlanStep.Adjust -> masked
         is PlanStep.Fill -> true
         PlanStep.Erase, PlanStep.CutOut -> true

@@ -13,8 +13,7 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `[H]` human-only, loop must
 
 ## Queue
 
-**Phase 14, T71–T78.** T74 and T75 are open; T72 and T73, which both declare, are `[x]`. T57 and
-T66 are `[!]`;
+**Phase 14, T71–T78.** T75 is the last one open, and its deps are met. T57 and T66 are `[!]`;
 T66 has one prerequisite left, not two — the bench number is in `work/decisions.md` and it says the
 budget is missed. Pick the first `[ ]` whose deps are all `[x]`, as always.
 
@@ -558,7 +557,7 @@ have, and all twelve styles use at least one of them. Nothing in T72–T77 can b
   feature/editor/EditorRoute.kt, feature/editor strings.xml, feature/editor tests,
   feature/editor screenshot goldens
 
-- [ ] T74 `apply_style` — the planner's eighth function
+- [x] T74 `apply_style` — the planner's eighth function
   spec: specs/style_match.md §6, §9; specs/vibe_edit.md §4, §4.1, §5, §9.1
   deps: T72, T73
   note: T73 is a dep because the catalog's ids become this function's enum and the step list

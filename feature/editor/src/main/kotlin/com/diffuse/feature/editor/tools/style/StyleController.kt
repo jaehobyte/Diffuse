@@ -94,8 +94,7 @@ class StyleController(
         if (document == null) return
         job?.cancel()
         job = scope.launch {
-            val presets = _state.value.presets.ifEmpty { catalog() }
-            _state.value = _state.value.copy(presets = presets)
+            val presets = presets()
             renderTile(STYLE_NONE_ID, document)
             presets.forEach { preset ->
                 // The same fold the canvas and 적용 use, at full strength: a tile shows what the
@@ -104,6 +103,17 @@ class StyleController(
                 renderTile(preset.id, full.appliedTo(document))
             }
         }
+    }
+
+    /**
+     * The catalog, loaded once and kept. T74: a 지시 plan can name a style before the sheet has
+     * ever been opened, so the load cannot belong to [open].
+     */
+    suspend fun presets(): List<StylePreset> {
+        _state.value.presets.takeIf { it.isNotEmpty() }?.let { return it }
+        val loaded = catalog()
+        _state.value = _state.value.copy(presets = loaded)
+        return loaded
     }
 
     private suspend fun renderTile(id: String, document: EditDocument) {

@@ -22,6 +22,7 @@ import com.diffuse.feature.editor.tools.ToolTap
 import com.diffuse.feature.editor.tools.generativeInput
 import android.content.Context
 import com.diffuse.core.imaging.style.StyleCatalog
+import com.diffuse.core.imaging.style.atIntensity
 import com.diffuse.feature.editor.tools.style.StyleController
 import com.diffuse.feature.editor.tools.style.StyleState
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -181,6 +182,16 @@ class EditorViewModel @Inject constructor(
             // generative step is shown has to be the one it is actually editing.
             generativeInput = { document ->
                 generativeInput(renderer, document, PREVIEW_LONG_EDGE_PX)
+            },
+            // specs/style_match.md §6: the catalog is an asset, so the id resolves here and the
+            // runner is handed numbers. `presets()` loads on demand — a plan can name a style
+            // the user has never opened the 스타일 sheet to see.
+            styleParams = { id, intensity ->
+                style.presets()
+                    .firstOrNull { it.id == id.id }
+                    ?.params
+                    ?.atIntensity(intensity)
+                    .orEmpty()
             },
         ),
         scope = viewModelScope,

@@ -1,6 +1,7 @@
 package com.diffuse.core.ai.gemini
 
 import com.diffuse.core.ai.CropRatio
+import com.diffuse.core.ai.StyleId
 import com.diffuse.core.imaging.model.AdjustKind
 import com.diffuse.core.imaging.model.HslBand
 import com.diffuse.core.imaging.model.HslChannel
@@ -27,6 +28,7 @@ internal const val FN_ERASE_SELECTION = "erase_selection"
 internal const val FN_CUT_OUT_SELECTION = "cut_out_selection"
 internal const val FN_FILL_SELECTION = "fill_selection"
 internal const val FN_CROP_RATIO = "crop_ratio"
+internal const val FN_APPLY_STYLE = "apply_style"
 
 internal const val ARG_PHRASE = "phrase"
 internal const val ARG_KIND = "kind"
@@ -35,6 +37,8 @@ internal const val ARG_MASKED = "masked"
 internal const val ARG_COLOR = "color"
 internal const val ARG_RATIO = "ratio"
 internal const val ARG_PROMPT = "prompt"
+internal const val ARG_STYLE = "style"
+internal const val ARG_INTENSITY = "intensity"
 
 /**
  * §4's ten `AdjustKind` names in lower snake case. Every one of them is a single word, so this is
@@ -86,6 +90,15 @@ internal val CropRatio.wireName: String
 
 internal fun cropRatioOf(wire: String): CropRatio? =
     CropRatio.entries.firstOrNull { it.wireName == wire }
+
+/**
+ * specs/style_match.md §6. The catalog's own ids are the wire values — not a lowercasing of the
+ * enum — because the id is what joins a plan step to a preset at the feature boundary.
+ */
+internal fun styleIdOf(wire: String): StyleId? = StyleId.entries.firstOrNull { it.id == wire }
+
+/** §6: 강도 runs 0…100, and a request naming a look means all of it unless it says otherwise. */
+internal const val FULL_STYLE_INTENSITY = 100
 
 internal val HslBand.wireName: String get() = name.lowercase()
 
@@ -144,6 +157,10 @@ internal const val PLAN_SYSTEM_INSTRUCTION =
         "asks for a wide or horizontal one. It does not mean square: square is only for a " +
         "request that actually says so (\"정사각형\", \"1:1\"). A story or a reel is still " +
         "story_9_16.\n" +
+        "- A request that names a *look* - \"필름 느낌\", \"빈티지하게\", \"영화같이\" - is " +
+        "apply_style: pick the catalogued style that matches and let it carry the numbers. A " +
+        "request that names a *change* - \"더 따뜻하게\", \"밝게\" - stays adjust. Never call " +
+        "both for one look.\n" +
         "- If the request cannot be met with these functions, call nothing.\n" +
         "Examples:\n" +
         "- \"버스를 지워줘\" -> select_region(phrase=\"bus\"), erase_selection()\n" +
@@ -157,7 +174,8 @@ internal const val PLAN_SYSTEM_INSTRUCTION =
         "fill_selection(prompt=\"a red umbrella\")\n" +
         "- \"하늘을 더 파랗게 해줘\" -> adjust_color_range(color=\"blue\", saturation=0.4)\n" +
         "- \"인스타 스토리에 올리게 잘라줘\" -> crop_ratio(ratio=\"story_9_16\")\n" +
-        "- \"인스타그램에 올릴거야\" -> crop_ratio(ratio=\"portrait_3_4\")"
+        "- \"인스타그램에 올릴거야\" -> crop_ratio(ratio=\"portrait_3_4\")\n" +
+        "- \"필름 느낌으로 바꿔줘\" -> apply_style(style=\"film-warm\", intensity=100)"
 
 internal val PLAN_FUNCTIONS: List<FunctionDeclaration> = listOf(
     FunctionDeclaration(
@@ -288,6 +306,35 @@ internal val PLAN_FUNCTIONS: List<FunctionDeclaration> = listOf(
                 ),
             ),
             required = listOf(ARG_RATIO),
+        ),
+    ),
+    FunctionDeclaration(
+        name = FN_APPLY_STYLE,
+        description = "Apply a catalogued look to the whole photo. Use this when the request " +
+            "names a style rather than a change - a film look, a vintage look, a cinematic " +
+            "look. The style carries its own colour and tone settings, so call nothing else " +
+            "for it.",
+        parameters = Schema(
+            type = TYPE_OBJECT,
+            properties = mapOf(
+                ARG_STYLE to Schema(
+                    type = TYPE_STRING,
+                    description = "Which look to apply. clean-bright is bright and restrained; " +
+                        "natural-enhance is a gentle lift; crisp-landscape is clear skies and " +
+                        "greens; film-warm is warm film; faded-matte is lifted, matte blacks; " +
+                        "cinematic-teal is teal-and-orange film; moody-dark is dark and heavy; " +
+                        "vibrant-pop is strong colour; pastel-soft is soft and pale; " +
+                        "golden-glow is golden-hour warmth; urban-hip is cool and contrasty; " +
+                        "bw-classic is black and white.",
+                    enumValues = StyleId.entries.map { it.id },
+                ),
+                ARG_INTENSITY to Schema(
+                    type = TYPE_NUMBER,
+                    description = "How much of the style to apply, 0 to 100. Use 100 unless the " +
+                        "request asks for a hint of it.",
+                ),
+            ),
+            required = listOf(ARG_STYLE),
         ),
     ),
 )

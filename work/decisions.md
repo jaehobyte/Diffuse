@@ -8,6 +8,42 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T74
+
+- **`touches` could not reach the catalog, so two files outside it moved.** T74 lists
+  `feature/editor/tools/direct` but the ids resolve to *data* that only `EditorViewModel` can read —
+  the catalog is an asset. `StyleController` gained `presets()` (an on-demand load, because a plan
+  can name a style before the sheet has ever opened) and the ViewModel binds a `styleParams` lambda
+  onto `PlanRunner`, the shape every other thing the runner cannot know already takes. The
+  alternative was caching the catalog in a global, which is the same coupling with the seam hidden.
+
+- **`StyleId` mirrors the twelve ids in `core:ai`, and a test holds the copy honest.** §6 puts the
+  enum there and says `core:ai` does not carry the catalog; a function declaration has to name its
+  enum values, and `core:ai` cannot open an asset. `StyleId.id` is the catalog's own string —
+  dashes and all — so the join is the id rather than a second spelling, and `StyleIdCatalogTest`
+  lives in `feature:editor` because that is the only module that can see both sides.
+
+- **`intensity` is optional and clamps rather than dropping the step.** §6 writes
+  `apply_style(style, intensity)` and does not say whether the second is required. A request naming
+  a look almost never names a strength, so a missing one is 100 — and a model answering 250 meant
+  "a lot", not two and a half times, so it clamps. Only an unknown **id** drops the step, which is
+  what §6 actually asks for.
+
+- **The style step is never masked.** §6 gives no rule, and the sheet's 적용 commits unmasked
+  (`maskId = null`). A style is a look for the whole photograph; applying one inside a selection is
+  a different feature and would need §9.1's `consumesSelection` to change, which §6 says it must
+  not.
+
+- **`apply_style`'s tests are their own class.** Adding six to `GeminiPlanClientTest` pushed it past
+  detekt's `LargeClass`, and one function's tests are the cleanest seam available — the alternative
+  was splitting the other seven functions' tests on a boundary nothing else argues for.
+  `GeminiPlanStyleTest` repeats four lines of MockWebServer harness, which is cheaper than the split
+  it would otherwise force.
+
+- **The instruction rule names looks and changes, not styles.** "필름 느낌" is `apply_style`,
+  "더 따뜻하게" stays `adjust`, and it says never both for one look — the failure worth pre-empting
+  is a model that applies a style *and* nudges the sliders it already set.
+
 ### T73
 
 - **`Tool.Style` is at the AI level, and that does not contradict style_match.md §4.** §4 says 스타일

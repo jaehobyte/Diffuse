@@ -148,6 +148,13 @@ internal class GeminiPlanClient(
             FN_CROP_RATIO -> listOfNotNull(
                 call.args.string(ARG_RATIO)?.let(::cropRatioOf)?.let(PlanStep::Crop),
             )
+            // specs/style_match.md §6: an unknown id drops the step and later steps survive, §5's
+            // rule. `intensity` is optional — a look named with no strength means all of it.
+            FN_APPLY_STYLE -> listOfNotNull(
+                call.args.string(ARG_STYLE)?.let(::styleIdOf)?.let { style ->
+                    PlanStep.Style(style, styleIntensity(call.args))
+                },
+            )
             else -> emptyList()
         }
         if (steps.isEmpty()) logger?.warn(TAG, "dropped function call '${call.name}' ${call.args}")
@@ -163,6 +170,12 @@ internal class GeminiPlanClient(
     private fun cropLast(steps: List<PlanStep>): List<PlanStep> {
         val crop = steps.lastOrNull { it is PlanStep.Crop } ?: return steps
         return steps.filterNot { it is PlanStep.Crop } + crop
+    }
+
+    /** §6: 0…100, clamped. A model that answers 250 meant "a lot", not "two and a half times". */
+    private fun styleIntensity(args: JsonObject): Int {
+        val given = args.float(ARG_INTENSITY)?.takeIf { it.isFinite() } ?: return FULL_STYLE_INTENSITY
+        return given.toInt().coerceIn(0, FULL_STYLE_INTENSITY)
     }
 
     private fun adjust(args: JsonObject): PlanStep.Adjust? {

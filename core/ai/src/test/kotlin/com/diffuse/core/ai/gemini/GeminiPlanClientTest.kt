@@ -103,7 +103,7 @@ class GeminiPlanClientTest {
     }
 
     @Test
-    fun `the body declares the seven functions and forces a call`() = runTest {
+    fun `the body declares the eight functions and forces a call`() = runTest {
         server.enqueue(calls(SELECT_CALL))
 
         client.plan(JPEG, REQUEST)
@@ -120,6 +120,7 @@ class GeminiPlanClientTest {
                 "cut_out_selection",
                 "fill_selection",
                 "crop_ratio",
+                "apply_style",
             ),
             declarations.map { it.jsonObject["name"]!!.jsonPrimitive.content },
         )
