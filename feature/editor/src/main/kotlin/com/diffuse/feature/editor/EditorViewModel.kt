@@ -30,6 +30,9 @@ import com.diffuse.feature.editor.tools.erase.EraseCommit
 import com.diffuse.feature.editor.tools.erase.EraseController
 import com.diffuse.feature.editor.tools.erase.EraseState
 import com.diffuse.feature.editor.tools.erase.EraseTap
+import com.diffuse.feature.editor.tools.fill.FillController
+import com.diffuse.feature.editor.tools.fill.FillState
+import com.diffuse.feature.editor.tools.fill.FillTap
 import com.diffuse.feature.editor.tools.select.SelectionController
 import com.diffuse.feature.editor.tools.select.SelectionState
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -56,6 +59,8 @@ data class EditorUiState(
     val selection: SelectionState = SelectionState(),
     /** specs/generative_erase.md §5: the tool has no sheet, so this is all its state. */
     val erase: EraseState = EraseState(),
+    /** specs/generative_fill.md §6: the prompt lives here between typing it and 적용. */
+    val fill: FillState = FillState(),
     /** specs/vibe_edit.md §3: the plan lives here between the response and 적용. */
     val direct: DirectState = DirectState(),
     /** specs/selection_tool.md §8.1: default on, so an adjustment lands where the user looked. */
@@ -103,6 +108,13 @@ class EditorViewModel @Inject constructor(
 
     /** specs/generative_erase.md: runs the model; this class is what pushes the result. */
     val erase = EraseController(ai.erase, eraseCommit, viewModelScope)
+
+    /** specs/generative_fill.md §6: same split — the tool runs it, this class commits it. */
+    val fill = FillController(
+        provider = ai.fill,
+        saveResult = { fillId, result -> repository.saveFillResult(projectId, fillId, result) },
+        scope = viewModelScope,
+    )
 
     /**
      * specs/vibe_edit.md §3, §9. The tool owns the plan and the run; what it cannot know is
@@ -164,6 +176,9 @@ class EditorViewModel @Inject constructor(
         }
         viewModelScope.launch {
             erase.state.collect { _uiState.value = _uiState.value.copy(erase = it) }
+        }
+        viewModelScope.launch {
+            fill.state.collect { _uiState.value = _uiState.value.copy(fill = it) }
         }
         viewModelScope.launch {
             direct.state.collect { _uiState.value = _uiState.value.copy(direct = it) }
@@ -231,7 +246,7 @@ class EditorViewModel @Inject constructor(
         when {
             state.selectedTool == tool -> cancelSheet()
             tool == Tool.Select && !selection.onToolTapped() -> Unit
-            tool == Tool.Erase -> onEraseTapped(state)
+            tool == Tool.Erase || tool == Tool.Fill -> onRegionToolTapped(state, tool)
             // specs/vibe_edit.md §10: a blank key opens the 서버 설정 sheet, through the same
             // controller-returns-an-intent shape 지우기 uses. One sheet, one owner.
             tool == Tool.Direct -> when (direct.onToolTapped()) {
@@ -260,19 +275,33 @@ class EditorViewModel @Inject constructor(
 
 
     /**
-     * specs/generative_erase.md §5, §9: the tool has no sheet — tapping it either runs the model
-     * or says which of the four things is missing.
+     * The two generative region tools, which ask the same question of the same selection and
+     * differ in what a yes means: 지우기 has no sheet and runs on the tap (generative_erase.md
+     * §5, §9), 채우기 opens one because it needs a noun (generative_fill.md §6). Both refuse the
+     * same two ways, through the same controller-returns-an-intent shape.
      */
-    private fun onEraseTapped(state: EditorUiState) {
-        when (erase.onToolTapped(hasSelection = state.document?.activeMaskId != null)) {
-            EraseTap.Refused -> Unit
-            EraseTap.OpenSettings -> selection.setSettingsVisible(true)
-            EraseTap.Run -> erase.runAndCommit(
-                image = state.preview?.asAndroidBitmap(),
-                mask = state.activeMask,
-                document = state.document,
-                onCommitted = { document -> history?.push(document) },
-            )
+    private fun onRegionToolTapped(state: EditorUiState, tool: Tool) {
+        val hasSelection = state.document?.activeMaskId != null
+        if (tool == Tool.Erase) {
+            when (erase.onToolTapped(hasSelection)) {
+                EraseTap.Refused -> Unit
+                EraseTap.OpenSettings -> selection.setSettingsVisible(true)
+                EraseTap.Run -> erase.runAndCommit(
+                    image = state.preview?.asAndroidBitmap(),
+                    mask = state.activeMask,
+                    document = state.document,
+                    onCommitted = { document -> history?.push(document) },
+                )
+            }
+        } else {
+            when (fill.onToolTapped(hasSelection)) {
+                FillTap.Refused -> Unit
+                FillTap.OpenSettings -> selection.setSettingsVisible(true)
+                FillTap.Open -> {
+                    sheetBaseline = state.document
+                    _uiState.value = state.copy(selectedTool = Tool.Fill)
+                }
+            }
         }
     }
 
@@ -309,6 +338,7 @@ class EditorViewModel @Inject constructor(
         }
         sheetBaseline = null
         selection.closeSheet()
+        fill.close()
         direct.close()
         _uiState.value = _uiState.value.copy(selectedTool = null)
     }
@@ -317,6 +347,18 @@ class EditorViewModel @Inject constructor(
         val state = _uiState.value
         when (state.selectedTool) {
             Tool.Select -> applySelection()
+            // specs/generative_fill.md §6: 적용 runs the model, and the sheet closes only once
+            // the result is committed — a failure leaves it open with the prompt intact.
+            Tool.Fill -> fill.runAndCommit(
+                image = state.preview?.asAndroidBitmap(),
+                mask = state.activeMask,
+                document = state.document,
+                onCommitted = { document ->
+                    history?.push(document)
+                    sheetBaseline = null
+                    _uiState.value = _uiState.value.copy(selectedTool = null)
+                },
+            )
             // specs/vibe_edit.md §3: 적용 runs the plan; the sheet closes when the run ends.
             Tool.Direct -> direct.apply()
             else -> {

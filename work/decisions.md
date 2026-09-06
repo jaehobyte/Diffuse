@@ -8,6 +8,36 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T61
+
+- **`saveFillResult` was added to `ProjectRepository`, outside T61's `touches`.** generative_fill.md
+  §5 names `fill_<id>.png`, and T62 already expects "a `saveFillResult` lambda", so the method has
+  to exist somewhere; T61 is the first task that persists a fill. The alternative — reusing
+  `saveEraseResult` — would have written a fill into `erase_<id>.png` and made the folder lie about
+  what produced each file. Five test fakes gained the one method.
+
+- **The fill's mask is the user's selection, undilated.** T50's margin exists so an erased object
+  leaves no halo; here the same margin would make the thing the user asked for larger than the
+  region they drew. The spec's §2 flow agrees — the mask goes straight from the 선택 tool to
+  `WhiteFill` — and the op names `activeMaskId` rather than storing a second mask, so a fill adds
+  one operation where an erase adds two.
+
+- **`AppError.Unavailable` is read as §6's "the answer came back still white" row.** The still-white
+  guard fails with `Unavailable` (T60, `GeminiMaskedEdit`), which a 429 or a 5xx also produces, so
+  the two are not distinguishable without a new error case that T60 explicitly ruled out. `fill_empty`
+  ("다르게 말해보세요") is the more useful of the two readings and is honest advice for both.
+
+- **`editor_shell_default` was *not* re-recorded.** The task allowed it for the ninth strip item, but
+  the strip is a `LazyRow` that already overflowed a Pixel 6a at eight items, so the ninth is
+  off-screen and the golden did not move. A re-record with no pixel change would have been noise.
+
+- **`onEraseTapped` became `onRegionToolTapped(state, tool)`.** `EditorViewModel` is at detekt's
+  20-function ceiling and `onToolClick` at its complexity ceiling, so 채우기's tap could be neither a
+  new method nor another inline `when`. Merging the two region tools' taps into one function is the
+  shape that fits: they ask the same question of the same selection, and differ only in what a yes
+  means. `EditorAi`'s constructor took a `@Suppress("LongParameterList")` for the same arithmetic —
+  it is a parameter bundle by design, which is what the rule is aimed at avoiding elsewhere.
+
 ### T60
 
 - **The five steps became `GeminiMaskedEdit`, shared by 지우기 and 채우기.** The spec asked the

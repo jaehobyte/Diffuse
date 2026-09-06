@@ -19,6 +19,7 @@ import com.diffuse.feature.editor.tools.ToolSheetHost
 import com.diffuse.feature.editor.tools.crop.CropSheet
 import com.diffuse.feature.editor.tools.crop.STRAIGHTEN_MAX_DEG
 import com.diffuse.feature.editor.tools.direct.DirectSheet
+import com.diffuse.feature.editor.tools.fill.FillSheet
 import com.diffuse.feature.editor.tools.prompt.VoicePromptBar
 import com.diffuse.feature.editor.tools.select.Sam3SettingsSheet
 import com.diffuse.feature.editor.tools.select.SelectSheet
@@ -77,29 +78,43 @@ fun EditorRoute(
             },
             // specs/selection_tool.md §5: while `busy` the previous mask stays; only the
             // one-off `open` earns the overlay.
-            busy = state.selection.working || state.erase.busy || state.direct.working,
+            busy = isBusy(state),
             busyLabelRes = busyLabel(state),
-            onCancelWork = {
-                viewModel.selection.cancelWork()
-                viewModel.erase.cancel()
-                viewModel.direct.cancelWork()
-            },
+            onCancelWork = { cancelWork(viewModel) },
             message = message(state),
-            onMessageShown = {
-                viewModel.selection.onMessageShown()
-                viewModel.erase.onMessageShown()
-                viewModel.direct.onMessageShown()
-            },
+            onMessageShown = { clearMessages(viewModel) },
             canvasOverlay = canvasOverlay(state, viewModel),
             sheet = sheetFor(state, document, viewModel),
         )
     }
 }
 
+/** DESIGN.md §7: the overlay's cancel button reaches whichever tool is working. */
+private fun cancelWork(viewModel: EditorViewModel) {
+    viewModel.selection.cancelWork()
+    viewModel.erase.cancel()
+    viewModel.fill.cancel()
+    viewModel.direct.cancelWork()
+}
+
+/** One snackbar, so the one that was shown is cleared wherever it came from. */
+private fun clearMessages(viewModel: EditorViewModel) {
+    viewModel.selection.onMessageShown()
+    viewModel.erase.onMessageShown()
+    viewModel.fill.onMessageShown()
+    viewModel.direct.onMessageShown()
+}
+
+/** DESIGN.md §7: every AI call shows progress and a way out, so they share one flag. */
+private fun isBusy(state: EditorUiState): Boolean =
+    state.selection.working || state.erase.busy || state.fill.busy || state.direct.working
+
 /** specs/selection_tool.md §1 and generative_erase.md §5: a tool that cannot work is greyed. */
 private fun disabledTools(state: EditorUiState): Set<Tool> = buildSet {
     if (!state.selection.enabled) add(Tool.Select)
     if (!state.erase.enabled || state.document?.activeMaskId == null) add(Tool.Erase)
+    // specs/generative_fill.md §6: the same two reasons, and the same greyed-but-tappable rule.
+    if (!state.fill.enabled || state.document?.activeMaskId == null) add(Tool.Fill)
     // specs/vibe_edit.md §10: the key alone. A plan with no `Select` needs no SAM 3 server.
     if (!state.direct.enabled) add(Tool.Direct)
 }
@@ -109,6 +124,7 @@ private fun busyLabel(state: EditorUiState): Int = when {
     state.direct.planning -> R.string.direct_planning
     state.direct.running -> R.string.direct_running
     state.erase.busy -> R.string.erase_working
+    state.fill.busy -> R.string.fill_working
     state.selection.phraseBusy -> R.string.select_prompt_working
     else -> R.string.select_preparing
 }
@@ -123,7 +139,8 @@ private fun message(state: EditorUiState): String? {
     return when {
         direct?.arg != null -> stringResource(direct.res, direct.arg)
         direct != null -> stringResource(direct.res)
-        else -> (state.selection.message ?: state.erase.message)?.let { stringResource(it) }
+        else -> (state.selection.message ?: state.erase.message ?: state.fill.message)
+            ?.let { stringResource(it) }
     }
 }
 
@@ -194,6 +211,7 @@ private fun sheetFor(
                         )
                     },
                 )
+                Tool.Fill -> FillToolSheet(state = state, viewModel = viewModel)
                 Tool.Direct -> DirectToolSheet(state = state, viewModel = viewModel)
                 else -> ToolSheetHost(
                     maskOption = MaskOption(
@@ -223,6 +241,30 @@ private fun cropTransform(state: EditorUiState): OverlayTransform =
     } else {
         OverlayTransform.None
     }
+
+/**
+ * specs/generative_fill.md §6: the bar supplies the noun and the IME Done key does what 적용
+ * does, so submitting from the keyboard commits rather than only dismissing it.
+ */
+@Composable
+private fun FillToolSheet(state: EditorUiState, viewModel: EditorViewModel) {
+    FillSheet(
+        state = state.fill,
+        onCancel = viewModel::cancelSheet,
+        onApply = viewModel::applySheet,
+        promptBar = {
+            VoicePromptBar(
+                value = state.fill.prompt,
+                onValueChange = viewModel.fill::setPrompt,
+                onSubmit = { viewModel.applySheet() },
+                speech = viewModel.speech,
+                placeholder = stringResource(R.string.fill_placeholder),
+                enabled = !state.fill.busy,
+                onMessage = viewModel.fill::showMessage,
+            )
+        },
+    )
+}
 
 /** specs/vibe_edit.md §3: the bar, the step list, and [취소 | 적용] with 적용 the one accent. */
 @Composable

@@ -218,7 +218,7 @@ design drifted — block it rather than adding one.
   touches: core/ai/gemini, core/ai (the provider interface file), core/ai/AiModule.kt,
   core/ai/src/testShared, core/ai tests
 
-- [ ] T61 채우기 — the tool and its sheet
+- [x] T61 채우기 — the tool and its sheet
   spec: specs/generative_fill.md §6, §7, §9; specs/prompt_input.md §2–§3; specs/editor_shell.md; DESIGN.md §4
   deps: T59, T60
   done when:

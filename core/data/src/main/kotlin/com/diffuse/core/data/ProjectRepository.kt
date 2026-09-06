@@ -40,6 +40,13 @@ interface ProjectRepository {
         bitmap: Bitmap,
     ): Result<ImageRef>
 
+    /** Writes a generative result as `fill_<fillId>.png` in the project folder. */
+    suspend fun saveFillResult(
+        projectId: String,
+        fillId: String,
+        bitmap: Bitmap,
+    ): Result<ImageRef>
+
     suspend fun duplicate(id: String): Result<String>
     suspend fun delete(id: String): Result<Unit>
 }

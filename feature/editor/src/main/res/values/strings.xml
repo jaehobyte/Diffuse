@@ -17,6 +17,7 @@
     <string name="editor_tool_detail">디테일</string>
     <string name="editor_tool_select">선택</string>
     <string name="editor_tool_erase">지우기</string>
+    <string name="editor_tool_fill">채우기</string>
     <string name="editor_tool_direct">지시</string>
 
     <!-- specs/generative_erase.md §5 -->
@@ -27,6 +28,16 @@
     <string name="erase_needs_key">설정에서 Gemini API 키를 입력해주세요</string>
     <string name="erase_blocked">이 이미지는 편집할 수 없어요</string>
     <string name="adjust_masked_only">선택 영역에만</string>
+
+    <!-- specs/generative_fill.md §7 -->
+    <string name="fill_title">채우기</string>
+    <string name="fill_placeholder">무엇으로 채울까요? 예: 빨간 우산</string>
+    <string name="fill_working">채우는 중</string>
+    <string name="fill_needs_selection">먼저 영역을 선택해주세요</string>
+    <string name="fill_needs_key">설정에서 Gemini API 키를 입력해주세요</string>
+    <string name="fill_blocked">이 이미지는 편집할 수 없어요</string>
+    <string name="fill_empty">아무것도 만들지 못했어요. 다르게 말해보세요.</string>
+    <string name="fill_failed">채우지 못했어요</string>
 
     <!-- specs/vibe_edit.md §11 -->
     <string name="direct_title">지시</string>

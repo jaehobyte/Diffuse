@@ -25,6 +25,10 @@ class ProjectFiles(private val filesDir: File) {
     fun eraseFile(projectId: String, eraseId: String): File =
         File(projectDir(projectId), "erase_$eraseId.png")
 
+    /** specs/generative_fill.md §5: 채우기's result, kept exactly as the eraser's is. */
+    fun fillFile(projectId: String, fillId: String): File =
+        File(projectDir(projectId), "fill_$fillId.png")
+
     /** The source keeps whatever extension it was written with; find it rather than guess. */
     fun findSource(id: String): File? =
         projectDir(id).listFiles { file -> file.nameWithoutExtension == "source" }?.firstOrNull()

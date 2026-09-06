@@ -59,6 +59,13 @@ class BrowseImportTest {
             Result.Success(com.diffuse.core.imaging.model.ImageRef("/erase_$eraseId.png"))
 
 
+        override suspend fun saveFillResult(
+            projectId: String,
+            fillId: String,
+            bitmap: android.graphics.Bitmap,
+        ): Result<com.diffuse.core.imaging.model.ImageRef> =
+            Result.Success(com.diffuse.core.imaging.model.ImageRef("/fill_$fillId.png"))
+
         override suspend fun duplicate(id: String) = Result.Success("copy")
         override suspend fun delete(id: String) = Result.Success(Unit)
     }

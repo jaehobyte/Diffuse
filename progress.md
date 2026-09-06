@@ -2,22 +2,22 @@
 
 ## Current
 
-**Phase 11 is complete. T54–T56 are done and `check` is green.** 혼합 is a tool with eight band
-chips over 색조/채도/휘도, the maths is 24 `AdjustKind` entries and one op function, and the 지시
-planner reaches it through a fifth function, `adjust_color_range`, that decodes into ordinary
-`Adjust` steps.
+**T61 is done and `check` is green.** 채우기 is a tool with a sheet: a prompt bar for the noun,
+적용 disabled until there is one, and `Operation.GenerativeFill` naming the user's own selection.
+The mask is not dilated — that margin is the eraser's, and here it would overshoot the region the
+user drew.
 
-What is unproven is the same shape as Phase 10: T56 is a prompt change, so only a device run says
-whether the model calls `adjust_color_range` for "하늘을 더 파랗게" instead of trying to select a
-colour. The spec-level questions a human owns are under "Open decisions" in tasks.md.
-
-**Phase 12 is queued, T57–T65**, from the five things the user asked for after the device run: the
-sheet-cancel bug, `crop_ratio` as a planner function, 채우기 (generative fill with a prompt), 확대
-(outpainting), and the AGSL port. T66 is `[!]` — it needs a human to bump minSdk and produce a
-benchmark number first (`blocked.md`). Specs are written: `generative_fill.md`, `outpaint.md`,
-`gpu_render.md`, plus amendments to seven existing ones. **No code has been written for any of it.**
+**Next: T62** `fill_selection`, the planner's seventh function. T63–T65 follow (확대); T57 and T66
+stay `[!]`.
 
 ## Done
+
+- T61 채우기 — `Tool.Fill` after `Tool.Erase`, `FillController` (tap intent, run, commit, cancel)
+  and `FillSheet` = `EditSheet` + `VoicePromptBar` with 적용 as the sheet's one accent. The op
+  names the **user's own** selection undilated, so a fill is one operation where an erase is two,
+  and the selection survives it. `saveFillResult` writes `fill_<id>.png` — the repository had only
+  the erase one, and T62 expects the lambda. 21 tool + sheet tests, goldens `fill_sheet_open` /
+  `fill_sheet_typed`; `editor_shell_default` did not move, because the strip already overflowed.
 
 - T56 `adjust_color_range` — the planner's fifth function. One call decodes into up to three
   ordinary `PlanStep.Adjust`s (hue → saturation → luminance), so `PlanStep`, `PlanRunner` and the

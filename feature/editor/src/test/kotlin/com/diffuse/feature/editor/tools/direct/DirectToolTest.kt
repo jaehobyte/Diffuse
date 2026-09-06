@@ -8,6 +8,7 @@ import com.diffuse.core.ai.Availability
 import com.diffuse.core.ai.CropRatio
 import com.diffuse.core.ai.EditPlan
 import com.diffuse.core.ai.FakeEraseProvider
+import com.diffuse.core.ai.FakeFillProvider
 import com.diffuse.core.ai.FakePlanProvider
 import com.diffuse.core.ai.FakeSegmentationProvider
 import com.diffuse.core.ai.PlanStep
@@ -385,6 +386,7 @@ class DirectToolTest {
         ai = EditorAi(
             segmentation,
             eraser,
+            FakeFillProvider(),
             planner,
             FakeSpeechInput(),
             settings,
@@ -442,6 +444,12 @@ class DirectToolTest {
             eraseId: String,
             bitmap: Bitmap,
         ): Result<ImageRef> = Result.Success(ImageRef("/p/erase_$eraseId.png"))
+
+        override suspend fun saveFillResult(
+            projectId: String,
+            fillId: String,
+            bitmap: Bitmap,
+        ): Result<ImageRef> = Result.Success(ImageRef("/p/fill_$fillId.png"))
 
         override suspend fun duplicate(id: String): Result<String> = Result.Success("copy")
         override suspend fun delete(id: String): Result<Unit> = Result.Success(Unit)
