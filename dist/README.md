@@ -14,6 +14,8 @@ a ~24MB binary out of the repository:
 - [v0.2.0](https://github.com/jaehobyte/Diffuse/releases/tag/v0.2.0)
 - [v0.3.0](https://github.com/jaehobyte/Diffuse/releases/tag/v0.3.0) — server-side SAM 3
   selection, prompts, generative erase
+- [v0.3.1](https://github.com/jaehobyte/Diffuse/releases/tag/v0.3.1) — session-lifecycle fixes
+  found on the first device run
 
 Sizes, against the APK budget in specs/architecture.md §8 (**< 15MB**; ADR-008 raised it to
 50MB while EdgeTAM weights were bundled, and was struck with ADR-009 when they were dropped):
@@ -24,6 +26,7 @@ Sizes, against the APK budget in specs/architecture.md §8 (**< 15MB**; ADR-008 
 | debug at v0.2.0 (unminified, debug metadata) | 48.75 MB |
 | release at v0.2.0 (unsigned, `isMinifyEnabled = false`) | 16.21 MB |
 | debug at v0.3.0 | 23.96 MB |
+| debug at v0.3.1 | 23.96 MB |
 | release at v0.3.0 (unsigned, `isMinifyEnabled = false`) | 17.40 MB |
 
 **The release build is 2.4 MB over budget.** R8 is still off, so that is the unshrunk size:
