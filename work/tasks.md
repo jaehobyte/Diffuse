@@ -13,8 +13,8 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `[H]` human-only, loop must
 
 ## Queue
 
-**Phase 13 is done (T67–T69).** T57 and T66 stay `[!]` — both need a human. Pick the first `[ ]`
-whose deps are all `[x]`, as always.
+**Phase 13, T67–T70.** T67–T69 are done; T70 came out of merging `main` back in. T57 and T66 stay
+`[!]` — both need a human. Pick the first `[ ]` whose deps are all `[x]`, as always.
 
 ---
 
@@ -447,6 +447,33 @@ report. T68 needed one human answer — which ratios the app offers — and got 
       document; closing it renders the cropped one; a plan ending in `crop_ratio` lands in the same
       state as a tap on the tool
   touches: feature/editor/EditorViewModel.kt, feature/editor tests
+
+- [ ] T70 채우기 belongs under the adjust stack too
+  spec: specs/generative_fill.md §5; specs/generative_erase.md §10; specs/edit_model.md
+  deps: —
+  found: while merging `origin/main` into `dev_outpainting`. `e3b00c5` fixed this for 지우기 —
+  `EraseInput` renders the frame without the `Adjust` ops and `EraseCommit.underTheAdjustments`
+  places the result under them — and 채우기 has the identical defect, because T59 appends
+  `GenerativeFill` and `FillController` is handed `state.preview`, which is adjusted.
+  why: the result carries its own pixels, so whatever is baked into them can never be
+  re-adjusted. An `Adjust` made *before* the fill stays pinned in front of it and the fill result
+  then overwrites the region it just produced: re-dragging that slider moves the rest of the photo
+  and stops reaching the filled region. Exactly the argument `e3b00c5` makes, one op over.
+  done when:
+    - `eraseInput` is reused, not copied — it is already "the frame minus the adjustments" and
+      names nothing erase-specific except its own name. Rename it or leave it; do not write a
+      second one
+    - `FillCommit` places the `GenerativeFill` under the adjust stack the way `EraseCommit` does.
+      If both need the same list surgery, it moves to one place rather than being written twice
+    - the 지시 tool's `Fill` step gets the same frame, so a plan and a tap still agree (T53's
+      property)
+    - **확대 needs nothing**: `ExpandController` already sends the bare source and `withOutpaint`
+      already inserts at index 0, which is under everything. Check this rather than assuming it
+    - tests: an `[Adjust, Fill]` document re-renders the filled region when the adjust changes;
+      the fill's input carries no adjustment; the plan path and the tool path agree
+  touches: feature/editor/tools/fill, feature/editor/tools/erase/EraseInput.kt,
+  feature/editor/EditorViewModel.kt, feature/editor/tools/direct/PlanRunner.kt,
+  feature/editor tests
 
 ## Backlog
 
