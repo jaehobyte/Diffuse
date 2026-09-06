@@ -21,7 +21,10 @@ The app's entire knowledge of generative editing is therefore:
 POST /v1/edit/erase        Authorization: Bearer <the same SAM 3 token>
   multipart/form-data
     image  — the working image, JPEG
-    mask   — ALPHA_8 PNG at the image's size; opaque pixels are the region to erase
+    mask   — PNG at the image's size whose **alpha channel** carries the mask; opaque pixels
+             are the region to erase. (`Bitmap.compress` cannot write ALPHA_8 usefully, so an
+             ARGB PNG with the mask in its alpha is what actually goes on the wire — the same
+             shape core:imaging's MaskIo writes to disk.)
     hint   — optional short phrase (text field)
   → 200 image/png, the edited image at the uploaded size
 ```

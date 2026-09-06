@@ -14,10 +14,15 @@ Specs are written and consistent: `ai_provider.md`, `segmentation.md`, `selectio
 (rewritten), `prompt_input.md`, `generative_erase.md` (new), plus amendments to `edit_model.md`,
 `architecture.md` (§2, §6, §8, §9, §10) and `DESIGN.md` (§1 accent ruling, §4 prompt bar).
 
-**T26-T36 done.** Typing or speaking a phrase now selects every instance of it. Next is
-Phase 8: T37 `EraseProvider`, then T38 the generative eraser.
+**T26-T37 done.** Only T38 is left. The server's `/v1/edit/erase` is still unimplemented,
+so the eraser will not work against a real backend until that lands — the Android side
+depends only on the contract and is tested against MockWebServer.
 
 ## Done
+
+- T37 `EraseProvider` — `Sam3EraseClient` posting image + mask + hint to `/v1/edit/erase` with
+  a 60s read timeout, `Sam3EraseProvider` reusing segmentation's availability, and `MaskPng`.
+  10 MockWebServer tests.
 
 - T36 Prompt or speech → mask — the selection sheet hosts `VoicePromptBar`, a phrase runs
   `byText`, its instances union into one mask and merge by the current mode, and `count == 0`
@@ -98,8 +103,7 @@ _T01–T14 trimmed per CLAUDE.md (keep the last 10). Their decisions are still i
 
 ## Next
 
-T37 `EraseProvider` and the proxy client, then T38 the generative eraser tool. T37 is the
-first task that needs the server's `/v1/edit/erase`, which is still the one open prerequisite.
+T38 the generative eraser tool — the last task in the backlog.
 
 ## Decisions
 

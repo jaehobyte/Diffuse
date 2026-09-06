@@ -1,5 +1,6 @@
 package com.diffuse.core.ai
 
+import com.diffuse.core.ai.erase.Sam3EraseProvider
 import com.diffuse.core.ai.sam3.Sam3Client
 import com.diffuse.core.ai.sam3.Sam3ConfigSource
 import com.diffuse.core.ai.sam3.Sam3SegmentationProvider
@@ -28,6 +29,9 @@ internal abstract class AiModule {
 
     @Binds
     abstract fun speech(impl: AndroidSpeechInput): SpeechInput
+
+    @Binds
+    abstract fun erase(impl: Sam3EraseProvider): EraseProvider
 
     companion object {
         @Provides

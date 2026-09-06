@@ -215,7 +215,7 @@ Only the server endpoint is still outstanding. If a task hits a missing prerequi
 
 ## Phase 8 — Generative eraser
 
-- [ ] T37 `EraseProvider` and the proxy client
+- [x] T37 `EraseProvider` and the proxy client
   spec: specs/generative_erase.md, ~/sam3-server specs/api.md (`POST /v1/edit/erase`)
   deps: T27
   done when:
