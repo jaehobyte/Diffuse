@@ -1,6 +1,6 @@
 # tasks.md — Ralph loop task queue
 
-T01–T48 are done. What each one built is in `progress.md` under `## Done`, why it was built that
+T01–T53 are done. What each one built is in `progress.md` under `## Done`, why it was built that
 way is in `work/decisions.md`, and the `done when` checklists are in git history. None of it is
 repeated here: this file is read on every loop iteration, so it holds only what is still open.
 
@@ -310,7 +310,7 @@ straight spec-conformance bug; the rest are a mask margin, two prompt rewrites a
       in order; `DirectSheetTest` renders an English phrase through the template
   touches: core/ai/gemini/GeminiPlanCatalog.kt, core/ai tests, feature/editor tests
 
-- [ ] T53 The generative + adjust workflow, proven rather than assumed
+- [x] T53 The generative + adjust workflow, proven rather than assumed
   spec: specs/vibe_edit.md §9, specs/generative_erase.md §10, specs/selection_tool.md §8.1, §8.2
   deps: T49, T50
   report: "생성형 기능과 기존 보정 기능의 워크플로우 발생 시 적용이 잘 되는지 확인해봐."
@@ -331,7 +331,8 @@ straight spec-conformance bug; the rest are a mask margin, two prompt rewrites a
 
 ## Backlog
 
-_Empty._ Phase 9 closed the feature work for v3; Phase 10 is what the first device run found.
+_Empty._ Phase 10 closed what the first device run found. The next queue comes from the **second**
+device run: T51 and T52 are prompt rewrites, and only a real model can say whether they hold.
 
 ---
 

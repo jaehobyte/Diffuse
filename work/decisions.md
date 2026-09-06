@@ -8,6 +8,18 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T53 — the rows T49 already proved were not written twice
+
+tasks.md listed six combinations. Four of them — a masked adjust after an erase, an adjust before
+one, two erases, and a cut-out before an adjust — are what `OperationOrderTest` was written for in
+T49, and a second copy in a second file would be two things to keep true rather than one. T53 adds
+what a *plan* produces on top of that: a global adjust after an erase (the "버스 지우고 예쁘게"
+shape), an erase the user then cuts out, the export-resolution path, and a missing mask file
+degrading to the untouched photo.
+
+The task's real check is that it needed **no production code**. It did not, which is the evidence
+that T49 and T50 were finished rather than merely green.
+
 ### T52 — examples in the system instruction, because the rules alone did not hold
 
 The instruction already said "use the fewest steps"; the device still showed the model answering

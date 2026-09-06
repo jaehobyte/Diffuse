@@ -2,7 +2,21 @@
 
 ## Current
 
-**T51 done. Next: T52 — English phrases and complete plans from the planner.** Then T53.
+**Phase 10 is complete. T49–T53 are done and `check` is green; `work/tasks.md` is empty again.**
+
+Every defect the 2026-09-06 device run found is fixed, and none of it was where it first looked:
+the missing adjustment was a renderer that grouped operations by type instead of walking the list,
+and the halo was a mask that had no margin on the copy the *document* stores. What is still
+unproven is the same thing as before — this is all fakes and `MockWebServer`, so the next device
+run is what says whether the two prompt rewrites (T51, T52) actually hold.
+
+## Done
+
+- T53 The generative + adjust combinations are proven rather than assumed: erase → global adjust,
+  erase → cut-out and the export-resolution path against the **real** renderer and the fixtures,
+  plus [Select, Erase, Adjust(masked=false)] through `EditorViewModel` — the op order, the null
+  `maskId`, and three undos peeling it apart. **No production code changed**, which is the
+  evidence that T49 and T50 were complete.
 
 - T52 The planner's instruction now says the `phrase` is English (SAM 3 is English concept
   segmentation), that every call goes in one turn — it was stopping after `select_region` about
@@ -39,17 +53,6 @@
   unchanged (no mask), `ensureActive()` before the call, probe-free availability off the key, and
   the `EditPlanProvider` binding in `AiModule`. 8 tests.
 
-- T45 `GeminiPlanClient` — `POST …/gemini-2.5-flash:generateContent` (the text model), the four
-  §4 declarations plus the system instruction as English `internal` constants, `toolConfig.mode
-  = ANY`, `functionCall` parts read in order with text parts skipped, and an unknown name /
-  missing argument / non-finite value dropping just that step. §6's rows now live once, in
-  `GeminiHttp.kt`, shared with the eraser. 29 MockWebServer tests.
-
-- T44 `EditPlanProvider` — `PlanStep` (`Select` / `Adjust` / `Erase` / `CutOut`), `EditPlan` and
-  the provider interface in `core/ai`; `Adjust` carries `AdjustKind`, which makes
-  `core:ai → core:imaging` a real build edge for the first time (one line, root file untouched).
-  `FakePlanProvider` with ai_provider.md §6's default plan. 4 tests.
-
 - T43 지우기 tells the user which thing is missing — `EraseTap` (Run / OpenSettings / Refused),
   `erase_needs_key` opening the 서버 설정 sheet the way 선택 does, a `blocked:` detail showing
   `erase_blocked`, and the selection surviving every failure. 7 new tests, one per §9 row.
@@ -84,7 +87,7 @@
   Korean placeholder, IME Done submitting the trimmed value, and the mic turning accent only
   while listening. 8 tests + goldens `prompt_bar_empty` / `_filled` / `_listening`.
 
-_T01–T38 trimmed per CLAUDE.md (keep the last 10)._
+_T01–T45 trimmed per CLAUDE.md (keep the last 10)._
 
 ## Decisions
 

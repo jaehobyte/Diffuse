@@ -266,6 +266,69 @@ class DirectToolTest {
         assertEquals(R.string.direct_failed, viewModel.uiState.value.direct.message?.res)
     }
 
+    // ---- T53: the shape a mixed plan leaves behind -------------------------
+
+    @Test
+    fun `a select, erase and global adjust land in that order with the adjust unmasked`() = runTest {
+        val viewModel = opened()
+        planner.next(
+            EditPlan(
+                listOf(
+                    PlanStep.Select("bus"),
+                    PlanStep.Erase,
+                    PlanStep.Adjust(AdjustKind.Saturation, 0.2f, masked = false),
+                ),
+            ),
+        )
+        viewModel.direct.submit(REQUEST)
+
+        viewModel.applySheet()
+
+        val operations = viewModel.uiState.value.document!!.operations
+        // Select, then the erase's own margin mask + result (T50), then the adjustment — and the
+        // adjustment is last, which is what makes it visible after T49.
+        assertEquals(
+            listOf("Mask", "Mask", "GenerativeErase", "Adjust"),
+            operations.map { it::class.simpleName },
+        )
+        val adjust = operations.filterIsInstance<Operation.Adjust>().single()
+        assertNull("a whole-photo adjustment must not be scoped to the erased hole", adjust.maskId)
+    }
+
+    @Test
+    fun `each step of a mixed plan is its own history entry`() = runTest {
+        val viewModel = opened()
+        planner.next(
+            EditPlan(
+                listOf(
+                    PlanStep.Select("bus"),
+                    PlanStep.Erase,
+                    PlanStep.Adjust(AdjustKind.Saturation, 0.2f, masked = false),
+                ),
+            ),
+        )
+        viewModel.direct.submit(REQUEST)
+        viewModel.applySheet()
+
+        viewModel.undo()
+        assertTrue(viewModel.uiState.value.document!!.operations.none { it is Operation.Adjust })
+        viewModel.undo()
+        assertTrue(viewModel.uiState.value.document!!.generativeErases().isEmpty())
+        viewModel.undo()
+        assertEquals(emptyList<Operation>(), viewModel.uiState.value.document!!.operations)
+    }
+
+    @Test
+    fun `the erase in a plan is told what the Select was looking for`() = runTest {
+        val viewModel = opened()
+        planner.next(EditPlan(listOf(PlanStep.Select("bus"), PlanStep.Erase)))
+        viewModel.direct.submit(REQUEST)
+
+        viewModel.applySheet()
+
+        assertEquals("bus", eraser.lastHint)
+    }
+
     // ---- fixtures ---------------------------------------------------------
 
     private suspend fun opened(): EditorViewModel = viewModel().also { it.onToolClick(Tool.Direct) }
