@@ -8,6 +8,35 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T48 — `DirectHost`, and why the tool run left `EditorViewModel`
+
+The first cut put the run loop in the ViewModel, which pushed it to 25 functions against detekt's
+`thresholdInClasses: 20`. The run moved into `DirectController`, which now takes the `PlanRunner`
+and one `DirectHost`: `canvas()` (what the canvas is showing), `commit()` (history is the VM's),
+`releaseSession()` (§9.4) and `onFinished()` (§3's "the sheet closes when the run ends"). That is
+the same "the tool is one object; the two things it cannot do arrive as lambdas" split
+`EraseController` uses — an interface rather than four lambda parameters only because seven
+constructor parameters trip `LongParameterList`.
+
+Two knock-on edits to keep `check` green, both behaviour-identical: `onToolClick` became a `when`
+(its Direct branch is inline, because a private `onDirectTapped` would have been the 20th
+function), and the crop aspect inside it became an `if/else` instead of a `?.takeIf?.let ?:`
+chain, which brought the method back under `CyclomaticComplexMethod`'s 15.
+
+### T48 — the icon, the step numbers, and cancel
+
+`Icons.Rounded.AutoAwesome` for 지시: it is the Material Symbols Rounded entry for "describe it and
+the model does it", and the wand (`AutoFixHigh`) is already 지우기. DESIGN.md §7's ban on "✨ AI
+Magic" is about marketing copy, and the label stays the verb 지시.
+
+Step numbers are `"${index + 1}. "` in the Composable rather than a template, because a digit and
+a period are not translatable text and §11's templates deliberately hold only the sentence.
+
+Cancelling a run clears `busy` and leaves the sheet open with its plan, matching the eraser's
+cancel. §3 closes the sheet when the run *ends*; §9.3 says a cancel keeps the steps already
+committed, and re-tapping 적용 on the same plan would re-run them, so the honest options were to
+leave the sheet up or to close it. Leaving it up shows the user what they interrupted.
+
 ### T47 — `run` takes the resolved `activeMask`, because §9's signature could not reach one
 
 vibe_edit.md §9.2 says an `Erase` step calls `erase.erase(preview, mask, hint = null)`, but the

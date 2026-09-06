@@ -1,5 +1,6 @@
 package com.diffuse.feature.editor
 
+import com.diffuse.core.ai.EditPlanProvider
 import com.diffuse.core.ai.EraseProvider
 import com.diffuse.core.ai.SegmentationProvider
 import com.diffuse.core.ai.gemini.GeminiSettings
@@ -17,6 +18,7 @@ import javax.inject.Singleton
 class EditorAi @Inject constructor(
     val segmentation: SegmentationProvider,
     val erase: EraseProvider,
+    val plan: EditPlanProvider,
     val speech: SpeechInput,
     val sam3Settings: Sam3Settings,
     val geminiSettings: GeminiSettings,

@@ -1,6 +1,6 @@
 # tasks.md — Ralph loop task queue
 
-T01–T43 are done. What each one built is in `progress.md` under `## Done`, why it was built that
+T01–T48 are done. What each one built is in `progress.md` under `## Done`, why it was built that
 way is in `work/decisions.md`, and the `done when` checklists are in git history. None of it is
 repeated here: this file is read on every loop iteration, so it holds only what is still open.
 
@@ -152,7 +152,7 @@ adding one. specs/vibe_edit.md is the whole feature.
       list, including the load-bearing one — a failure at step 2 leaves step 1's document committed
   touches: feature/editor/tools/direct
 
-- [ ] T48 지시 tool — the sheet, the bar, and the preview
+- [x] T48 지시 tool — the sheet, the bar, and the preview
   spec: specs/vibe_edit.md §3, §10, §11, §12; specs/prompt_input.md §2; specs/editor_shell.md
   deps: T46, T47
   done when:

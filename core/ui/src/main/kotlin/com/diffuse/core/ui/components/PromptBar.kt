@@ -61,6 +61,8 @@ fun PromptBar(
     onValueChange: (String) -> Unit,
     onSubmit: (String) -> Unit,
     modifier: Modifier = Modifier,
+    /** specs/vibe_edit.md §3: each host names its own example; the default is the 선택 tool's. */
+    placeholder: String = stringResource(R.string.prompt_placeholder),
     /** Null hides the mic entirely: no recogniser on the device, or the permission is gone. */
     onMicClick: (() -> Unit)? = null,
     listening: Boolean = false,
@@ -99,7 +101,7 @@ fun PromptBar(
         ) {
             if (value.isEmpty()) {
                 Text(
-                    text = stringResource(R.string.prompt_placeholder),
+                    text = placeholder,
                     style = Typography.bodyMd,
                     color = colors.inkSecondary,
                 )
