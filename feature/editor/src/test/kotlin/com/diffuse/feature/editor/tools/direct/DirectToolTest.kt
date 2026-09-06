@@ -416,6 +416,7 @@ class DirectToolTest {
     private suspend fun opened(): EditorViewModel = viewModel().also { it.onToolClick(Tool.Direct) }
 
     private fun viewModel() = EditorViewModel(
+        context = ApplicationProvider.getApplicationContext(),
         repository = repository,
         renderer = FakeRenderer(),
         ai = EditorAi(

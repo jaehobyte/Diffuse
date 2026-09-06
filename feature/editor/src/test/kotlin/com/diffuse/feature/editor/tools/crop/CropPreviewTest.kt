@@ -141,6 +141,7 @@ class CropPreviewTest {
     private fun EditDocument.adjusts() = operations.filterIsInstance<Operation.Adjust>()
 
     private fun viewModel() = EditorViewModel(
+        context = ApplicationProvider.getApplicationContext(),
         repository = repository,
         renderer = renderer,
         ai = EditorAi(

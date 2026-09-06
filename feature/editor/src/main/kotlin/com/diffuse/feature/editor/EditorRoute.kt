@@ -22,6 +22,7 @@ import com.diffuse.feature.editor.canvas.selectionOverlaySlot
 import com.diffuse.feature.editor.tools.MaskOption
 import com.diffuse.feature.editor.tools.ToolSheetHost
 import com.diffuse.feature.editor.tools.auto.AutoSheet
+import com.diffuse.feature.editor.tools.style.StyleSheet
 import com.diffuse.feature.editor.tools.crop.CropSheet
 import com.diffuse.feature.editor.tools.crop.STRAIGHTEN_MAX_DEG
 import com.diffuse.feature.editor.tools.direct.DirectSheet
@@ -261,6 +262,7 @@ private fun sheetFor(
                 Tool.Fill -> FillToolSheet(state = state, viewModel = viewModel)
                 Tool.Expand -> ExpandToolSheet(state = state, viewModel = viewModel)
                 Tool.Auto -> AutoToolSheet(state = state, viewModel = viewModel)
+                Tool.Style -> StyleToolSheet(state = state, viewModel = viewModel)
                 Tool.Direct -> DirectToolSheet(state = state, viewModel = viewModel)
                 else -> ToolSheetHost(
                     maskOption = MaskOption(
@@ -329,6 +331,19 @@ private fun ExpandToolSheet(state: EditorUiState, viewModel: EditorViewModel) {
     ExpandSheet(
         state = state.expand,
         sourceAspect = sourceAspect(state),
+        onCancel = viewModel::cancelSheet,
+        onApply = viewModel::applySheet,
+    )
+}
+
+/** specs/style_match.md §4: tiles of the user's own photograph, and one 강도 slider. */
+@Composable
+private fun StyleToolSheet(state: EditorUiState, viewModel: EditorViewModel) {
+    StyleSheet(
+        state = state.style,
+        onSelect = viewModel.style::select,
+        onVariantSelect = viewModel.style::selectVariant,
+        onIntensityChange = viewModel.style::setIntensity,
         onCancel = viewModel::cancelSheet,
         onApply = viewModel::applySheet,
     )

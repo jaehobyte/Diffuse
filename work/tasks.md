@@ -13,7 +13,8 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `[H]` human-only, loop must
 
 ## Queue
 
-**Phase 14, T71–T78.** T73–T75 are open and their dep T72 is now `[x]`. T57 and T66 are `[!]`;
+**Phase 14, T71–T78.** T74 and T75 are open; T72 and T73, which both declare, are `[x]`. T57 and
+T66 are `[!]`;
 T66 has one prerequisite left, not two — the bench number is in `work/decisions.md` and it says the
 budget is missed. Pick the first `[ ]` whose deps are all `[x]`, as always.
 
@@ -538,7 +539,7 @@ have, and all twelve styles use at least one of them. Nothing in T72–T77 can b
   touches: core/imaging/style, core/imaging src/main/assets, core/imaging tests,
   feature/editor strings.xml
 
-- [ ] T73 스타일 — the tool and its tiles
+- [x] T73 스타일 — the tool and its tiles
   spec: specs/style_match.md §4, §7, §8, §9; DESIGN.md §2, §3, §4
   deps: T72
   done when:

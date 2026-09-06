@@ -1,9 +1,20 @@
 ## Current
 
-_Idle._ T72 is committed and Phase 14's queue is open again: T73 is the first `[ ]` whose deps are
-all `[x]`.
+_Idle._ T73 is committed. T74 (`apply_style`) and T75 (컬러 매칭) both have their deps met now.
 
 ## Done
+
+- T73 스타일 — the tool, twelve tiles of the user's own photograph, and one 강도 slider. `Tool.Style`
+  sits at the **AI level** on tool_groups.md §2's diagram, which does not contradict style_match.md
+  §4: the level names where a thing is, and 컬러 매칭 (T75) will be inside this sheet. Live-apply is
+  T77's collector shape a third time — what the preview should show changed without the document
+  changing — and 적용 is one `push`, so one undo takes the whole style back. §7's shared decode is
+  the renderer's `baseCache`: thirteen renders ask for the same 256px, so the photo is decoded once.
+  §8's string table had no name for a **variant**, so §3's rule was applied to variants as it is to
+  styles — 41 `style_variant_*`, joined by the derived id — rather than numbering the chips and
+  making 세부 unusable. 13 tests, goldens `style_sheet_open` / `style_sheet_selected`. Every existing
+  golden passed **unrecorded**, `editor_shell_ai_open` included — which is the second task to
+  confirm the strip-golden threshold issue below rather than fix it.
 
 - T72 The style catalog. `styles.json` (12 styles × 41 variants) ships — the human confirmed
   `PhotoTune_v1` is their own, and chose all twelve rather than the subset that survives T71 intact,
@@ -35,36 +46,27 @@ all `[x]`.
   `ExpandTap`, which were three spellings of one enum. 12 tool tests, goldens `auto_sheet_open` /
   `auto_sheet_result`; every existing golden passed unrecorded.
 
-- T68 인스타그램 is a feed post, not a square. Not a prompt fix: `CropRatio` is a closed set with
-  no 3:4 and no 4:3 in it, so the human chose between three options and picked adding them.
-  `Portrait3x4` / `Landscape4x3` and `ThreeFour` / `FourThree`, slotted beside their neighbours so
-  the row reads 자유 · 1:1 · 3:4 · 4:5 · 9:16 · 4:3 · 16:9. Seven chips are not guaranteed to fit a
-  phone, so the row scrolls now. One instruction rule: a bare platform name is a feed post, square
-  is only for a request that says so; T58's story example is untouched. `crop_sheet_open` was the
-  only golden that moved.
+- T68 인스타그램 is a feed post, not a square. Not a prompt fix — `CropRatio` had no 3:4 and no 4:3
+  — so the human picked adding them: the row now reads 자유 · 1:1 · 3:4 · 4:5 · 9:16 · 4:3 · 16:9
+  and scrolls. A bare platform name is a feed post; square needs asking for. `crop_sheet_open` was
+  the only golden that moved.
 
-- T69 자르기 opens on the photo, not on the crop it already has — the open issue carried since T24,
-  made visible by T58's hand-off, which commits a `Crop` and *then* opens the tool. While the sheet
-  is open the preview drops the `Crop` and nothing else. Driven from one collector on
-  `selectedTool == Tool.Crop` rather than three call sites, one of which would have raced
-  `applySheet`'s own push. `CropState.from` untouched: the rect was always right. 6 tests.
+- T69 자르기 opens on the photo, not the crop it already has — carried since T24. One collector on
+  `selectedTool == Tool.Crop`, not three call sites, one of which raced `applySheet`. 6 tests.
 
-- T67 채우기 sends a rectangle, not the silhouette. A silhouette is an instruction as much as a
-  region — whitening a chair's outline asks the model to paint the new thing *in the shape of a
-  chair*, which is what came back. `FillMask` takes the selection's bounding box, moves each side
-  out 30%, clamps, and returns a binary rectangle; `FillCommit` stores it as its own
-  `Operation.Mask` so the renderer composes through the same mask the model was shown (T50's
-  argument, for a bigger region). `activeMaskId` stays on the user's selection. Both fill paths
-  share it. 10 tests, and three old assertions rewritten because they asserted the old rule.
+- T67 채우기 sends a rectangle, not the silhouette — whitening a chair's outline asks the model to
+  paint the new thing *in the shape of a chair*. `FillMask` is the selection's bounding box grown
+  30% and clamped, stored as its own `Operation.Mask`; `activeMaskId` stays on the user's
+  selection. 10 tests.
 
-- T65 확대 — the tool, the four-handle overlay and `ExpandSheet`. The pending area needed no drawing
-  code: `OverlayTransform` gained `margins` and the existing checkerboard shows through, DESIGN.md
-  §2's word for "no pixels here". 38 tests, goldens `expand_overlay` / `expand_sheet_open`.
+- T65 확대 — the tool, the four-handle overlay, `ExpandSheet`, and `OverlayTransform.margins`, which
+  let the canvas's existing checkerboard be the pending area. 38 tests.
 
 ## Next
 
-**T73 스타일 — the tool and its tiles**, then T74 and T75, which both depend on T73 as well as T72.
-The catalog they need is in `core/imaging/style` and its twelve ids are the enum T74 declares.
+**T74 `apply_style`** — the catalog's twelve ids become the planner's eighth function, a closed
+enum, and `direct_step_style` renders the preset's Korean through `styleNameRes`. Then **T75
+컬러 매칭**, whose local matcher (§5 step 1) is the half that needs no model call.
 
 T57 and T66 stay `[!]`. T66 now has **one** prerequisite left rather than two: the bench ran and the
 budget is missed (2 adjusts 77ms, six HSL 406ms against a 100ms p50 budget), so "close it as not

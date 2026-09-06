@@ -337,6 +337,7 @@ class GenerativeFillToolTest {
         (0 until width * height).count { MaskOps.isSet(this, it % width, it / width) }
 
     private fun viewModel() = EditorViewModel(
+        context = ApplicationProvider.getApplicationContext(),
         repository = repository,
         renderer = FakeRenderer(),
         ai = EditorAi(

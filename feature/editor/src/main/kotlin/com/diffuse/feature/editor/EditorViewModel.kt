@@ -20,6 +20,11 @@ import com.diffuse.core.imaging.model.Operation
 import com.diffuse.core.imaging.render.Renderer
 import com.diffuse.feature.editor.tools.ToolTap
 import com.diffuse.feature.editor.tools.generativeInput
+import android.content.Context
+import com.diffuse.core.imaging.style.StyleCatalog
+import com.diffuse.feature.editor.tools.style.StyleController
+import com.diffuse.feature.editor.tools.style.StyleState
+import dagger.hilt.android.qualifiers.ApplicationContext
 import com.diffuse.feature.editor.tools.auto.AutoController
 import com.diffuse.feature.editor.tools.auto.AutoState
 import com.diffuse.feature.editor.tools.crop.CropState
@@ -50,6 +55,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /** specs/editor_shell.md §State. */
@@ -73,6 +79,9 @@ data class EditorUiState(
     val expand: ExpandState = ExpandState(),
     /** specs/auto_enhance.md §6: the model's plan lives here between the call and 적용. */
     val auto: AutoState = AutoState(),
+
+    /** specs/style_match.md §4: the catalog, its tiles, and the style the user is trying on. */
+    val style: StyleState = StyleState(),
     /** specs/vibe_edit.md §3: the plan lives here between the response and 적용. */
     val direct: DirectState = DirectState(),
     /** specs/selection_tool.md §8.1: default on, so an adjustment lands where the user looked. */
@@ -84,6 +93,7 @@ data class EditorUiState(
 /** specs/editor_shell.md: one ViewModel per screen, UI sends intents, VM reduces to state. */
 @HiltViewModel
 class EditorViewModel @Inject constructor(
+    @ApplicationContext context: Context,
     private val repository: ProjectRepository,
     private val renderer: Renderer,
     ai: EditorAi,
@@ -141,6 +151,16 @@ class EditorViewModel @Inject constructor(
 
     /** specs/auto_enhance.md §6: the tool has no sheet before its call, and one after it. */
     val auto = AutoController(ai.autoEnhance, viewModelScope)
+
+    /**
+     * specs/style_match.md §4. 스타일 calls nothing, so it needs no provider — what it needs is
+     * the catalog, which is an asset, and the renderer that draws its tiles.
+     */
+    val style = StyleController(
+        catalog = { withContext(dispatchers.io) { StyleCatalog.load(context.assets) } },
+        renderer = renderer,
+        scope = viewModelScope,
+    )
 
     /**
      * specs/vibe_edit.md §3, §9. The tool owns the plan and the run; what it cannot know is
@@ -236,6 +256,16 @@ class EditorViewModel @Inject constructor(
                 .collect { _uiState.value.document?.let(::requestPreview) }
         }
         viewModelScope.launch {
+            style.state.collect { _uiState.value = _uiState.value.copy(style = it) }
+        }
+        // specs/style_match.md §4: selecting a tile applies live. T77's collector shape again —
+        // what the preview should show changed without the document changing.
+        viewModelScope.launch {
+            _uiState.map { if (it.selectedTool == Tool.Style) it.style.scaled() else null }
+                .distinctUntilChanged()
+                .collect { _uiState.value.document?.let(::requestPreview) }
+        }
+        viewModelScope.launch {
             direct.state.collect { _uiState.value = _uiState.value.copy(direct = it) }
         }
     }
@@ -290,6 +320,9 @@ class EditorViewModel @Inject constructor(
                 operations = document.operations.filterNot { it is Operation.Crop },
             )
             Tool.Auto -> _uiState.value.auto.appliedTo(document)
+            // specs/style_match.md §4: the same reason as 자동's — the style is not in the
+            // document until 적용, and a tile the canvas does not follow is a swatch.
+            Tool.Style -> _uiState.value.style.appliedTo(document)
             else -> document
         }
         previewJob = viewModelScope.launch {
@@ -341,6 +374,9 @@ class EditorViewModel @Inject constructor(
                     },
                 )
                 if (tool == Tool.Select) state.preview?.let { selection.open(it.asAndroidBitmap()) }
+                // specs/style_match.md §7: the tiles are the user's own photograph, so they can
+                // only be drawn once there is a document to draw them from.
+                if (tool == Tool.Style) style.open(document)
             }
         }
     }
@@ -442,6 +478,7 @@ class EditorViewModel @Inject constructor(
         fill.close()
         expand.close()
         auto.close()
+        style.close()
         direct.close()
         _uiState.value = _uiState.value.copy(selectedTool = null)
     }
@@ -491,6 +528,15 @@ class EditorViewModel @Inject constructor(
                 auto.close()
                 _uiState.value = _uiState.value.copy(selectedTool = null)
                 history?.push(boosted)
+            }
+            // specs/style_match.md §4: 적용 commits every `Adjust` the preset carries as one
+            // history entry, so one undo takes the whole style back. Closed before the push for
+            // 자동's reason — the preview is already showing the pending style on top.
+            Tool.Style -> style.apply(state.document)?.let { styled ->
+                sheetBaseline = null
+                style.close()
+                _uiState.value = _uiState.value.copy(selectedTool = null)
+                history?.push(styled)
             }
             // specs/vibe_edit.md §3: 적용 runs the plan; the sheet closes when the run ends.
             Tool.Direct -> direct.apply()

@@ -618,6 +618,7 @@ class SelectionToolTest {
     private fun viewModel(
         segmentation: FakeSegmentationProvider = provider,
     ) = EditorViewModel(
+        context = ApplicationProvider.getApplicationContext(),
         repository = repository,
         renderer = FakeRenderer(),
         ai = EditorAi(

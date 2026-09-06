@@ -4,6 +4,7 @@ import androidx.annotation.StringRes
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.AutoAwesomeMosaic
 import androidx.compose.material.icons.rounded.AutoAwesomeMotion
 import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.AutoFixNormal
@@ -47,6 +48,13 @@ enum class Tool(
 
     /** specs/outpaint.md §6: the one tool that makes the canvas bigger, after the two that fill. */
     Expand(R.string.editor_tool_expand, Icons.Rounded.OpenInFull, ToolGroup.Ai),
+
+    /**
+     * specs/tool_groups.md §2 puts 스타일 at the AI level and §9's open decision 2 says why: the
+     * tool itself calls nothing (style_match.md §4), but its 컬러 매칭 half does, and the level is
+     * named for where things are rather than for what they cost.
+     */
+    Style(R.string.editor_tool_style, Icons.Rounded.AutoAwesomeMosaic, ToolGroup.Ai),
 
     /** specs/auto_enhance.md §6: the one AI tool that answers in adjustments rather than pixels. */
     Auto(R.string.editor_tool_auto, Icons.Rounded.AutoFixNormal, ToolGroup.Ai),

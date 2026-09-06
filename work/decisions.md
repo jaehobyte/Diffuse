@@ -8,6 +8,63 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T73
+
+- **`Tool.Style` is at the AI level, and that does not contradict style_match.md §4.** §4 says 스타일
+  is not an AI tool because picking a named style calls nothing; tool_groups.md §2's diagram puts it
+  at the AI level anyway, and §9's open decision 2 says why — 컬러 매칭 (T75) lives inside this
+  sheet and *is* a call. The level names where things are, not what they cost. `isAi` no longer
+  exists (T78), so the §4 clause the task's `done when` names is satisfied by construction.
+
+- **Variant chips needed names and §8's table has none.** §8 lists `style_variants` (세부) for the
+  row and one `style_name_<id>` per catalog entry, and stops there. Numbered chips — 세부 1, 2, 3 —
+  are less code and would have made the choice §3 exists for (film grain versus film colour)
+  unmakeable. So §3's rule was applied to variants as it is to styles: 41 `style_variant_*` strings,
+  joined by the derived id, and the JSON's own Korean still ignored.
+
+- **Edit mode has no `surfaceCard`.** DESIGN.md §4's "flat `surfaceCard` while loading, no skeleton
+  shimmer" is written for the Browse image tile; the dark surface scale's matching step is
+  `editSurfaceRaised`, which is what `AppColors.surfaceRaised` resolves to under `ThemeMode.Edit`.
+  The no-shimmer half is kept exactly.
+
+- **Tiles render at full intensity, always.** §7 does not say what the 강도 slider does to a tile.
+  Re-rendering twelve of them per slider frame is the obvious wrong answer; the tile answers "what
+  is this style", and 강도 is then an adjustment to the one the user picked. `StyleState` is the one
+  fold, so a tile and the canvas cannot disagree about what a preset *is*.
+
+- **A tile is `renderer.preview(document + preset)`, not the preset applied to a shared bitmap.**
+  §7 describes one 96dp bitmap that each tile transforms. `Ops` is `internal` to `core:imaging` and
+  `core/imaging/render` is not in T73's `touches`, so the preset is added to the document instead
+  and the renderer draws it. The decode is still shared — `baseCache` is keyed on source and target
+  size, and all thirteen renders ask for the same 256px — so §7's cost argument survives intact.
+  What it costs that §7 did not intend: thirteen renders evict the canvas preview from a 3-entry
+  `previewCache`, so the next document change re-renders it once.
+
+- **`EditorViewModel` now takes `@ApplicationContext`.** The catalog is an asset, so something has
+  to hold an `AssetManager`. `app/di/ImagingModule` is where a `StyleCatalog` binding would belong
+  and it is not in T73's `touches`; Hilt provides the application context with no module at all.
+  The cost is seven test constructor call sites, all mechanical.
+
+- **The controller's scope in tests is unconfined, not `runTest`'s own.** `TestScope` is a
+  `StandardTestDispatcher`, which queues `open`'s `launch` rather than running it, and every
+  assertion read an empty state. The real scope is `viewModelScope` on `Dispatchers.Main`, which the
+  suite already sets to an unconfined dispatcher, so an unconfined scope is the faithful stand-in
+  rather than a convenience.
+
+- **`style_sheet_selected` picks 내추럴, the third tile.** The first recording selected 웜 필름,
+  which is fifth and therefore behind the row's scroll: the golden showed 세부 changing and no ring
+  at all. A golden that cannot see the thing it asserts is not asserting it.
+
+- **Both goldens show tiles that have not rendered.** §7 makes the flat, image-less tile a specified
+  state, and it is the only one a golden can hold without depending on a photograph — which would
+  make these screenshots assertions about the renderer instead of about the sheet.
+
+- **`recordRoborazziDebug` also rewrote `canvas_fit`, `canvas_transparent` and `crop_overlay`,
+  and all three were reverted.** Nothing in T73 touches the canvas; the bytes differ run to run.
+  `editor_shell_ai_open` was reverted too even though 스타일 genuinely belongs in it now — CLAUDE.md
+  allows re-recording only a golden the task's `done when` names, and it names two. That golden's
+  looseness is already an open issue in `progress.md`, and this is the second task to leave it be.
+
 ### T72
 
 - **`StylePreset` carries no `nameRes`, because `core:imaging` has no `res/`.** §3 draws the field

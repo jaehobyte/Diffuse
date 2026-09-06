@@ -247,6 +247,7 @@ class AutoToolTest {
         operations.filterIsInstance<Operation.Adjust>()
 
     private fun viewModel() = EditorViewModel(
+        context = ApplicationProvider.getApplicationContext(),
         repository = repository,
         renderer = FakeRenderer(),
         ai = EditorAi(

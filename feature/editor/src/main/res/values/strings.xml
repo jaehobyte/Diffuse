@@ -162,6 +162,13 @@
     <string name="mix_band_purple">보라</string>
     <string name="mix_band_magenta">자홍</string>
 
+    <!-- specs/style_match.md §8 -->
+    <string name="editor_tool_style">스타일</string>
+    <string name="style_title">스타일</string>
+    <string name="style_none">원본</string>
+    <string name="style_intensity">강도</string>
+    <string name="style_variants">세부</string>
+
     <!-- specs/style_match.md §3: styles.json is the source of the numbers, this file of the
          names. The id is the join. -->
     <string name="style_name_clean_bright">클린 브라이트</string>
@@ -176,4 +183,48 @@
     <string name="style_name_golden_glow">골든 글로우</string>
     <string name="style_name_urban_hip">어반 힙</string>
     <string name="style_name_bw_classic">클래식 모노</string>
+
+    <!-- §3: a variant is the same shape with its own params, so it is named the same
+         way — here, joined by the derived id. -->
+    <string name="style_variant_clean_bright_1">퓨어 화이트</string>
+    <string name="style_variant_clean_bright_2">소프트 브라이트</string>
+    <string name="style_variant_clean_bright_3">밝고 투명한 룩</string>
+    <string name="style_variant_natural_enhance_1">셔터 그대로</string>
+    <string name="style_variant_natural_enhance_2">맑은 내추럴</string>
+    <string name="style_variant_natural_enhance_3">뉴트럴 픽처</string>
+    <string name="style_variant_crisp_landscape_1">알파인 블루</string>
+    <string name="style_variant_crisp_landscape_2">포레스트 그린</string>
+    <string name="style_variant_crisp_landscape_3">랜드스케이프 픽처</string>
+    <string name="style_variant_film_warm_1">골드 네거티브</string>
+    <string name="style_variant_film_warm_2">그린 네거티브</string>
+    <string name="style_variant_film_warm_3">시네 필름</string>
+    <string name="style_variant_film_warm_4">모노 필름</string>
+    <string name="style_variant_faded_matte_1">웜 매트</string>
+    <string name="style_variant_faded_matte_2">쿨 매트</string>
+    <string name="style_variant_faded_matte_3">IN 매트 룩</string>
+    <string name="style_variant_cinematic_teal_1">딥 틸&amp;오렌지</string>
+    <string name="style_variant_cinematic_teal_2">블리치 바이패스</string>
+    <string name="style_variant_cinematic_teal_3">네오 누아르</string>
+    <string name="style_variant_cinematic_teal_4">그린 디스토피아</string>
+    <string name="style_variant_moody_dark_1">딥 포레스트</string>
+    <string name="style_variant_moody_dark_2">미드나잇 블루</string>
+    <string name="style_variant_moody_dark_3">FL 무디 룩</string>
+    <string name="style_variant_vibrant_pop_1">캔디 팝</string>
+    <string name="style_variant_vibrant_pop_2">딥 팝</string>
+    <string name="style_variant_vibrant_pop_3">비비드 픽처</string>
+    <string name="style_variant_pastel_soft_1">핑크 파스텔</string>
+    <string name="style_variant_pastel_soft_2">민트 파스텔</string>
+    <string name="style_variant_pastel_soft_3">포트레이트 소프트</string>
+    <string name="style_variant_golden_glow_1">선셋 피치</string>
+    <string name="style_variant_golden_glow_2">앰버 톤</string>
+    <string name="style_variant_urban_hip_1">콜드 크롬</string>
+    <string name="style_variant_urban_hip_2">네온 마젠타</string>
+    <string name="style_variant_urban_hip_3">세피아 스트리트</string>
+    <string name="style_variant_bw_classic_1">하이 콘트라스트 모노</string>
+    <string name="style_variant_bw_classic_2">소프트 모노</string>
+    <string name="style_variant_bw_classic_3">레드 필터 드라마</string>
+    <string name="style_variant_bw_classic_4">옐로 필터 내추럴</string>
+    <string name="style_variant_bw_classic_5">아크로스 계조</string>
+    <string name="style_variant_bw_classic_6">세피아 회고</string>
+    <string name="style_variant_bw_classic_7">셀레늄 결</string>
 </resources>
