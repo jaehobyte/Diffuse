@@ -1,7 +1,7 @@
 # specs/generative_erase.md — Generative eraser
 
 Owner tasks: T39 (the key), T40 (`GeminiEraseClient`), T41 (`WhiteFill`), T42 (`GeminiEraseProvider`),
-T43 (tool copy)
+T43 (tool copy), T50–T51 (the margin and the instruction rewrite)
 Modules: `core/ai/gemini`, `feature/editor/tools/erase`, `core/imaging` (op + render — already built)
 Decisions: ADR-011 (the device calls Gemini directly). **Supersedes ADR-010**, the sam3-server proxy.
 Depends on: ai_provider.md, segmentation.md, selection_tool.md, edit_model.md
@@ -86,6 +86,12 @@ It lives in `core/ai/gemini` rather than `core:imaging`: it is a detail of how o
 one model, not a rendering operation. `core:ai` reaches into `core:imaging` for `AdjustKind` and
 nothing else (ai_provider.md §2), and a pixel operation is exactly the "nothing else".
 
+**`WhiteFill` is shared, not copied.** 채우기 sends the identical whitened image and differs only in
+the instruction (generative_fill.md §2), and 확대 whitens a *border* rather than a region through a
+sibling object, `WhitePad` (outpaint.md §5). Three features, one idea: the mask is expressed in the
+pixels because the model has no mask parameter. A second implementation of white-painting in any of
+them is a signal the design drifted.
+
 ## 5. The Gemini call (T40)
 `GeminiEraseClient`, OkHttp + kotlinx.serialization. One class, one request shape.
 
@@ -127,9 +133,15 @@ that continues the surrounding scene: match its lighting, texture, perspective, 
 so the result looks like a single unedited photograph. Do not introduce any new object, person,
 text or watermark. Do not alter anything outside the white region. Return only the edited image.
 ```
-When `hint` is non-blank, one sentence is appended: `The white region previously contained: <hint>.`
-`EraseController` passes `null` today; the parameter stays because the interface is shared with the
-fake and with D10.
+When `hint` is non-blank, one sentence is appended saying the thing was **removed** and must not be
+drawn again (T51 rewrote it; the earlier wording could be read as an instruction to paint the thing
+back in). `EraseController` passes `null`; `PlanRunner` passes the most recent `Select` phrase.
+
+**The instruction is supplied by the caller, not owned by the client (T60).** `GeminiEraseClient`
+exposes `edit(image, instruction)` and `GeminiEraseProvider` passes `ERASE_INSTRUCTION`; the fill
+and outpaint providers pass their own (generative_fill.md §3, outpaint.md §5). One class knows how
+to talk to `gemini-2.5-flash-image`; three providers know what to ask it for. D10 is no longer
+deferred — it is generative_fill.md.
 
 **Reading the response.** `candidates[0].content.parts` is scanned for the first part carrying
 `inlineData`; its `data` is base64 and its `mimeType` is `image/png` or `image/jpeg`. Text parts

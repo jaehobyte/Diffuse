@@ -1,6 +1,6 @@
 # specs/crop.md — Crop & rotate tool
 
-Owner task: T15
+Owner tasks: T15, T24 (live rotation preview), T58 (the planner's `crop_ratio`)
 Module: `core/imaging/ops` (Crop op), `feature/editor/tools/crop` (overlay + sheet)
 Depends on: canvas.md (overlay slot, `LocalCanvasTransform`), edit_model.md (`Crop` op), render.md
 
@@ -16,6 +16,16 @@ Depends on: canvas.md (overlay slot, `LocalCanvasTransform`), edit_model.md (`Cr
 - 90° buttons: rotate the whole source; rect rotates with it; aspect preset swaps (4:5 → 5:4 is displayed as the same chip).
 - Min rect size: 10% of the short edge.
 - Straighten and the 90° buttons preview **live on the canvas**, with no `Renderer` pass: the canvas rotates the drawn bitmap about the image centre (quarter turns swap the fitted size, the straighten rotates inside the unchanged bounds, matching `CropOp`). The rect stays where it is on screen; Apply commits `Crop(rect, angleDeg)` as before and Cancel drops the transform with the sheet.
+
+## Opened by the planner (T58)
+vibe_edit.md §4.1's `crop_ratio` step commits a centred rect at one of the four preset ratios and
+then opens this tool with that chip selected and the committed rect loaded — the ordinary
+"re-opening the tool shows the existing crop" path, entered from a plan instead of a tap.
+
+Nothing here changes for it. The rect comes from `CropGeometry.applyPreset`, which the chips already
+call, so the planner writes **no geometry of its own**; the preset enum on the wire maps onto
+`AspectPreset` at the `feature:editor` boundary. `Free` is not one of the wire values: a model
+choosing "자유" would be choosing nothing.
 
 ## Model
 `Operation.Crop(rect: RectF normalized to un-rotated source, angleDeg: Float)` — `angleDeg` includes 90° steps + straighten (e.g. 105°). One Crop max; Apply replaces it.

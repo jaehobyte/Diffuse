@@ -1,6 +1,7 @@
 # specs/render.md — Render pipeline
 
-Owner tasks: T10, T13–T16 (op math), T20 (export)
+Owner tasks: T10, T13–T16 (op math), T20 (export), T49 (in-order walk), T59 (GenerativeFill),
+T63 (Outpaint)
 Module: `core/imaging/render`
 
 ## Purpose
@@ -17,8 +18,9 @@ Both run on `Dispatchers.Default` and check cancellation between operations.
 
 ## Pipeline order
 1. Decode `source` at the requested size (preview) or full size.
-2. Apply `Adjust` ops in list order.
-3. Apply `Crop` last, regardless of list position, so adjustments are visible inside the crop. Saved order is not changed.
+2. **If `operations[0]` is an `Outpaint`** (T63): allocate the expanded canvas, draw its `resultRef` scaled to fill it, then draw the decoded source into the interior rect over the top, with an alpha ramp of `OUTPAINT_BLEND_PX` at the boundary. The original pixels therefore survive at full resolution and only the invented border comes from the model. See outpaint.md §4.
+3. Walk `operations` **once, in list order** (T49), dispatching `Adjust`, `GenerativeErase`, `GenerativeFill` and `CutOut` as they are met. `Mask` and `Outpaint` contribute no pixels here.
+4. Apply `Crop` last, regardless of list position, so adjustments are visible inside the crop. Saved order is not changed.
 
 ## Operation math (v1, CPU; all in one `Ops.kt`)
 - Exposure: RGB × `2^(value × 2)`.
@@ -30,8 +32,10 @@ Both run on `Dispatchers.Default` and check cancellation between operations.
 - Sharpen: unsharp mask, radius 1px at preview scale (scaled proportionally at full res), amount `value`.
 - Vignette: radial darkening from 70% radius to corners, max `value × 0.6` EV.
 - Crop: rotate by `angleDeg` about center, then crop `rect`; expand canvas as needed so no black corners inside the rect (the crop tool guarantees the rect stays inside the rotated image).
+- `GenerativeErase` and `GenerativeFill`: `out = lerp(in, result, maskAlpha)`. One composite each, no per-pixel math; the two share a branch shape and differ only in which file they load.
+- `Outpaint`: the composite in Pipeline order step 2. It is not an in-list operation and has no math here.
 
-Every op clamps to `[0, 1]` per channel. GPU (AGSL) is Deferred D03; keep the math in `Ops.kt` so it can be ported.
+Every op clamps to `[0, 1]` per channel. Keep the math in `Ops.kt` so it can be ported — the AGSL backend is specs/gpu_render.md (T66), which is gated on a minSdk bump and a benchmark number and takes these goldens as its judge.
 
 ## Caching
 - Preview cache keyed by `(doc.source, doc.operations, targetLongEdgePx)`, 3 entries.
@@ -51,7 +55,8 @@ Every op clamps to `[0, 1]` per channel. GPU (AGSL) is Deferred D03; keep the ma
 - Preview target larger than source: never upscale; return source size.
 
 ## Tests
-- Golden image per `AdjustKind` at +0.5 and −0.5 (Sharpen/Vignette at 0.5 only). Tolerance 2/255 per channel, 99.9% of pixels.
+- Golden image per `AdjustKind` at +0.5 and −0.5 (Sharpen/Vignette at 0.5 only). Tolerance 2/255 per channel, 99.9% of pixels. **This line predates the 24 HSL kinds; adjust_hsl.md §10 is the rule for those**, and the eight goldens it names are the coverage there rather than 48 more files.
+- `generative_fill_render` and `outpaint_render`, plus the outpaint case asserting the interior is the **source's** pixels well inside the ramp (outpaint.md §8).
 - Crop 1:1 and straighten 15° goldens.
 - Order test: Exposure→Contrast ≠ Contrast→Exposure.
 - Cancellation test.

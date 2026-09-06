@@ -9,7 +9,13 @@ planner reaches it through a fifth function, `adjust_color_range`, that decodes 
 
 What is unproven is the same shape as Phase 10: T56 is a prompt change, so only a device run says
 whether the model calls `adjust_color_range` for "하늘을 더 파랗게" instead of trying to select a
-colour. Two spec-level questions are a human's, under "Open decisions (Phase 11)" in tasks.md.
+colour. The spec-level questions a human owns are under "Open decisions" in tasks.md.
+
+**Phase 12 is queued, T57–T65**, from the five things the user asked for after the device run: the
+sheet-cancel bug, `crop_ratio` as a planner function, 채우기 (generative fill with a prompt), 확대
+(outpainting), and the AGSL port. T66 is `[!]` — it needs a human to bump minSdk and produce a
+benchmark number first (`blocked.md`). Specs are written: `generative_fill.md`, `outpaint.md`,
+`gpu_render.md`, plus amendments to seven existing ones. **No code has been written for any of it.**
 
 ## Done
 
@@ -68,19 +74,6 @@ colour. Two spec-level questions are a human's, under "Open decisions (Phase 11)
   have one), `run` as a cold flow chaining each step onto the last, one `SegSession` for the whole
   run, save lambdas instead of `ProjectRepository`, and the partial-run guarantee: a failure or a
   cancellation ends the run with everything before it committed. 16 tests.
-
-- T46 `GeminiPlanProvider` — blank request refused before any encoding, `GeminiImageCodec` reused
-  unchanged (no mask), `ensureActive()` before the call, probe-free availability off the key, and
-  the `EditPlanProvider` binding in `AiModule`. 8 tests.
-
-- T43 지우기 tells the user which thing is missing — `EraseTap` (Run / OpenSettings / Refused),
-  `erase_needs_key` opening the 서버 설정 sheet the way 선택 does, a `blocked:` detail showing
-  `erase_blocked`, and the selection surviving every failure. 7 new tests, one per §9 row.
-
-- T42 `GeminiEraseProvider` — `GeminiImageCodec` (1024 long edge, q90 → 75, 20 MB cap, the mask
-  nearest-neighbour), §7's five steps on `dispatchers.io`, probe-free availability off the key,
-  and the `AiModule` binding swapped. The proxy's four files deleted. 15 tests, including the
-  one that decodes the recorded request body and finds the masked pixels white.
 
 ## Decisions
 

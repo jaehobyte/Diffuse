@@ -14,10 +14,15 @@ The frame hosting canvas, tools, and sheets. Owns editor-level state (selected t
 ├──────────────────────────────┤
 │         EditorCanvas         │ fills remaining
 ├──────────────────────────────┤ 72dp  Tool strip (editSurface)
-│  ○빛 ○색 ○자르기 ○디테일 ○선택 ○지우기 ○지시  │
+│ ○빛 ○색 ○혼합 ○자르기 ○디테일 ○선택 ○지우기 ○채우기 ○확대 ○지시 │
 └──────────────────────────────┘
 ```
-Sheets (`EditSheet`) slide up over the tool strip, max 45% height.
+Sheets (`EditSheet`) slide up over the tool strip, max 45% height. **A sheet covers the strip, so
+while one is open the strip must not receive taps that land on the sheet** — the [취소 | 적용] row
+sits directly over the strip's leftmost items. See T57.
+
+The strip scrolls (`LazyRow`) and has since it passed four items, so a new tool needs no
+reordering; it needs one `Tool` entry and one `ToolSheetHost` branch (architecture.md §5.2).
 
 ## State
 ```kotlin

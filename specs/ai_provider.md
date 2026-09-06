@@ -1,6 +1,6 @@
 # specs/ai_provider.md — AI provider boundary
 
-Owner tasks: T26 (segmentation), T39–T42 (erase), T44 (planning)
+Owner tasks: T26 (segmentation), T39–T42 (erase), T44 (planning), T60 (fill), T64 (outpaint)
 Module: `core:ai`
 Depends on: architecture.md §6 (extension points), §9 (errors)
 Decisions: ADR-009 (server-side SAM 3), ADR-011 (the device calls Gemini directly; supersedes
@@ -67,13 +67,33 @@ interface EraseProvider {
     suspend fun erase(image: Bitmap, mask: Bitmap, hint: String?): Result<Bitmap>
 }
 
+/** T60, generative_fill.md. Separate from [EraseProvider] — see the note below. */
+interface FillProvider {
+    val availability: StateFlow<Availability>
+    /** [mask] is ALPHA_8 at [image]'s size. Opaque pixels become [prompt]. */
+    suspend fun fill(image: Bitmap, mask: Bitmap, prompt: String): Result<Bitmap>
+}
+
+/** [left]…[bottom] are fractions of [image]'s width/height added on each side; each ≥ 0. */
+data class Margins(val left: Float, val top: Float, val right: Float, val bottom: Float)
+
+/** T64, outpaint.md. Returns the whole expanded image, not just the new border. */
+interface OutpaintProvider {
+    val availability: StateFlow<Availability>
+    suspend fun outpaint(image: Bitmap, margins: Margins): Result<Bitmap>
+}
+
 /** One step of a plan. Each maps onto a tool that already exists; see vibe_edit.md §4. */
 sealed interface PlanStep {
     data class Select(val phrase: String) : PlanStep
     data class Adjust(val kind: AdjustKind, val value: Float, val masked: Boolean) : PlanStep
     object Erase : PlanStep
     object CutOut : PlanStep
+    data class Fill(val prompt: String) : PlanStep                  // T62
+    data class Crop(val ratio: CropRatio) : PlanStep                // T58
 }
+
+enum class CropRatio { Square, Portrait4x5, Story9x16, Landscape16x9 }
 
 /** [steps] in execution order. Empty means the model declined to act — not a failure. */
 data class EditPlan(val steps: List<PlanStep>)
@@ -88,6 +108,19 @@ interface EditPlanProvider {
 `EditPlanProvider` chooses a workflow; it never returns pixels. Executing the steps is
 `feature:editor`'s job (vibe_edit.md §9), which is what keeps this interface as small as the other
 two and lets a different planner — or a hand-written one — slot in behind it.
+
+**Three generative interfaces, one transport.** `EraseProvider`, `FillProvider` and
+`OutpaintProvider` all end up in `GeminiEraseClient.edit(image, instruction)` behind three
+instruction constants (generative_fill.md §3). They are still three interfaces rather than one
+method with a mode argument, because each takes different arguments — a hint, a required prompt, a
+`Margins` — and a single method would carry two unused parameters at every call site and force every
+fake to answer for behaviour it does not implement. The duplication is four lines of interface; the
+alternative is a parameter list nobody can read.
+
+`PlanStep.Crop` carries `CropRatio`, an enum defined here rather than in `feature:editor`, for the
+same reason `Adjust` carries `AdjustKind` (§2): the plan model must be able to say what it means.
+It maps to `AspectPreset` at the `feature:editor` boundary; `core:ai` does not reach for crop
+geometry.
 
 `EraseProvider` says nothing about *how* the hole is described to a model. Painting the masked
 region white is `GeminiEraseProvider`'s private business (generative_erase.md §4), so swapping the

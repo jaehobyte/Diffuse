@@ -1,11 +1,11 @@
 # specs/vibe_edit.md — 지시 tool (plan-and-run editing)
 
 Owner tasks: T44 (`EditPlanProvider`), T45 (`GeminiPlanClient`), T46 (`GeminiPlanProvider`),
-T47 (`PlanRunner`), T48 (the tool)
+T47 (`PlanRunner`), T48 (the tool), T58 (`crop_ratio`), T62 (`fill_selection`)
 Modules: `core/ai/gemini` (plan client + provider), `feature/editor/tools/direct` (tool, runner)
 Decisions: ADR-012 (one planning call, function calling, the app executes)
-Depends on: ai_provider.md, segmentation.md, generative_erase.md, selection_tool.md,
-prompt_input.md, edit_model.md, history.md, DESIGN.md §4
+Depends on: ai_provider.md, segmentation.md, generative_erase.md, generative_fill.md,
+selection_tool.md, prompt_input.md, edit_model.md, history.md, crop.md, DESIGN.md §4
 
 Every capability this feature orchestrates is already built. Nothing here adds an `Operation`, a
 renderer path, a persistence rule or an `AppError` case: the planner's whole job is to decide which
@@ -27,7 +27,7 @@ SAM 3, adjustments still come from `Ops.kt`, and the erase still comes from
 "나무를 좀 더 푸르게 해줘"  (typed, or spoken → prompt_input.md §3)
   └─ GeminiPlanProvider                                      §7, §8
        1. encode the current preview  (GeminiImageCodec, ≤1024, JPEG q90)
-       2. POST …/gemini-2.5-flash:generateContent with 4 functionDeclarations   §5
+       2. POST …/gemini-2.5-flash:generateContent with 7 functionDeclarations   §5
        3. read candidates[0].content.parts[*].functionCall, in order            §5
   └─ EditPlan(steps = [Select("나무"), Adjust(Saturation, +0.3, masked = true)])
   └─ validate against the document                            §9.1
@@ -41,7 +41,8 @@ One planning call per request. The model never sees the intermediate result, whi
 the round trip cheap and the failure surface small; §13 records what that costs.
 
 ## 3. The tool (T48)
-A seventh entry in `Tool`, **appended at the end** the way `Select` and `Erase` were:
+An entry in `Tool`, **appended at the end** the way `Select` and `Erase` were (T61 and T65 later
+insert 채우기 and 확대 ahead of it, which moves its position but not its behaviour):
 `Direct(R.string.editor_tool_direct, …, isAi = true)`, so it carries the 6dp accent dot every AI
 tool carries (DESIGN.md §4). Label 지시 — a verb, and short enough for a 64dp strip item. The strip
 is a `LazyRow` and has scrolled since it passed four items (editor_shell.md), so no reordering is
@@ -78,8 +79,8 @@ reviewed, translated or kept in tone. Each `PlanStep` renders through one templa
 adjustment labels the sheets already use (`light_exposure`, `color_saturation`, …). Text parts in
 the response are therefore ignored, not shown.
 
-## 4. The function catalog (T45)
-Four functions — everything the editor can do that a sentence can plausibly ask for. Names,
+## 4. The function catalog (T45, extended by T58 and T62)
+Seven functions — everything the editor can do that a sentence can plausibly ask for. Names,
 descriptions and enum values are **English code constants**: they are wire payload sent to a model,
 not strings a person reads (the same rule generative_erase.md §5 applies to its instruction).
 
@@ -89,6 +90,8 @@ not strings a person reads (the same rule generative_erase.md §5 applies to its
 | `adjust` | `kind: enum` (required), `value: number` (required), `masked: boolean` (default `true`) | `document.withAdjust(kind, value, maskId)` — edit_model.md |
 | `erase_selection` | none | `EraseProvider.erase` → `Operation.GenerativeErase` — generative_erase.md §10 |
 | `cut_out_selection` | none | `Operation.CutOut` — selection_tool.md §8.2 |
+| `fill_selection` | `prompt: string` (required) | `FillProvider.fill` → `Operation.GenerativeFill` — generative_fill.md §8 |
+| `crop_ratio` | `ratio: enum` (required) | a centred `Operation.Crop` at that ratio, then the 자르기 tool opens — §4.1 |
 
 `kind` is the ten `AdjustKind` names in lower snake case: `exposure`, `contrast`, `highlights`,
 `shadows`, `temperature`, `tint`, `saturation`, `vibrance`, `sharpen`, `vignette`.
@@ -97,11 +100,31 @@ not strings a person reads (the same rule generative_erase.md §5 applies to its
 ordinary `PlanStep.Adjust` steps, so §7, §9 and §11 are unchanged, and `kind` above stays these ten
 names and never carries an HSL kind.
 
-**자르기 is deliberately absent.** A crop is a rectangle in normalized coordinates, and a model
-asked for one from a sentence has to invent four numbers it cannot verify against what the user
-meant. A wrong exposure is visible and one undo away; a wrong crop throws away framing the user
-chose. Crop stays a manual tool. If it is ever added, it needs its own preview of the rect, not a
-line of text.
+### 4.1 `crop_ratio`, and why it is safe when a free crop was not (T58)
+This section replaces the ruling that stood from T45 to T56. That ruling said: *"자르기 is
+deliberately absent. A crop is a rectangle in normalized coordinates, and a model asked for one
+from a sentence has to invent four numbers it cannot verify against what the user meant."* The
+objection was sound and is **unchanged** — it is the reason `crop_ratio` has the shape it does.
+
+`ratio` is an enum, not four numbers. Its values are the preset chips crop.md "What the user sees" already ships:
+`square` (1:1), `portrait_4_5` (4:5), `story_9_16` (9:16), `landscape_16_9` (16:9). The model picks
+a name from a closed set; it cannot express a rectangle, so it cannot invent one. What it is
+actually answering is "which aspect does 인스타 포스팅 mean", which is a language question and the
+one thing in this feature a model is better at than a rule.
+
+Three properties make the step safe to run without a preview of the rect:
+
+1. **The rect is computed, not received.** `CropState.from(document, aspect).withPreset(preset)`
+   produces the largest centred rect at that ratio, through `CropGeometry.applyPreset` — the same
+   code path the manual chips use. No new geometry is written for this feature.
+2. **The step is always last.** However the model orders its calls, the client moves the
+   `crop_ratio` step to the end of the list and keeps only the final one (§5). This matches
+   render.md, where `Crop` already applies last regardless of list position, and it means an
+   adjustment is never computed against a smaller frame than the user will see.
+3. **The 자르기 tool opens straight afterwards** (§9.2), with the preset chip selected and the
+   committed rect loaded. The model chose the ratio; the user chooses the framing, by dragging, in
+   the tool that was built for it. The wrong-crop failure mode the old ruling feared costs one drag
+   rather than one undo.
 
 The system instruction, also an English constant:
 
@@ -116,6 +139,10 @@ must run. Rules:
 - Values are relative strengths, not absolute settings: a slight change is 0.2, a clear change
   is 0.4, a strong change is 0.7. Use the ends of the range only when the user asked for an
   extreme.
+- Use fill_selection when the user names what should be there instead, and erase_selection when
+  they only want the thing gone.
+- Call crop_ratio at most once, and only when the request names a shape, a platform or a format.
+  Never crop to "improve" a photo the user did not ask to reframe.
 - If the request cannot be met with these functions, call nothing.
 ```
 
@@ -142,7 +169,7 @@ POST {baseUrl}/v1beta/models/gemini-2.5-flash:generateContent
       { "text": "<the user's sentence, verbatim>" }
     ]
   }],
-  "tools": [{ "functionDeclarations": [ /* §4, OpenAPI-subset schemas */ ] }],
+  "tools": [{ "functionDeclarations": [ /* §4's seven, OpenAPI-subset schemas */ ] }],
   "toolConfig": { "functionCallingConfig": { "mode": "ANY" } }
 }
 ```
@@ -161,11 +188,18 @@ POST {baseUrl}/v1beta/models/gemini-2.5-flash:generateContent
 
 **Reading the response.** `candidates[0].content.parts` is scanned in order and every part carrying
 `functionCall { name, args }` is kept; text parts are skipped, the way the eraser skips them
-(generative_erase.md §5). A part whose `name` is not one of §4's four, or whose `args` do not
+(generative_erase.md §5). A part whose `name` is not one of §4's seven, or whose `args` do not
 satisfy §4's types, is **dropped with a log warning** rather than failing the whole plan — the same
 rule `EditDocumentJson` applies to an unknown operation, and for the same reason: one bad element
 should not lose the good ones. `value` is clamped to the kind's range from edit_model.md
 (−1…1, or 0…1 for `sharpen` and `vignette`); a non-finite `value` drops the step.
+
+**`crop_ratio` is normalized after decoding (T58).** However many the model emitted and wherever
+it put them, the client keeps the **last** one and moves it to the **end** of the step list. Two
+crops in one plan is the model restating itself, not a request to crop twice, and `Operation.Crop`
+is at-most-one anyway (edit_model.md). An unknown `ratio` value drops the step, the same rule every
+other malformed argument gets. No other step is reordered — the model's order is the plan
+everywhere else.
 
 **Zero function calls is a valid answer, not an error.** It is what the last line of the system
 instruction asks for when the request is out of scope, and it surfaces as the `direct_not_understood`
@@ -190,7 +224,12 @@ sealed interface PlanStep {
     data class Adjust(val kind: AdjustKind, val value: Float, val masked: Boolean) : PlanStep
     object Erase : PlanStep
     object CutOut : PlanStep
+    data class Fill(val prompt: String) : PlanStep          // T62, generative_fill.md §8
+    data class Crop(val ratio: CropRatio) : PlanStep         // T58, §4.1
 }
+
+/** §4.1's closed set. The four values crop.md "What the user sees"'s preset chips already offer. */
+enum class CropRatio { Square, Portrait4x5, Story9x16, Landscape16x9 }
 
 /** [steps] in execution order; empty means the model declined to act (§5). */
 data class EditPlan(val steps: List<PlanStep>)
@@ -257,11 +296,15 @@ sealed interface RunEvent {
 class PlanRunner(
     private val segmentation: SegmentationProvider,
     private val erase: EraseProvider,
+    /** T62. A `Fill` step is the only one that uses it (generative_fill.md §8). */
+    private val fill: FillProvider,
     private val dispatchers: DispatcherProvider,
     /** `repository.saveMask(projectId, …)`, bound by the ViewModel. */
     private val saveMask: suspend (String, Bitmap) -> Result<ImageRef>,
     /** `repository.saveEraseResult(projectId, …)`, likewise. */
     private val saveEraseResult: suspend (String, Bitmap) -> Result<ImageRef>,
+    /** `repository.saveFillResult(projectId, …)` (T62). */
+    private val saveFillResult: suspend (String, Bitmap) -> Result<ImageRef>,
 ) {
     fun validate(plan: EditPlan, document: EditDocument): PlanStep?
     fun run(plan: EditPlan, document: EditDocument, preview: Bitmap): Flow<RunEvent>
@@ -278,8 +321,11 @@ and the caller — `EditorViewModel`, the only object holding the `HistoryStack`
 
 ### 9.1 Validation, before anything is shown
 `validate` returns the first step that cannot run, or `null`. One rule: **a step that consumes a
-selection must have one.** `Adjust(masked = true)`, `Erase` and `CutOut` each require either an
-earlier `Select` in the same plan or a non-null `activeMaskId` on the document.
+selection must have one.** `Adjust(masked = true)`, `Erase`, `CutOut` and `Fill` each require
+either an earlier `Select` in the same plan or a non-null `activeMaskId` on the document.
+
+`Crop` consumes no selection and needs no clause. T58 and T62 therefore add a step to the list this
+rule already covers and add **no new rule** — a signal the shape is right.
 
 This runs when the plan arrives, not when 적용 is tapped, so a plan that cannot work is never shown
 as if it could. A failing validation is the `direct_not_understood` hint, the same as an empty plan
@@ -296,9 +342,17 @@ told to rephrase.
 | `Adjust(kind, value, masked)` | `document.withAdjust(kind, value, if (masked) document.activeMaskId else null)` |
 | `Erase` | `erase.erase(preview, mask, hint = null)` → `saveEraseResult` → `document.withGenerativeErase` |
 | `CutOut` | `document.withCutOut(activeMaskId)` |
+| `Fill(prompt)` | `fill.fill(preview, mask, prompt)` → `saveFillResult` → `document.withGenerativeFill(maskId, ref, prompt)` — generative_fill.md §5 |
+| `Crop(ratio)` | `CropState.from(document, sourceAspect).withPreset(ratio.preset).applyTo(document)` — one history entry, no new geometry (§4.1) |
 
 `Select` is the only step that needs a `SegSession`. The runner opens one on the current preview at
 the first `Select` and closes it when the run ends.
+
+**The hand-off after a `Crop` step is not the runner's job.** The runner commits the crop and ends
+the run like any other step; `EditorViewModel` sees that the plan's last step was a `Crop` and calls
+`onToolClick(Tool.Crop)` after the sheet closes. Keeping it there costs one branch in the ViewModel
+and leaves `RunEvent` and the runner's contract untouched — the runner still only commits documents,
+which is what makes `PlanRunnerTest` able to assert about it without a UI.
 
 An empty `byText` is a hint in the manual tool (selection_tool.md §7) but a stop here, because the
 steps after it were written for a selection that does not exist. The user is told which word failed.
@@ -343,6 +397,7 @@ unreachable server fails in §9.2 and reports the segmentation reason.
 | planning failed, `detail` starts with `blocked:` | `direct_blocked` |
 | planning failed otherwise | `direct_failed` |
 | a `Select` step found nothing | `direct_not_found` |
+| a `Fill` step failed | the fill's own message (generative_fill.md §6), or `direct_failed` |
 | any other step failed | the failing step's own message, or `direct_failed` |
 
 ## 11. Strings (T48)
@@ -366,17 +421,24 @@ prose out of the UI (§3).
 | `direct_step_adjust_masked` | 선택 영역 %1$s %2$d |
 | `direct_step_erase` | 선택 영역 지우기 |
 | `direct_step_cutout` | 배경 지우기 |
+| `direct_step_fill` | 선택 영역에 %1$s 채우기 |
+| `direct_step_crop` | %1$s 비율로 자르기 |
 
 `%1$s` in the adjust templates is the existing slider label (`light_exposure` 노출,
 `color_saturation` 채도, …) and `%2$d` is the −100…100 integer the sliders already display, so a
 step reads in the same units the manual sheet would have shown.
+
+`direct_step_crop`'s `%1$s` is the preset's own chip label from crop.md "What the user sees" — "1:1", "4:5", "9:16",
+"16:9" — so the step names the ratio in the characters the 자르기 sheet is about to show the user.
+`direct_step_fill`'s `%1$s` is the model's prompt, which is English (generative_fill.md §8), the
+same open question `direct_step_select` already carries.
 
 ## 12. Tests
 No test reaches an external host; `GeminiPlanClient`'s `baseUrl` seam is what makes that true, and
 every UI test uses `FakePlanProvider`.
 
 - `GeminiPlanClientTest` on `MockWebServer`: the path names `gemini-2.5-flash`; `x-goog-api-key` is
-  present and the key is **absent from the URL**; the body carries four `functionDeclarations`, the
+  present and the key is **absent from the URL**; the body carries seven `functionDeclarations`, the
   system instruction, the image part and the user's sentence verbatim; `toolConfig.mode` is `ANY`;
   two `functionCall` parts decode into two steps **in order**; a text part between them is skipped;
   an unknown function name is dropped and the rest survive; an out-of-range `value` is clamped and a
@@ -393,8 +455,12 @@ every UI test uses `FakePlanProvider`.
   - a `Select` returning an empty list emits `Stopped(0)` and no `Committed`
   - a failure at step 2 leaves step 1's document committed — the partial-run guarantee
   - cancelling the collection mid-step commits nothing for that step
-  - `validate` rejects a masked `Adjust`, an `Erase` and a `CutOut` with no selection anywhere, and
-    accepts each of them when the document already has an `activeMaskId`
+  - `validate` rejects a masked `Adjust`, an `Erase`, a `CutOut` and a `Fill` with no selection
+    anywhere, and accepts each of them when the document already has an `activeMaskId`
+  - a `Crop` step commits a centred rect at the requested ratio and needs no selection; the plan
+    `[Select, Adjust, Crop]` leaves the `Crop` last in `document.operations`
+  - a plan whose `crop_ratio` arrived first still runs it last (§5's normalization), asserted on the
+    decoded `EditPlan` rather than on the runner
 - Tool tests: a blank key greys the tool and tapping it opens the 서버 설정 sheet; an empty plan
   shows the hint and leaves 적용 disabled; 취소 after a plan arrives leaves the document untouched;
   a second submit replaces the first plan; a `Final` speech result auto-submits (prompt_input.md §3
@@ -409,7 +475,11 @@ every UI test uses `FakePlanProvider`.
   would let it correct itself, at the cost of one billed round trip per step, a much larger failure
   surface, and a progress overlay that cannot say how many steps are left. One shot, a preview the
   user approves, and undo as the correction mechanism.
-- **No crop** (§4).
+- **No free crop.** `crop_ratio` picks from a closed set of four ratios and hands the framing back
+  to the user (§4.1). A model that could express an arbitrary rectangle is still out of scope, for
+  the reason §4.1 quotes.
+- **No outpainting.** 확대 is a manual tool; outpaint.md §9 records why a model should not choose
+  between discarding pixels and inventing them.
 - **No editing of the plan.** The step list is read-only: 적용 or 취소. Per-step toggles would be a
   small editor for a script the user did not write; rephrasing is cheaper and the plan is two or
   three lines.
