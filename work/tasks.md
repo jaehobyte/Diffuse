@@ -317,7 +317,7 @@ design drifted — block it rather than adding one.
   touches: core/ai/gemini, core/ai (the provider interface file), core/ai/AiModule.kt,
   core/ai/src/testShared, core/ai tests
 
-- [ ] T65 확대 — the overlay and the sheet
+- [x] T65 확대 — the overlay and the sheet
   spec: specs/outpaint.md §6, §7, §8; specs/canvas.md; specs/crop.md; DESIGN.md §2, §4, §5
   deps: T63, T64
   done when:

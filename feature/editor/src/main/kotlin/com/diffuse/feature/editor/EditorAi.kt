@@ -3,6 +3,7 @@ package com.diffuse.feature.editor
 import com.diffuse.core.ai.EditPlanProvider
 import com.diffuse.core.ai.EraseProvider
 import com.diffuse.core.ai.FillProvider
+import com.diffuse.core.ai.OutpaintProvider
 import com.diffuse.core.ai.SegmentationProvider
 import com.diffuse.core.ai.gemini.GeminiSettings
 import com.diffuse.core.ai.sam3.Sam3Settings
@@ -23,6 +24,7 @@ class EditorAi @Inject constructor(
     val segmentation: SegmentationProvider,
     val erase: EraseProvider,
     val fill: FillProvider,
+    val outpaint: OutpaintProvider,
     val plan: EditPlanProvider,
     val speech: SpeechInput,
     val sam3Settings: Sam3Settings,

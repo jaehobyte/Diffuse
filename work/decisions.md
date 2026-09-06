@@ -8,6 +8,48 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T65
+
+- **The pending area is drawn by `OverlayTransform`, not by the overlay.** §6 says the photo
+  shrinks to leave room, which is a change to the size the canvas *fits* and to where the bitmap
+  lands inside it — the two things `OverlayTransform` already decides for 자르기's live rotation
+  (T24). Adding `margins` there means `EditorCanvas` needed no change at all: the checkerboard it
+  already paints behind every photo shows through the new area unaided, which is DESIGN.md §2's
+  existing word for "no pixels here". The overlay is then only the four handles. The alternative —
+  the overlay drawing the area itself — cannot work, because the overlay cannot move the photo.
+
+- **`canvas/CanvasViewport.kt` was edited, outside T65's `touches`.** That is where
+  `OverlayTransform` lives, and the point above is why. `EditorCanvas.kt` itself was not touched.
+  The interior arithmetic has one implementation, `ExpandDrag.interiorOf`, which
+  `OverlayTransform.drawRect` calls — so the handles cannot end up measuring against a different
+  interior than the one on screen. `canvas` already depends on `tools` (`CropOverlaySlot`).
+
+- **`saveOutpaintResult` was added to `ProjectRepository`, outside `touches` too.** The same call
+  T61 made for `saveFillResult`: outpaint.md §3 names `outpaint_<id>.png` and says the file store
+  keeps it alive "exactly as `erase_<id>.png`", so the method has to exist somewhere. Six test
+  fakes gained the one method.
+
+- **No new `EditorViewModel` function.** The class was at detekt's ceiling (20 reports *at* 20, not
+  above it), so 확대 folded into `onRegionToolTapped`, renamed `onGenerativeToolTapped`: the three
+  tools that ask a provider for pixels, sharing the controller-returns-an-intent shape and
+  differing in what they ask the *document* — a selection for 지우기 and 채우기, the absence of one
+  for 확대. An `openSheet` helper that would have removed the resulting duplication was written and
+  then reverted for the same ceiling; it is the obvious cleanup if another function is ever freed.
+
+- **The ratio readout takes the nearest ratio with terms under 20, not the gcd.** Reduced by gcd, a
+  4000×3000 source reads 4:3 and almost anything else reads its own pixel counts back — 2251:1689
+  is not a readout. §6 calls this "a computed number", and the number a person wants is the ratio
+  they were aiming at.
+
+- **The overlay draws handles only — no frame border.** §6 lists what it draws: the checkerboard
+  area and four handles. The crop overlay's 1dp `editInk` border would have read as a second
+  language for the same thing, and the checkerboard already separates the frame from
+  `editBackground`.
+
+- **No `expand_after_mask` check inside `ExpandController`; it takes `canOutpaint` as an
+  argument.** The rule is `EditDocument`'s (T63), and duplicating it in the controller would be a
+  second copy that could disagree with the one `withOutpaint` enforces.
+
 ### T64
 
 - **`GeminiOutpaintProvider` does not reuse `GeminiMaskedEdit`.** It would have fit: pad the image,

@@ -19,6 +19,8 @@ import com.diffuse.feature.editor.tools.ToolSheetHost
 import com.diffuse.feature.editor.tools.crop.CropSheet
 import com.diffuse.feature.editor.tools.crop.STRAIGHTEN_MAX_DEG
 import com.diffuse.feature.editor.tools.direct.DirectSheet
+import com.diffuse.feature.editor.tools.expand.ExpandOverlay
+import com.diffuse.feature.editor.tools.expand.ExpandSheet
 import com.diffuse.feature.editor.tools.fill.FillSheet
 import com.diffuse.feature.editor.tools.prompt.VoicePromptBar
 import com.diffuse.feature.editor.tools.select.Sam3SettingsSheet
@@ -61,7 +63,7 @@ fun EditorRoute(
             onReset = viewModel::reset,
             onCompareChange = {},
             onExport = onExport,
-            overlayTransform = cropTransform(state),
+            overlayTransform = overlayTransform(state),
             disabledTools = disabledTools(state),
             gestureMode = if (state.selectedTool == Tool.Select) {
                 CanvasGestureMode.SelectPoint
@@ -94,6 +96,7 @@ private fun cancelWork(viewModel: EditorViewModel) {
     viewModel.selection.cancelWork()
     viewModel.erase.cancel()
     viewModel.fill.cancel()
+    viewModel.expand.cancel()
     viewModel.direct.cancelWork()
 }
 
@@ -102,12 +105,14 @@ private fun clearMessages(viewModel: EditorViewModel) {
     viewModel.selection.onMessageShown()
     viewModel.erase.onMessageShown()
     viewModel.fill.onMessageShown()
+    viewModel.expand.onMessageShown()
     viewModel.direct.onMessageShown()
 }
 
 /** DESIGN.md §7: every AI call shows progress and a way out, so they share one flag. */
 private fun isBusy(state: EditorUiState): Boolean =
-    state.selection.working || state.erase.busy || state.fill.busy || state.direct.working
+    state.selection.working || state.erase.busy || state.fill.busy || state.expand.busy ||
+        state.direct.working
 
 /** specs/selection_tool.md §1 and generative_erase.md §5: a tool that cannot work is greyed. */
 private fun disabledTools(state: EditorUiState): Set<Tool> = buildSet {
@@ -115,6 +120,8 @@ private fun disabledTools(state: EditorUiState): Set<Tool> = buildSet {
     if (!state.erase.enabled || state.document?.activeMaskId == null) add(Tool.Erase)
     // specs/generative_fill.md §6: the same two reasons, and the same greyed-but-tappable rule.
     if (!state.fill.enabled || state.document?.activeMaskId == null) add(Tool.Fill)
+    // specs/outpaint.md §6: the key, and the document's own mask-op guard.
+    if (!state.expand.enabled || state.document?.canOutpaint == false) add(Tool.Expand)
     // specs/vibe_edit.md §10: the key alone. A plan with no `Select` needs no SAM 3 server.
     if (!state.direct.enabled) add(Tool.Direct)
 }
@@ -124,6 +131,7 @@ private fun busyLabel(state: EditorUiState): Int = when {
     state.direct.planning -> R.string.direct_planning
     state.direct.running -> R.string.direct_running
     state.erase.busy -> R.string.erase_working
+    state.expand.busy -> R.string.expand_working
     state.fill.busy -> R.string.fill_working
     state.selection.phraseBusy -> R.string.select_prompt_working
     else -> R.string.select_preparing
@@ -139,8 +147,10 @@ private fun message(state: EditorUiState): String? {
     return when {
         direct?.arg != null -> stringResource(direct.res, direct.arg)
         direct != null -> stringResource(direct.res)
-        else -> (state.selection.message ?: state.erase.message ?: state.fill.message)
-            ?.let { stringResource(it) }
+        else -> (
+            state.selection.message ?: state.erase.message ?: state.fill.message
+                ?: state.expand.message
+            )?.let { stringResource(it) }
     }
 }
 
@@ -160,6 +170,16 @@ private fun canvasOverlay(
         points = state.selection.points,
         labels = state.selection.labels,
     )
+    // specs/outpaint.md §6: the pending area is the canvas's own checkerboard, drawn by
+    // `OverlayTransform.margins`; the overlay itself is the four handles.
+    Tool.Expand -> {
+        {
+            ExpandOverlay(
+                margins = state.expand.margins,
+                onMarginsChange = viewModel.expand::setMargins,
+            )
+        }
+    }
     // specs/selection_tool.md §8.1: while a masked adjustment is being made, the scrim shows
     // where it will land. Toggle off and it disappears.
     null -> null
@@ -212,6 +232,13 @@ private fun sheetFor(
                     },
                 )
                 Tool.Fill -> FillToolSheet(state = state, viewModel = viewModel)
+                // §6: no prompt bar — 확대 continues a scene the model can already see.
+                Tool.Expand -> ExpandSheet(
+                    state = state.expand,
+                    sourceAspect = sourceAspect(state),
+                    onCancel = viewModel::cancelSheet,
+                    onApply = viewModel::applySheet,
+                )
                 Tool.Direct -> DirectToolSheet(state = state, viewModel = viewModel)
                 else -> ToolSheetHost(
                     maskOption = MaskOption(
@@ -231,16 +258,24 @@ private fun sheetFor(
     }
 }
 
-/** tasks.md T24: Cancel closes the sheet, which removes the live rotation with it. */
-private fun cropTransform(state: EditorUiState): OverlayTransform =
-    if (state.selectedTool == Tool.Crop) {
-        OverlayTransform(
-            quarterTurns = state.cropState.quarterTurns,
-            straightenDeg = state.cropState.straightenDeg,
-        )
-    } else {
-        OverlayTransform.None
-    }
+/**
+ * The canvas-level previews neither tool has committed yet: 자르기's rotation (T24) and 확대's
+ * pending margins (outpaint.md §6). Cancel closes the sheet, which removes both with it.
+ */
+private fun overlayTransform(state: EditorUiState): OverlayTransform = when (state.selectedTool) {
+    Tool.Crop -> OverlayTransform(
+        quarterTurns = state.cropState.quarterTurns,
+        straightenDeg = state.cropState.straightenDeg,
+    )
+    Tool.Expand -> OverlayTransform(margins = state.expand.margins)
+    else -> OverlayTransform.None
+}
+
+/** The bare source's shape: what outpaint.md §6's ratio readout is measured against. */
+private fun sourceAspect(state: EditorUiState): Float {
+    val source = state.source
+    return if (source == null || source.height <= 0) 1f else source.width.toFloat() / source.height
+}
 
 /**
  * specs/generative_fill.md §6: the bar supplies the noun and the IME Done key does what 적용

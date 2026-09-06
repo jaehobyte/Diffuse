@@ -24,6 +24,11 @@ class FakeOutpaintProvider : OutpaintProvider {
     var lastMargins: Margins? = null
         private set
 
+    /** Which bitmap the caller handed over: outpaint.md §3 asks for the bare source, not the
+     * current preview, and a width is the cheapest way for a test to tell those two apart. */
+    var lastImageWidth: Int = 0
+        private set
+
     private var nextError: AppError? = null
 
     fun failNext(error: AppError) {
@@ -38,6 +43,7 @@ class FakeOutpaintProvider : OutpaintProvider {
         nextError?.let { nextError = null; return Result.Failure(it) }
         outpaintCount++
         lastMargins = margins
+        lastImageWidth = image.width
 
         val left = (margins.left * image.width).roundToInt()
         val top = (margins.top * image.height).roundToInt()

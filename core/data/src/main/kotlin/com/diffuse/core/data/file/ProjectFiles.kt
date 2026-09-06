@@ -29,6 +29,10 @@ class ProjectFiles(private val filesDir: File) {
     fun fillFile(projectId: String, fillId: String): File =
         File(projectDir(projectId), "fill_$fillId.png")
 
+    /** specs/outpaint.md §3: 확대's answer, "kept alive by the file store exactly as erase is". */
+    fun outpaintFile(projectId: String, outpaintId: String): File =
+        File(projectDir(projectId), "outpaint_$outpaintId.png")
+
     /** The source keeps whatever extension it was written with; find it rather than guess. */
     fun findSource(id: String): File? =
         projectDir(id).listFiles { file -> file.nameWithoutExtension == "source" }?.firstOrNull()

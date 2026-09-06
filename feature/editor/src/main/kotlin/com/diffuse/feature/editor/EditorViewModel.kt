@@ -30,6 +30,9 @@ import com.diffuse.feature.editor.tools.erase.EraseCommit
 import com.diffuse.feature.editor.tools.erase.EraseController
 import com.diffuse.feature.editor.tools.erase.EraseState
 import com.diffuse.feature.editor.tools.erase.EraseTap
+import com.diffuse.feature.editor.tools.expand.ExpandController
+import com.diffuse.feature.editor.tools.expand.ExpandState
+import com.diffuse.feature.editor.tools.expand.ExpandTap
 import com.diffuse.feature.editor.tools.fill.FillController
 import com.diffuse.feature.editor.tools.fill.FillState
 import com.diffuse.feature.editor.tools.fill.FillTap
@@ -61,6 +64,8 @@ data class EditorUiState(
     val erase: EraseState = EraseState(),
     /** specs/generative_fill.md §6: the prompt lives here between typing it and 적용. */
     val fill: FillState = FillState(),
+    /** specs/outpaint.md §6: the pending margins live here between the drag and 적용. */
+    val expand: ExpandState = ExpandState(),
     /** specs/vibe_edit.md §3: the plan lives here between the response and 적용. */
     val direct: DirectState = DirectState(),
     /** specs/selection_tool.md §8.1: default on, so an adjustment lands where the user looked. */
@@ -113,6 +118,15 @@ class EditorViewModel @Inject constructor(
     val fill = FillController(
         provider = ai.fill,
         saveResult = { fillId, result -> repository.saveFillResult(projectId, fillId, result) },
+        scope = viewModelScope,
+    )
+
+    /** specs/outpaint.md §6: same split again — the tool runs it, this class commits it. */
+    val expand = ExpandController(
+        provider = ai.outpaint,
+        saveResult = { outpaintId, result ->
+            repository.saveOutpaintResult(projectId, outpaintId, result)
+        },
         scope = viewModelScope,
     )
 
@@ -185,6 +199,9 @@ class EditorViewModel @Inject constructor(
             fill.state.collect { _uiState.value = _uiState.value.copy(fill = it) }
         }
         viewModelScope.launch {
+            expand.state.collect { _uiState.value = _uiState.value.copy(expand = it) }
+        }
+        viewModelScope.launch {
             direct.state.collect { _uiState.value = _uiState.value.copy(direct = it) }
         }
     }
@@ -250,7 +267,8 @@ class EditorViewModel @Inject constructor(
         when {
             state.selectedTool == tool -> cancelSheet()
             tool == Tool.Select && !selection.onToolTapped() -> Unit
-            tool == Tool.Erase || tool == Tool.Fill -> onRegionToolTapped(state, tool)
+            tool == Tool.Erase || tool == Tool.Fill || tool == Tool.Expand ->
+                onGenerativeToolTapped(state, tool)
             // specs/vibe_edit.md §10: a blank key opens the 서버 설정 sheet, through the same
             // controller-returns-an-intent shape 지우기 uses. One sheet, one owner.
             tool == Tool.Direct -> when (direct.onToolTapped()) {
@@ -279,14 +297,27 @@ class EditorViewModel @Inject constructor(
 
 
     /**
-     * The two generative region tools, which ask the same question of the same selection and
-     * differ in what a yes means: 지우기 has no sheet and runs on the tap (generative_erase.md
-     * §5, §9), 채우기 opens one because it needs a noun (generative_fill.md §6). Both refuse the
-     * same two ways, through the same controller-returns-an-intent shape.
+     * The three tools that ask a provider for pixels. They share the controller-returns-an-intent
+     * shape and differ in what a yes means: 지우기 has no sheet and runs on the tap
+     * (generative_erase.md §5, §9), 채우기 opens one because it needs a noun
+     * (generative_fill.md §6), and 확대 opens one because it needs margins (outpaint.md §6).
+     *
+     * What each one asks the *document* differs too — a selection for the first two, and for 확대
+     * the absence of one (§3) — so the question is the argument rather than the branch.
      */
-    private fun onRegionToolTapped(state: EditorUiState, tool: Tool) {
+    private fun onGenerativeToolTapped(state: EditorUiState, tool: Tool) {
         val hasSelection = state.document?.activeMaskId != null
-        if (tool == Tool.Erase) {
+        if (tool == Tool.Expand) {
+            when (expand.onToolTapped(state.document?.canOutpaint == true)) {
+                ExpandTap.Refused -> Unit
+                ExpandTap.OpenSettings -> selection.setSettingsVisible(true)
+                ExpandTap.Open -> {
+                    // specs/editor_shell.md: the snapshot Cancel restores to.
+                    sheetBaseline = state.document
+                    _uiState.value = state.copy(selectedTool = Tool.Expand)
+                }
+            }
+        } else if (tool == Tool.Erase) {
             when (erase.onToolTapped(hasSelection)) {
                 EraseTap.Refused -> Unit
                 EraseTap.OpenSettings -> selection.setSettingsVisible(true)
@@ -343,6 +374,7 @@ class EditorViewModel @Inject constructor(
         sheetBaseline = null
         selection.closeSheet()
         fill.close()
+        expand.close()
         direct.close()
         _uiState.value = _uiState.value.copy(selectedTool = null)
     }
@@ -356,6 +388,18 @@ class EditorViewModel @Inject constructor(
             Tool.Fill -> fill.runAndCommit(
                 image = state.preview?.asAndroidBitmap(),
                 mask = state.activeMask,
+                document = state.document,
+                onCommitted = { document ->
+                    history?.push(document)
+                    sheetBaseline = null
+                    _uiState.value = _uiState.value.copy(selectedTool = null)
+                },
+            )
+            // specs/outpaint.md §6: the request is built from the **bare source**, not the
+            // preview, so a second 확대 re-invents from the photograph rather than from the
+            // model's last answer.
+            Tool.Expand -> expand.runAndCommit(
+                source = state.source?.asAndroidBitmap(),
                 document = state.document,
                 onCommitted = { document ->
                     history?.push(document)

@@ -7,6 +7,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.diffuse.core.ai.Availability
 import com.diffuse.core.ai.FakeEraseProvider
 import com.diffuse.core.ai.FakeFillProvider
+import com.diffuse.core.ai.FakeOutpaintProvider
 import com.diffuse.core.ai.FakePlanProvider
 import com.diffuse.core.ai.FakeSegmentationProvider
 import com.diffuse.core.ai.gemini.GeminiSettings
@@ -276,6 +277,7 @@ class GenerativeFillToolTest {
             segmentation,
             FakeEraseProvider(),
             filler,
+            FakeOutpaintProvider(),
             FakePlanProvider(),
             FakeSpeechInput(),
             settings,
@@ -344,6 +346,12 @@ class GenerativeFillToolTest {
             savedFills += fillId
             return Result.Success(ImageRef("/p/fill_$fillId.png"))
         }
+
+        override suspend fun saveOutpaintResult(
+            projectId: String,
+            outpaintId: String,
+            bitmap: Bitmap,
+        ): Result<ImageRef> = Result.Success(ImageRef("/p/outpaint_$outpaintId.png"))
 
         override suspend fun duplicate(id: String): Result<String> = Result.Success("copy")
         override suspend fun delete(id: String): Result<Unit> = Result.Success(Unit)

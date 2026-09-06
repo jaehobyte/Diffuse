@@ -157,6 +157,19 @@ class DefaultProjectRepository(
         }
     }
 
+    override suspend fun saveOutpaintResult(
+        projectId: String,
+        outpaintId: String,
+        bitmap: Bitmap,
+    ): Result<ImageRef> = withContext(dispatchers.io) {
+        runCatchingIo {
+            val file = files.outpaintFile(projectId, outpaintId)
+            file.parentFile?.mkdirs()
+            file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, PNG_QUALITY, it) }
+            ImageRef(file.absolutePath)
+        }
+    }
+
     override suspend fun duplicate(id: String): Result<String> = withContext(dispatchers.io) {
         val original = dao.findById(id) ?: return@withContext Result.Failure(AppError.MissingSource)
         val copyId = newId()

@@ -1,9 +1,19 @@
 ## Current
 
-_Idle._ T64 is committed; the next `[ ]` task is T65 (확대 — the overlay and the sheet), whose deps
-T63 and T64 are now both `[x]`.
+_Idle._ T65 is committed, and with it Phase 12's queue. Every remaining task is `[!]`: T57 needs a
+device to reproduce a bug on, T66 needs two human decisions. See `## Next`.
 
 ## Done
+
+- T65 확대 — `Tool.Expand` after `Tool.Fill`, `ExpandController` (tap intent, drag, run, commit,
+  cancel), `ExpandSheet` = `EditSheet` + the `mono` ratio readout, **no prompt bar**, and an overlay
+  that is only four handles. The pending area needed no drawing code: `OverlayTransform` gained
+  `margins`, so the canvas fits the expanded frame, draws the photo into its interior, and its
+  existing checkerboard shows through the rest — DESIGN.md §2's word for "no pixels here", reused
+  rather than reinvented. Handles drag **outward only**, clamped at `MAX_MARGIN_FRACTION`; a drag
+  away from one pans. The mask-op guard is `EditDocument.canOutpaint`, passed in rather than
+  re-implemented. 38 tests, goldens `expand_overlay` / `expand_sheet_open`; every existing golden
+  passed unrecorded, `editor_shell_default` included — the strip already overflowed at nine items.
 
 - T64 `WhitePad` and `OutpaintProvider` — the mask trick generalized: `WhiteFill` paints a region
   white, `WhitePad` paints a **border** white, and the padded image goes out through T60's
@@ -63,25 +73,12 @@ T63 and T64 are now both `[x]`.
   `maskId`, and three undos peeling it apart. **No production code changed**, which is the
   evidence that T49 and T50 were complete.
 
-- T52 The planner's instruction now says the `phrase` is English (SAM 3 is English concept
-  segmentation), that every call goes in one turn — it was stopping after `select_region` about
-  half the time — and that a whole-photo adjustment after a removal passes `masked=false`. Four
-  worked examples, because the rules alone did not hold on the device. Step lines read "bus 선택".
-
-- T51 The erase instruction says no white may remain and that echoing the input is not an answer;
-  the hint now says the thing was **removed** rather than naming what to draw, and `PlanRunner`
-  passes the `Select` phrase. `GeminiEraseProvider` refuses a result whose masked region came back
-  white (≥90% of sampled pixels), so a no-op answer is a retry rather than a committed hole.
-
-- T50 The erase runs through the selection **plus a margin** — `MaskOps.dilated` (separable,
-  binary), `EraseMask` owning the one radius, and `EraseCommit` storing the dilated mask beside
-  the result so the renderer composes through the same mask the model was shown. Both erase paths
-  share it; `activeMaskId` stays on the user's own selection. 7 dilation tests + updated tool tests.
-
 ## Next
 
-T65 확대 — the overlay and the sheet. The last of Phase 12 that the loop can pick up: T57 and T66
-are both `[!]` and need a human.
+**Nothing the loop can pick up.** `work/tasks.md`'s queue is empty apart from T57 and T66, both
+`[!]`, and its Backlog says the next queue comes from the **second device run**. Phase 12 added
+three prompt questions to that run (crop_ratio, fill vs erase, and whether the model will paint
+past a white border at all) on top of Phase 10's and Phase 11's.
 
 ## Decisions
 
@@ -97,6 +94,13 @@ Moved to `work/decisions.md`, one entry per task, newest first.
   on — `DirectHost` — is better than the one that failed first; see `work/decisions.md` T48.
 
 ## Open issues for a human
+
+- **outpaint.md §1's motivating example cannot be reached in one 확대, and §3 forbids two.**
+  `MAX_MARGIN_FRACTION = 0.5` caps vertical growth at 2×, so the tallest a 4:3 photo can become is
+  2:3 — not the 9:16 story §1 names. And a second 확대 re-bases from the bare source by design (§3),
+  so margins deliberately do not compound. Either the constant is too tight for the case the
+  feature was written for, or §1's example is aspirational. Both are frozen files, so this is a
+  human's call. The maths is in `ExpandRatio.kt` and asserted in `ExpandRatioTest`.
 
 - **The device run happened on 2026-09-06** (SM-S948U, Android 16, adb over a reverse SSH tunnel
   from the user's machine; this EC2 box still has no `/dev/kvm`, no emulator and no local device).

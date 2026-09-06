@@ -18,6 +18,7 @@
     <string name="editor_tool_select">선택</string>
     <string name="editor_tool_erase">지우기</string>
     <string name="editor_tool_fill">채우기</string>
+    <string name="editor_tool_expand">확대</string>
     <string name="editor_tool_direct">지시</string>
 
     <!-- specs/generative_erase.md §5 -->
@@ -38,6 +39,15 @@
     <string name="fill_blocked">이 이미지는 편집할 수 없어요</string>
     <string name="fill_empty">아무것도 만들지 못했어요. 다르게 말해보세요.</string>
     <string name="fill_failed">채우지 못했어요</string>
+
+    <!-- specs/outpaint.md §7 -->
+    <string name="expand_title">확대</string>
+    <string name="expand_ratio">비율 %1$s → %2$s</string>
+    <string name="expand_working">바깥을 그리는 중</string>
+    <string name="expand_after_mask">선택이나 생성 작업 전에 먼저 확대해주세요</string>
+    <string name="expand_needs_key">설정에서 Gemini API 키를 입력해주세요</string>
+    <string name="expand_blocked">이 이미지는 편집할 수 없어요</string>
+    <string name="expand_failed">바깥을 그리지 못했어요</string>
 
     <!-- specs/vibe_edit.md §11 -->
     <string name="direct_title">지시</string>
