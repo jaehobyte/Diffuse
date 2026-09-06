@@ -12,10 +12,12 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -81,6 +83,10 @@ class EditorShellTest {
         compose.onNodeWithTag(TopBarTestTag).assertExists()
         compose.onNodeWithTag(ToolStripTestTag).assertExists()
         Tool.entries.forEach { tool ->
+            // The strip is a LazyRow (DESIGN.md §4: horizontally scrollable), so the tools past
+            // the viewport are only composed once scrolled to.
+            compose.onNodeWithTag(ToolStripTestTag)
+                .performScrollToNode(hasTestTag(labelOf(tool)))
             compose.onNodeWithTag(labelOf(tool)).assertExists()
         }
     }

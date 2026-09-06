@@ -8,6 +8,7 @@ import com.diffuse.feature.editor.Tool
 import com.diffuse.feature.editor.tools.color.ColorSheet
 import com.diffuse.feature.editor.tools.detail.DetailSheet
 import com.diffuse.feature.editor.tools.light.LightSheet
+import com.diffuse.feature.editor.tools.mix.MixSheet
 
 /**
  * Maps the selected tool to its sheet. specs/architecture.md §5.2 wants adding a tool to be
@@ -29,6 +30,9 @@ fun ToolSheetHost(
             document, onValueChange, onValueChangeFinished, onCancel, onApply, modifier, maskOption,
         )
         Tool.Color -> ColorSheet(
+            document, onValueChange, onValueChangeFinished, onCancel, onApply, modifier, maskOption,
+        )
+        Tool.Mix -> MixSheet(
             document, onValueChange, onValueChangeFinished, onCancel, onApply, modifier, maskOption,
         )
         Tool.Detail -> DetailSheet(

@@ -2,9 +2,9 @@
 
 ## Current
 
-**T54 is done and `check` is green.** Phase 11 (혼합, specs/adjust_hsl.md) has the maths: eight hue
-bands, three channels, 24 `AdjustKind` entries and one op function. T55 (the sheet) and T56 (the
-planner's fifth function) are open and both depend only on T54.
+**T54 and T55 are done and `check` is green.** 혼합 is a tool now: eight band chips over
+색조/채도/휘도 sliders, wired through the same `AdjustSheet` the other three sheets use. T56 (the
+planner's `adjust_color_range`) is the last open task of Phase 11 and depends only on T54.
 
 Two things a human still owns, listed under "Open decisions (Phase 11)" in tasks.md: render.md's
 "a golden per `AdjustKind`" line is no longer what the project does at 34 kinds, and §7's two
@@ -12,6 +12,12 @@ rulings (the selected chip is an `editInk` ring, not the accent; 색조 labels t
 were taken on DESIGN.md's behalf.
 
 ## Done
+
+- T55 혼합 is a tool: `Tool.Mix` beside 색, a scrollable row of eight band chips (32dp swatch
+  derived from the band's own centre, selected marked by a 2dp `editInk` ring — never the accent,
+  which stays on 적용), and the selected band's three sliders. `AdjustSheet` gained one optional
+  `header` slot and nothing else, so the other three sheet goldens did not move. `stepLabel()`
+  gives the 지시 step list its band prefix. 2 new screenshot goldens, 6 sheet tests.
 
 - T54 혼합's maths: `HslBand` (eight centres, the only place those degrees live), `HslChannel`,
   `HslColor`, and 24 appended `AdjustKind` entries carrying an `HslTarget`. `HslOps` weights each

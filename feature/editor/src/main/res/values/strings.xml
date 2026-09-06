@@ -12,6 +12,7 @@
 
     <string name="editor_tool_light">라이트</string>
     <string name="editor_tool_color">색상</string>
+    <string name="editor_tool_mix">혼합</string>
     <string name="editor_tool_crop">자르기</string>
     <string name="editor_tool_detail">디테일</string>
     <string name="editor_tool_select">선택</string>
@@ -101,7 +102,16 @@
     <string name="detail_vignette">비네트</string>
 
     <!-- specs/adjust_hsl.md §9 -->
+    <string name="mix_title">혼합</string>
     <string name="mix_hue">색조</string>
     <string name="mix_saturation">채도</string>
     <string name="mix_luminance">휘도</string>
+    <string name="mix_band_red">빨강</string>
+    <string name="mix_band_orange">주황</string>
+    <string name="mix_band_yellow">노랑</string>
+    <string name="mix_band_green">초록</string>
+    <string name="mix_band_aqua">청록</string>
+    <string name="mix_band_blue">파랑</string>
+    <string name="mix_band_purple">보라</string>
+    <string name="mix_band_magenta">자홍</string>
 </resources>

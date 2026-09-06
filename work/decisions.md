@@ -8,6 +8,21 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T55 — two things the eighth tool exposed
+
+**The tool strip is a `LazyRow`, so an eighth tool stopped composing the last one.** `EditorShellTest`
+("all four tools") and `SelectSheetTest` ("greyed but still tappable") both failed the moment 혼합
+was inserted, because 지시 and 선택 now start outside the viewport. Both now
+`performScrollToNode` on the strip before asserting; the assertions themselves are unchanged. This
+is a real property of the screen, not a test workaround — the strip has always been scrollable
+(DESIGN.md §4), it simply had not overflowed before.
+
+**`recordRoborazziDebug` rewrites `canvas_fit`, `canvas_transparent` and `crop_overlay` on every
+run**, even with no code change. They pass `verifyRoborazziDebug` (1% threshold) but are not
+byte-identical, so recording anything re-records them too. They were reverted:
+specs/testing.md §5 says record only the goldens the current task names. Any later task that
+records a golden will see the same three files and should do the same.
+
 ### T54 — three things the spec did not settle
 
 **The band centres and the sextant boundaries are named constants.** detekt's MagicNumber does not

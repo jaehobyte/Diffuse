@@ -383,7 +383,7 @@ Neither blocks T54–T56: the tasks proceed on the spec as written.
   core/imaging/src/test/resources/golden, core/imaging/src/test/resources/golden_manifest.txt,
   feature/editor/tools/ToolLabels.kt, feature/editor strings.xml
 
-- [ ] T55 혼합 sheet — the chip row and the tool
+- [x] T55 혼합 sheet — the chip row and the tool
   spec: specs/adjust_hsl.md §6, §7, §9, §10; specs/adjust_color.md; DESIGN.md §4, §5
   deps: T54
   done when:
