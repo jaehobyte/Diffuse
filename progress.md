@@ -1,9 +1,31 @@
 ## Current
 
-_Idle._ T65 is committed, and with it Phase 12's queue. Every remaining task is `[!]`: T57 needs a
-device to reproduce a bug on, T66 needs two human decisions. See `## Next`.
+_Idle._ Phase 13 (T67–T69) is committed — the three defects the second device run found. T57 and
+T66 stay `[!]`.
 
 ## Done
+
+- T68 인스타그램 is a feed post, not a square. Not a prompt fix: `CropRatio` is a closed set with
+  no 3:4 and no 4:3 in it, so the human chose between three options and picked adding them.
+  `Portrait3x4` / `Landscape4x3` and `ThreeFour` / `FourThree`, slotted beside their neighbours so
+  the row reads 자유 · 1:1 · 3:4 · 4:5 · 9:16 · 4:3 · 16:9. Seven chips are not guaranteed to fit a
+  phone, so the row scrolls now. One instruction rule: a bare platform name is a feed post, square
+  is only for a request that says so; T58's story example is untouched. `crop_sheet_open` was the
+  only golden that moved.
+
+- T69 자르기 opens on the photo, not on the crop it already has — the open issue carried since T24,
+  made visible by T58's hand-off, which commits a `Crop` and *then* opens the tool. While the sheet
+  is open the preview drops the `Crop` and nothing else. Driven from one collector on
+  `selectedTool == Tool.Crop` rather than three call sites, one of which would have raced
+  `applySheet`'s own push. `CropState.from` untouched: the rect was always right. 6 tests.
+
+- T67 채우기 sends a rectangle, not the silhouette. A silhouette is an instruction as much as a
+  region — whitening a chair's outline asks the model to paint the new thing *in the shape of a
+  chair*, which is what came back. `FillMask` takes the selection's bounding box, moves each side
+  out 30%, clamps, and returns a binary rectangle; `FillCommit` stores it as its own
+  `Operation.Mask` so the renderer composes through the same mask the model was shown (T50's
+  argument, for a bigger region). `activeMaskId` stays on the user's selection. Both fill paths
+  share it. 10 tests, and three old assertions rewritten because they asserted the old rule.
 
 - T65 확대 — `Tool.Expand` after `Tool.Fill`, `ExpandController` (tap intent, drag, run, commit,
   cancel), `ExpandSheet` = `EditSheet` + the `mono` ratio readout, **no prompt bar**, and an overlay
@@ -47,31 +69,6 @@ device to reproduce a bug on, T66 needs two human decisions. See `## Next`.
   and the selection survives it. `saveFillResult` writes `fill_<id>.png` — the repository had only
   the erase one, and T62 expects the lambda. 21 tool + sheet tests, goldens `fill_sheet_open` /
   `fill_sheet_typed`; `editor_shell_default` did not move, because the strip already overflowed.
-
-- T56 `adjust_color_range` — the planner's fifth function. One call decodes into up to three
-  ordinary `PlanStep.Adjust`s (hue → saturation → luminance), so `PlanStep`, `PlanRunner` and the
-  step templates are untouched. `adjust`'s `kind` enum is filtered back to its ten non-HSL names,
-  which 34 values had quietly broken in T54. `masked` defaults to false here, and §8 was amended
-  to say why. 7 client tests + the step-label test.
-
-- T55 혼합 is a tool: `Tool.Mix` beside 색, a scrollable row of eight band chips (32dp swatch
-  derived from the band's own centre, selected marked by a 2dp `editInk` ring — never the accent,
-  which stays on 적용), and the selected band's three sliders. `AdjustSheet` gained one optional
-  `header` slot and nothing else, so the other three sheet goldens did not move. `stepLabel()`
-  gives the 지시 step list its band prefix. 2 new screenshot goldens, 6 sheet tests.
-
-- T54 혼합's maths: `HslBand` (eight centres, the only place those degrees live), `HslChannel`,
-  `HslColor`, and 24 appended `AdjustKind` entries carrying an `HslTarget`. `HslOps` weights each
-  pixel by a linear tent between neighbouring centres — the weights sum to 1 and are exactly 0 at
-  every other centre — gated by `smoothstep(0.05, 0.20, saturation)` so neutrals never move. The
-  renderer, the serializer and the document model were **not** touched. 8 goldens, 11 property
-  tests. `labelRes()` came along because 24 new kinds make its `when` non-exhaustive.
-
-- T53 The generative + adjust combinations are proven rather than assumed: erase → global adjust,
-  erase → cut-out and the export-resolution path against the **real** renderer and the fixtures,
-  plus [Select, Erase, Adjust(masked=false)] through `EditorViewModel` — the op order, the null
-  `maskId`, and three undos peeling it apart. **No production code changed**, which is the
-  evidence that T49 and T50 were complete.
 
 ## Next
 
