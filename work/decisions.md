@@ -8,6 +8,24 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T52 — examples in the system instruction, because the rules alone did not hold
+
+The instruction already said "use the fewest steps"; the device still showed the model answering
+"버스 지워줘" with `select_region` alone about half the time. Rules describe, examples demonstrate,
+so §4's prose now carries four worked ones — including the two-call removal and a removal followed
+by two unmasked adjusts, which are exactly the two shapes that came back wrong.
+
+The phrase is English by instruction rather than by a translation layer: SAM 3 is the thing that
+needs English, the planner is already reading the Korean request, and asking it to output the
+English noun costs nothing where a translation call would cost a second round trip. The manual
+선택 tool is left alone — see "Open decisions" in `work/tasks.md`; it is the user typing, not the
+model, and the fix there is a product question.
+
+The step list therefore reads "bus 선택". That is the honest rendering of what the plan holds and
+it keeps vibe_edit.md §3's rule that no model-authored sentence reaches the screen. A Korean
+`label` argument would read better and would put a second model-authored string on screen, which
+is a spec amendment rather than a task.
+
 ### T51 — the hint was telling the model to draw the thing back
 
 The old hint sentence read "The white region previously contained: a car." immediately after "Do

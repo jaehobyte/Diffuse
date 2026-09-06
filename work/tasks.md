@@ -286,7 +286,7 @@ straight spec-conformance bug; the rest are a mask margin, two prompt rewrites a
       a still-white answer fails and commits nothing; a filled answer succeeds
   touches: core/ai/gemini, core/ai tests, feature/editor/tools/direct
 
-- [ ] T52 The planner writes English phrases and finishes its plans
+- [x] T52 The planner writes English phrases and finishes its plans
   spec: specs/vibe_edit.md §4, §5, §11
   deps: —
   report: "erase bus하는 경우에 어떨 땐 bus 지우기까지 되는데 어쩔 땐 그냥 버스 선택하기까지밖에

@@ -4,6 +4,11 @@
 
 **T51 done. Next: T52 — English phrases and complete plans from the planner.** Then T53.
 
+- T52 The planner's instruction now says the `phrase` is English (SAM 3 is English concept
+  segmentation), that every call goes in one turn — it was stopping after `select_region` about
+  half the time — and that a whole-photo adjustment after a removal passes `masked=false`. Four
+  worked examples, because the rules alone did not hold on the device. Step lines read "bus 선택".
+
 - T51 The erase instruction says no white may remain and that echoing the input is not an answer;
   the hint now says the thing was **removed** rather than naming what to draw, and `PlanRunner`
   passes the `Select` phrase. `GeminiEraseProvider` refuses a result whose masked region came back

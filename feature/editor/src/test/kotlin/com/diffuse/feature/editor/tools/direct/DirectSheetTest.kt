@@ -65,6 +65,24 @@ class DirectSheetTest {
         compose.onNodeWithText("3. 배경 지우기").assertExists()
     }
 
+    /** T52: the phrase is English on the wire, so it is English in the template too. */
+    @Test
+    fun `an English phrase renders through the Korean template`() {
+        show(
+            DirectState(
+                plan = EditPlan(
+                    listOf(
+                        PlanStep.Select("bus"),
+                        PlanStep.Erase,
+                    ),
+                ),
+            ),
+        )
+
+        compose.onNodeWithText("1. bus 선택").assertExists()
+        compose.onNodeWithText("2. 선택 영역 지우기").assertExists()
+    }
+
     @Test
     fun `적용 is disabled until a plan arrives`() {
         show(DirectState())

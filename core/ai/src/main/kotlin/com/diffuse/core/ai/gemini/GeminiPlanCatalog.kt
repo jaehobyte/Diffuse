@@ -29,20 +29,46 @@ internal val AdjustKind.wireName: String get() = name.lowercase()
 internal fun adjustKindOf(wire: String): AdjustKind? =
     AdjustKind.entries.firstOrNull { it.wireName == wire }
 
-/** §4, verbatim. */
+/**
+ * specs/vibe_edit.md §4, with the three rules T52 added after the first device run:
+ *
+ * - the phrase is **English**, because SAM 3's text endpoint is English concept segmentation and
+ *   a Korean noun returns nothing at all — which surfaced as "찾지 못했어요" on a photo that
+ *   plainly contained the thing;
+ * - every call goes in one turn. The model was stopping after `select_region` about half the
+ *   time, leaving the user with a selection where they had asked for a removal;
+ * - after a removal, a whole-photo adjustment must say `masked=false`, or it lands inside the
+ *   hole that was just filled and changes nothing anybody can see.
+ *
+ * The examples are here for the same reason: the rules alone did not hold on the device.
+ */
 internal const val PLAN_SYSTEM_INSTRUCTION =
     "You are the planner for an Android photo editor. You are given a photo and the user's " +
         "request, which is usually Korean. Call the editing functions that fulfil the request, " +
         "in the order they must run. Rules:\n" +
+        "- Emit every call the request needs, in this one turn. Never stop after selecting: if " +
+        "the user asked for something to be removed or changed, selecting it is only the first " +
+        "half of your answer.\n" +
         "- Use the fewest steps that achieve the request.\n" +
         "- To change only part of the photo, call select_region first and then call adjust with " +
         "masked=true. A selection stays active until the next select_region call.\n" +
-        "- select_region takes a short noun phrase naming the thing, never a sentence and never " +
-        "a verb.\n" +
+        "- select_region takes a short English noun phrase naming the thing, never a sentence " +
+        "and never a verb. It must always be English, whatever language the request is in: the " +
+        "segmentation model understands English concepts only, so translate the user's word.\n" +
+        "- After erase_selection or cut_out_selection, an adjustment meant for the whole photo " +
+        "must pass masked=false, because the selection now names a region that is gone.\n" +
         "- Values are relative strengths, not absolute settings: a slight change is 0.2, a clear " +
         "change is 0.4, a strong change is 0.7. Use the ends of the range only when the user " +
         "asked for an extreme.\n" +
-        "- If the request cannot be met with these functions, call nothing."
+        "- If the request cannot be met with these functions, call nothing.\n" +
+        "Examples:\n" +
+        "- \"버스를 지워줘\" -> select_region(phrase=\"bus\"), erase_selection()\n" +
+        "- \"나무를 좀 더 푸르게 해줘\" -> select_region(phrase=\"tree\"), " +
+        "adjust(kind=\"saturation\", value=0.4, masked=true)\n" +
+        "- \"버스 지우고 사진 예쁘게 만들어줘\" -> select_region(phrase=\"bus\"), " +
+        "erase_selection(), adjust(kind=\"contrast\", value=0.2, masked=false), " +
+        "adjust(kind=\"saturation\", value=0.2, masked=false)\n" +
+        "- \"배경 지워줘\" -> select_region(phrase=\"the main subject\"), cut_out_selection()"
 
 internal val PLAN_FUNCTIONS: List<FunctionDeclaration> = listOf(
     FunctionDeclaration(
@@ -55,8 +81,9 @@ internal val PLAN_FUNCTIONS: List<FunctionDeclaration> = listOf(
             properties = mapOf(
                 ARG_PHRASE to Schema(
                     type = TYPE_STRING,
-                    description = "A short noun phrase naming the thing to select, such as " +
-                        "\"tree\" or \"the sky\". Never a sentence and never a verb.",
+                    description = "A short English noun phrase naming the thing to select, such " +
+                        "as \"tree\", \"bus\" or \"the sky\". Always English, even when the " +
+                        "request is in another language. Never a sentence and never a verb.",
                 ),
             ),
             required = listOf(ARG_PHRASE),

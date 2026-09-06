@@ -137,6 +137,58 @@ class GeminiPlanClientTest {
         )
     }
 
+    /** T52: the three rules the first device run showed the model getting wrong. */
+    @Test
+    fun `the instruction demands English phrases, whole plans and unmasked adjusts after a removal`() {
+        assertTrue(
+            "the phrase must be English — SAM 3 is English concept segmentation",
+            PLAN_SYSTEM_INSTRUCTION.contains("It must always be English"),
+        )
+        assertTrue(
+            "the model was stopping after select_region",
+            PLAN_SYSTEM_INSTRUCTION.contains("Never stop after selecting"),
+        )
+        assertTrue(
+            "a masked adjust after a removal lands inside the hole",
+            PLAN_SYSTEM_INSTRUCTION.contains("must pass masked=false"),
+        )
+    }
+
+    @Test
+    fun `the instruction shows a removal that is two calls, not one`() {
+        assertTrue(
+            PLAN_SYSTEM_INSTRUCTION.contains(
+                """- "버스를 지워줘" -> select_region(phrase="bus"), erase_selection()""",
+            ),
+        )
+    }
+
+    @Test
+    fun `the select declaration says English too`() = runTest {
+        server.enqueue(calls(SELECT_CALL))
+
+        client.plan(JPEG, REQUEST)
+
+        val body = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject
+        val select = body["tools"]!!.jsonArray[0].jsonObject["functionDeclarations"]!!
+            .jsonArray[0].jsonObject
+        val phrase = select["parameters"]!!.jsonObject["properties"]!!
+            .jsonObject["phrase"]!!.jsonObject["description"]!!.jsonPrimitive.content
+        assertTrue(phrase.contains("Always English"))
+    }
+
+    @Test
+    fun `an English phrase decodes unchanged`() = runTest {
+        server.enqueue(
+            calls("""{"functionCall":{"name":"select_region","args":{"phrase":"bus"}}}"""),
+        )
+
+        assertEquals(
+            listOf(PlanStep.Select("bus")),
+            client.plan(JPEG, "버스를 지워줘").valueOrFail().steps,
+        )
+    }
+
     @Test
     fun `a blank key never reaches the wire`() = runTest {
         config = GeminiConfig("", server.url("/").toString().trimEnd('/'))
