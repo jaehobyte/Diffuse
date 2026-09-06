@@ -60,7 +60,7 @@ class ToolStripLevelTest {
         val ai = stripItems(ToolGroup.Ai).filterIsInstance<StripItem.OfTool>().map { it.tool }
 
         assertEquals(
-            listOf(Tool.Select, Tool.Erase, Tool.Fill, Tool.Expand, Tool.Direct),
+            listOf(Tool.Select, Tool.Erase, Tool.Fill, Tool.Expand, Tool.Auto, Tool.Direct),
             ai,
         )
     }
@@ -180,6 +180,7 @@ class ToolStripLevelTest {
         Tool.Erase -> "지우기"
         Tool.Fill -> "채우기"
         Tool.Expand -> "확대"
+        Tool.Auto -> "자동"
         Tool.Direct -> "지시"
     }
 

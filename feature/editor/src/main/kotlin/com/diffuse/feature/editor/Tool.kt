@@ -6,6 +6,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.AutoAwesomeMotion
 import androidx.compose.material.icons.rounded.AutoFixHigh
+import androidx.compose.material.icons.rounded.AutoFixNormal
 import androidx.compose.material.icons.rounded.Colorize
 import androidx.compose.material.icons.rounded.Crop
 import androidx.compose.material.icons.rounded.HighlightAlt
@@ -46,6 +47,9 @@ enum class Tool(
 
     /** specs/outpaint.md §6: the one tool that makes the canvas bigger, after the two that fill. */
     Expand(R.string.editor_tool_expand, Icons.Rounded.OpenInFull, ToolGroup.Ai),
+
+    /** specs/auto_enhance.md §6: the one AI tool that answers in adjustments rather than pixels. */
+    Auto(R.string.editor_tool_auto, Icons.Rounded.AutoFixNormal, ToolGroup.Ai),
 
     /** specs/vibe_edit.md §3: last in the strip, because it can reach any of the others. */
     Direct(R.string.editor_tool_direct, Icons.Rounded.AutoAwesome, ToolGroup.Ai),

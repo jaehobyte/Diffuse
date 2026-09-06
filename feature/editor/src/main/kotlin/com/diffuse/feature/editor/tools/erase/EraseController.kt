@@ -8,26 +8,13 @@ import com.diffuse.core.common.AppError
 import com.diffuse.core.common.Result
 import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.feature.editor.R
+import com.diffuse.feature.editor.tools.ToolTap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-
-/**
- * specs/generative_erase.md §9. What tapping the tool should do. Returned rather than acted on,
- * because opening the 서버 설정 sheet is the selection tool's to do — there is only one sheet.
- */
-enum class EraseTap {
-    Run,
-
-    /** The key is missing, which the settings sheet can fix; a snackbar alone cannot. */
-    OpenSettings,
-
-    /** The reason is already in [EraseState.message]; nothing more to offer. */
-    Refused,
-}
 
 /** specs/generative_erase.md §5. The tool has no sheet: tapping it runs the model. */
 data class EraseState(
@@ -67,24 +54,24 @@ class EraseController(
      *
      * The order is §9's table order — a missing selection is reported before a missing key.
      */
-    fun onToolTapped(hasSelection: Boolean): EraseTap {
+    fun onToolTapped(hasSelection: Boolean): ToolTap {
         val availability = _state.value.availability
         return when {
             !hasSelection -> refuse(R.string.erase_needs_selection)
-            availability is Availability.Ready -> EraseTap.Run
+            availability is Availability.Ready -> ToolTap.Run
             // §7: for the Gemini provider `Unavailable` carries `Invalid` only when the key is
             // blank, so this is the "no key" row rather than a general outage.
             (availability as? Availability.Unavailable)?.reason is AppError.Invalid -> {
                 showMessage(R.string.erase_needs_key)
-                EraseTap.OpenSettings
+                ToolTap.OpenSettings
             }
             else -> refuse(R.string.erase_failed)
         }
     }
 
-    private fun refuse(res: Int): EraseTap {
+    private fun refuse(res: Int): ToolTap {
         showMessage(res)
-        return EraseTap.Refused
+        return ToolTap.Refused
     }
 
     /**

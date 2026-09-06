@@ -1,5 +1,6 @@
 package com.diffuse.feature.editor
 
+import com.diffuse.core.ai.AutoEnhanceProvider
 import com.diffuse.core.ai.EditPlanProvider
 import com.diffuse.core.ai.EraseProvider
 import com.diffuse.core.ai.FillProvider
@@ -29,4 +30,5 @@ class EditorAi @Inject constructor(
     val speech: SpeechInput,
     val sam3Settings: Sam3Settings,
     val geminiSettings: GeminiSettings,
+    val autoEnhance: AutoEnhanceProvider,
 )

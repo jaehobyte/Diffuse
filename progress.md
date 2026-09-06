@@ -1,9 +1,19 @@
 ## Current
 
-_Idle._ Phase 13 (T67–T69) is committed — the three defects the second device run found. T57 and
-T66 stay `[!]`.
+_Idle._ T77 is committed. The Phase 14 queue still holds T70, T73, T74 and T75; T57, T66, T72 and
+T76 stay `[!]`.
 
 ## Done
+
+- T77 자동 — one tap, and the sheet arrives **after** the call holding MonetGPT's plan. What it
+  commits is ordinary `Adjust` ops (ADR-015 reaching the UI), so the boost is something the user
+  can then disagree with one slider at a time, and 적용 is one `push` — one undo takes the whole
+  thing back. The plan applies **live** while the sheet is open, through T69's collector shape, so
+  강도 is a slider on a result rather than on a number; `AutoState.appliedTo` is the one fold the
+  preview and 적용 share. Changing a chip costs a call and re-runs on the bitmap the *first* call
+  was given, never on the boost it is replacing. `ToolTap` replaced `EraseTap` / `FillTap` /
+  `ExpandTap`, which were three spellings of one enum. 12 tool tests, goldens `auto_sheet_open` /
+  `auto_sheet_result`; every existing golden passed unrecorded.
 
 - T68 인스타그램 is a feed post, not a square. Not a prompt fix: `CropRatio` is a closed set with
   no 3:4 and no 4:3 in it, so the human chose between three options and picked adding them.
@@ -57,25 +67,10 @@ T66 stay `[!]`.
   resolution and only the invented border is the model's. `v` stays 1. 15 tests, golden
   `outpaint_render`; every existing golden passed unrecorded.
 
-- T62 `fill_selection` — the planner's seventh function. `PlanStep.Fill(prompt)` beside `Erase`,
-  declared between `cut_out_selection` and `crop_ratio`, and one instruction rule: fill replaces,
-  erase removes. A blank or absent `prompt` drops the step and the rest survive. `PlanRunner` gained
-  the provider and a `saveFillResult` lambda and **no validation clause** — `Fill` consumes a
-  selection, which §9.1 already covers. 10 tests.
-
-- T61 채우기 — `Tool.Fill` after `Tool.Erase`, `FillController` (tap intent, run, commit, cancel)
-  and `FillSheet` = `EditSheet` + `VoicePromptBar` with 적용 as the sheet's one accent. The op
-  names the **user's own** selection undilated, so a fill is one operation where an erase is two,
-  and the selection survives it. `saveFillResult` writes `fill_<id>.png` — the repository had only
-  the erase one, and T62 expects the lambda. 21 tool + sheet tests, goldens `fill_sheet_open` /
-  `fill_sheet_typed`; `editor_shell_default` did not move, because the strip already overflowed.
-
 ## Next
 
-**Nothing the loop can pick up.** `work/tasks.md`'s queue is empty apart from T57 and T66, both
-`[!]`, and its Backlog says the next queue comes from the **second device run**. Phase 12 added
-three prompt questions to that run (crop_ratio, fill vs erase, and whether the model will paint
-past a white border at all) on top of Phase 10's and Phase 11's.
+T70 (채우기 under the adjust stack, `deps: —`), then T73, T74 and T75. T72 blocks T73 and T75 in
+practice — the style catalog is what their tiles show — so read its `blocked:` line first.
 
 ## Decisions
 
@@ -91,6 +86,22 @@ Moved to `work/decisions.md`, one entry per task, newest first.
   on — `DirectHost` — is better than the one that failed first; see `work/decisions.md` T48.
 
 ## Open issues for a human
+
+- **자동 can be tapped but never enabled on a device: the 서버 설정 sheet has no Monet fields.**
+  T76's `done when` asks for `baseUrl`/`token` "in the 서버 설정 sheet beside SAM 3's" and lists
+  `Sam3SettingsSheet.kt` in its `touches`, but the sheet still shows three fields and none of them
+  is Monet's. `MonetSettings.update` exists and nothing calls it. So §6's first row — a blank
+  address opens the 서버 설정 sheet — opens a sheet that cannot fix it. T77 did not widen its own
+  scope to fix a `[x]` task; `check` is unaffected, because every test drives `MonetSettings`
+  directly or `FakeAutoEnhanceProvider`.
+
+- **`editor_shell_ai_open` no longer shows what the AI strip contains, and passes anyway.** 자동
+  is the sixth AI tool, so the strip now reads 뒤로 · 선택 · 지우기 · 채우기 · 확대 · 자동 with 지시
+  behind the scroll — but the committed golden still ends at 지시. The 1% `changeThreshold`
+  (`ComposeConventionPlugin`, per testing.md §5) is wider than one 64dp label in a 1078×2399 frame,
+  so Roborazzi calls them equal. CLAUDE.md forbids re-recording a golden the task's `done when`
+  does not name, so it was left alone. Either the threshold is too loose for the strip, or the
+  strip needs a golden of its own that is mostly strip.
 
 - **outpaint.md §1's motivating example cannot be reached in one 확대, and §3 forbids two.**
   `MAX_MARGIN_FRACTION = 0.5` caps vertical growth at 2×, so the tallest a 4:3 photo can become is

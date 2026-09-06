@@ -5,6 +5,7 @@ import android.graphics.RectF
 import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.diffuse.core.ai.FakeAutoEnhanceProvider
 import com.diffuse.core.ai.FakeEraseProvider
 import com.diffuse.core.ai.FakeFillProvider
 import com.diffuse.core.ai.FakeOutpaintProvider
@@ -151,6 +152,7 @@ class CropPreviewTest {
             FakeSpeechInput(),
             settings,
             geminiSettings,
+            FakeAutoEnhanceProvider(),
         ),
         dispatchers = TestDispatchers,
         savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),

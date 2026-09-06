@@ -624,7 +624,7 @@ have, and all twelve styles use at least one of them. Nothing in T72–T77 can b
   touches: core/ai/monet, core/ai (the provider interface file), core/ai/AiModule.kt,
   core/ai/src/testShared, core/ai tests, feature/editor/tools/select/Sam3SettingsSheet.kt
 
-- [ ] T77 자동 — the tool and its after-sheet
+- [x] T77 자동 — the tool and its after-sheet
   spec: specs/auto_enhance.md §6, §7, §8; DESIGN.md §3, §4
   deps: T76
   done when:

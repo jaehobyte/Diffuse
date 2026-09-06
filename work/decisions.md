@@ -8,6 +8,45 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T77
+
+- **One `ToolTap` for all four generative tools.** `EraseTap`, `FillTap` and `ExpandTap` were three
+  spellings of the same three values, and `EditorViewModel` carried one `when` per tool to read
+  them. A fourth copy took `onGenerativeToolTapped` past detekt's complexity ceiling, which is the
+  ceiling doing its job: the four tools ask the same question — open, run, fix the settings, or
+  refuse — and now answer it in one vocabulary. `GENERATIVE_TOOLS` is the set that routes there.
+
+- **`applyCutOut()` was deleted, not kept as a wrapper.** It was one line hiding a default argument
+  on `applySelection`, and `EditorViewModel` is at detekt's function ceiling; `applySelection` is
+  public instead and `EditorRoute` passes `cutOut = true`. Nothing about the cut-out changed.
+
+- **The 강도 slider drives a live preview through a collector, not a call site.** T69's shape,
+  reused for the same reason: what the preview should show changes without the document changing.
+  One collector on `selectedTool == Tool.Auto` and the scaled plan, and `requestPreview` grew a
+  `Tool.Auto` arm beside 자르기's. `AutoState.appliedTo` is the single fold the preview and 적용
+  both use, so they cannot drift.
+
+- **적용 closes the sheet *before* it pushes.** The pending plan is what the preview is currently
+  adding on top of the document; pushing first would have rendered it twice for one frame. The
+  other tools push first because they have nothing pending to double.
+
+- **The chip's re-run uses the bitmap the first call was given**, stored in `AutoController`, not
+  `state.preview` — which by then carries the boost being replaced. A second call on a boosted
+  photograph would be compounding the model's own answer.
+
+- **`EditorAi` gained `autoEnhance`, and it is not in T77's `touches`.** The bundle is how every
+  provider reaches the ViewModel; there is no other door. Six positional call sites in tests
+  moved with it.
+
+- **`ExpandToolSheet` was extracted.** `sheetFor` landed at exactly detekt's 60-line `LongMethod`
+  limit once 자동 was a branch in it. Every other stateful tool already had a one-line branch and a
+  small `…ToolSheet` composable; 확대 was the one still inline, so it became the sixth of the shape
+  rather than 자동 becoming the second exception. No behaviour moved.
+
+- **`editor_shell_ai_open` was not re-recorded**, per CLAUDE.md — T77's `done when` names only
+  `auto_sheet_open` and `auto_sheet_result`. It passes anyway; see progress.md's open issues for
+  why that is worth a human's attention rather than a quiet re-record.
+
 ### T71
 
 - **The endpoints needed their own stops factor, not just a tighter band.** The first attempt made

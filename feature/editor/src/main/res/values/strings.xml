@@ -19,6 +19,7 @@
     <string name="editor_tool_erase">지우기</string>
     <string name="editor_tool_fill">채우기</string>
     <string name="editor_tool_expand">확대</string>
+    <string name="editor_tool_auto">자동</string>
     <string name="editor_tool_direct">지시</string>
     <!-- specs/tool_groups.md §6: two Latin letters on purpose — 인공지능 is longer than 64dp -->
     <string name="editor_tool_ai">AI</string>
@@ -51,6 +52,18 @@
     <string name="expand_needs_key">설정에서 Gemini API 키를 입력해주세요</string>
     <string name="expand_blocked">이 이미지는 편집할 수 없어요</string>
     <string name="expand_failed">바깥을 그리지 못했어요</string>
+
+    <!-- specs/auto_enhance.md §7 -->
+    <string name="auto_title">자동 보정</string>
+    <string name="auto_style_balanced">균형</string>
+    <string name="auto_style_vibrant">선명</string>
+    <string name="auto_style_retro">레트로</string>
+    <string name="auto_intensity">강도</string>
+    <string name="auto_reason">지시</string>
+    <string name="auto_working">사진을 살펴보는 중</string>
+    <string name="auto_needs_server">설정에서 자동 보정 서버 주소를 입력해주세요</string>
+    <string name="auto_unreachable">자동 보정 서버에 연결하지 못했어요</string>
+    <string name="auto_failed">보정할 내용을 찾지 못했어요</string>
 
     <!-- specs/vibe_edit.md §11 -->
     <string name="direct_title">지시</string>
