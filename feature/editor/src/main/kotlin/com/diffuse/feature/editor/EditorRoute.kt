@@ -60,7 +60,7 @@ fun EditorRoute(
             onCompareChange = {},
             onExport = onExport,
             overlayTransform = cropTransform(state),
-            disabledTools = if (state.selection.enabled) emptySet() else setOf(Tool.Select),
+            disabledTools = disabledTools(state),
             gestureMode = if (state.selectedTool == Tool.Select) {
                 CanvasGestureMode.SelectPoint
             } else {
@@ -76,19 +76,35 @@ fun EditorRoute(
             },
             // specs/selection_tool.md §5: while `busy` the previous mask stays; only the
             // one-off `open` earns the overlay.
-            busy = state.selection.working,
-            busyLabelRes = if (state.selection.phraseBusy) {
-                R.string.select_prompt_working
-            } else {
-                R.string.select_preparing
+            busy = state.selection.working || state.erase.busy,
+            busyLabelRes = busyLabel(state),
+            onCancelWork = {
+                viewModel.selection.cancelWork()
+                viewModel.erase.cancel()
             },
-            onCancelWork = viewModel.selection::cancelWork,
-            message = state.selection.message?.let { stringResource(it) },
-            onMessageShown = viewModel.selection::onMessageShown,
+            message = (state.selection.message ?: state.erase.message)
+                ?.let { stringResource(it) },
+            onMessageShown = {
+                viewModel.selection.onMessageShown()
+                viewModel.erase.onMessageShown()
+            },
             canvasOverlay = canvasOverlay(state, viewModel),
             sheet = sheetFor(state, document, viewModel),
         )
     }
+}
+
+/** specs/selection_tool.md §1 and generative_erase.md §5: a tool that cannot work is greyed. */
+private fun disabledTools(state: EditorUiState): Set<Tool> = buildSet {
+    if (!state.selection.enabled) add(Tool.Select)
+    if (!state.erase.enabled || state.document?.activeMaskId == null) add(Tool.Erase)
+}
+
+/** DESIGN.md §4 State display: the overlay says what is actually happening. */
+private fun busyLabel(state: EditorUiState): Int = when {
+    state.erase.busy -> R.string.erase_working
+    state.selection.phraseBusy -> R.string.select_prompt_working
+    else -> R.string.select_preparing
 }
 
 /** specs/canvas.md: one overlay slot, claimed by whichever tool is open. */
@@ -99,7 +115,7 @@ private fun canvasOverlay(
 ): (@Composable androidx.compose.foundation.layout.BoxScope.() -> Unit)? = when (state.selectedTool) {
     Tool.Crop -> cropOverlaySlot(
         rect = state.cropState.rect,
-        onRectChange = viewModel::onCropRectChange,
+        onRectChange = { viewModel.onCropChange(state.cropState.copy(rect = it)) },
         aspect = state.cropState.preset,
     )
     Tool.Select -> selectionOverlaySlot(

@@ -1,15 +1,12 @@
 package com.diffuse.feature.editor
 
 import android.graphics.Bitmap
-import android.graphics.RectF
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.diffuse.core.ai.SegmentationProvider
-import com.diffuse.core.ai.sam3.Sam3Settings
 import com.diffuse.core.ai.speech.SpeechInput
 import com.diffuse.core.common.Result
 import com.diffuse.core.common.newId
@@ -20,6 +17,8 @@ import com.diffuse.core.imaging.model.AdjustKind
 import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.core.imaging.render.Renderer
 import com.diffuse.feature.editor.tools.crop.CropState
+import com.diffuse.feature.editor.tools.erase.EraseController
+import com.diffuse.feature.editor.tools.erase.EraseState
 import com.diffuse.feature.editor.tools.select.SelectionController
 import com.diffuse.feature.editor.tools.select.SelectionState
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -44,6 +43,8 @@ data class EditorUiState(
     val document: EditDocument? = null,
     /** specs/selection_tool.md §3: sheet state; nothing here is in the document until Apply. */
     val selection: SelectionState = SelectionState(),
+    /** specs/generative_erase.md §5: the tool has no sheet, so this is all its state. */
+    val erase: EraseState = EraseState(),
     /** specs/selection_tool.md §8.1: default on, so an adjustment lands where the user looked. */
     val maskedAdjust: Boolean = true,
     /** The applied mask, resolved for the scrim the adjust sheets show. */
@@ -55,10 +56,7 @@ data class EditorUiState(
 class EditorViewModel @Inject constructor(
     private val repository: ProjectRepository,
     private val renderer: Renderer,
-    segmentation: SegmentationProvider,
-    sam3Settings: Sam3Settings,
-    /** specs/prompt_input.md §3: handed straight to the prompt bar; the VM never drives it. */
-    val speech: SpeechInput,
+    ai: EditorAi,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -78,12 +76,21 @@ class EditorViewModel @Inject constructor(
     private var previewJob: Job? = null
 
     /** specs/selection_tool.md: the tool owns its own state, session and undo stack. */
-    val selection = SelectionController(segmentation, sam3Settings, viewModelScope)
+    val selection = SelectionController(ai.segmentation, ai.sam3Settings, viewModelScope)
+
+    /** specs/prompt_input.md §3: handed straight to the prompt bar; the VM never drives it. */
+    val speech: SpeechInput = ai.speech
+
+    /** specs/generative_erase.md: runs the model; this class is what commits the result. */
+    val erase = EraseController(ai.erase, viewModelScope)
 
     init {
         viewModelScope.launch { load() }
         viewModelScope.launch {
             selection.state.collect { _uiState.value = _uiState.value.copy(selection = it) }
+        }
+        viewModelScope.launch {
+            erase.state.collect { _uiState.value = _uiState.value.copy(erase = it) }
         }
     }
 
@@ -149,6 +156,20 @@ class EditorViewModel @Inject constructor(
             cancelSheet()
         } else if (tool == Tool.Select && !selection.onToolTapped()) {
             return
+        } else if (tool == Tool.Erase) {
+            // specs/generative_erase.md §5: no sheet — tapping the tool runs it.
+            erase.runAndCommit(
+                image = state.preview?.asAndroidBitmap(),
+                mask = state.activeMask,
+                maskId = state.document?.activeMaskId,
+                save = { eraseId, result -> repository.saveEraseResult(projectId, eraseId, result) },
+                commit = { maskId, ref, eraseId ->
+                    history?.run {
+                        push(current.value.withGenerativeErase(maskId, ref, eraseId))
+                        commitCoalesce()
+                    }
+                },
+            )
         } else {
             sheetBaseline = state.document
             // T23: the crop geometry is normalised, so it needs the source's pixel aspect to
@@ -186,10 +207,6 @@ class EditorViewModel @Inject constructor(
 
     fun onCropChange(state: CropState) {
         _uiState.value = _uiState.value.copy(cropState = state)
-    }
-
-    fun onCropRectChange(rect: RectF) {
-        onCropChange(_uiState.value.cropState.copy(rect = rect))
     }
 
     /** specs/editor_shell.md: Cancel restores the snapshot and adds no history entry. */

@@ -1,6 +1,7 @@
 package com.diffuse.core.imaging.render
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import com.diffuse.core.common.DispatcherProvider
 import com.diffuse.core.common.Result
 import com.diffuse.core.imaging.load.ImageLoader
@@ -66,6 +67,7 @@ class CpuRenderer(
 
     private val previewCache = LruCache<PreviewKey, Bitmap>(PREVIEW_CACHE_ENTRIES)
     private val maskCache = LruCache<ImageRef, Bitmap>(MASK_CACHE_ENTRIES)
+    private val resultCache = LruCache<ImageRef, Bitmap>(MASK_CACHE_ENTRIES)
     private val baseCache = LruCache<BaseKey, Bitmap>(BASE_CACHE_ENTRIES)
     private val lock = Mutex()
 
@@ -123,15 +125,29 @@ class CpuRenderer(
         onProgress: (Float) -> Unit,
     ): Bitmap {
         val adjustments = document.operations.filterIsInstance<Operation.Adjust>()
+        val erases = document.generativeErases()
         val cutOuts = document.cutOuts()
         val crop = document.crop()
-        val total = adjustments.size + cutOuts.size + if (crop == null) 0 else 1
+        val total =
+            adjustments.size + erases.size + cutOuts.size + if (crop == null) 0 else 1
         var output = base
         var completed = 0
 
         adjustments.forEach { adjust ->
             coroutineContext.ensureActive()
             output = applyAdjust(document, output, adjust)
+            completed++
+            onProgress(completed.toFloat() / total)
+        }
+        // specs/generative_erase.md §6: the result replaces pixels inside the mask only, so
+        // everything after it still composes.
+        erases.forEach { erase ->
+            coroutineContext.ensureActive()
+            val mask = resolveMask(document, erase.maskId)
+            val result = decodeResult(erase.resultRef)
+            if (mask != null && result != null) {
+                output = MaskBlend.blend(output, scaleTo(result, output), mask)
+            }
             completed++
             onProgress(completed.toFloat() / total)
         }
@@ -165,6 +181,27 @@ class CpuRenderer(
         val adjusted = ops.adjust(adjust.kind)(input, adjust.value)
         val mask = adjust.maskId?.let { resolveMask(document, it) }
         return if (mask == null) adjusted else MaskBlend.blend(input, adjusted, mask)
+    }
+
+    /**
+     * The generative result was produced at whatever resolution the editor was previewing at;
+     * export renders larger. Scaling here is what keeps §7's promise that export composites the
+     * pixels the user approved rather than generating new ones.
+     */
+    private fun scaleTo(source: Bitmap, like: Bitmap): Bitmap =
+        if (source.width == like.width && source.height == like.height) {
+            source
+        } else {
+            Bitmap.createScaledBitmap(source, like.width, like.height, true)
+        }
+
+    private suspend fun decodeResult(ref: ImageRef): Bitmap? {
+        resultCache[ref]?.let { return it }
+        return withContext(dispatchers.io) {
+            BitmapFactory.decodeFile(ref.path)
+                ?.copy(Bitmap.Config.ARGB_8888, false)
+                ?.also { resultCache.put(ref, it) }
+        }
     }
 
     private suspend fun decodeBase(source: ImageRef, targetLongEdgePx: Int): Result<Bitmap> {

@@ -131,6 +131,19 @@ class DefaultProjectRepository(
             }
         }
 
+    override suspend fun saveEraseResult(
+        projectId: String,
+        eraseId: String,
+        bitmap: Bitmap,
+    ): Result<ImageRef> = withContext(dispatchers.io) {
+        runCatchingIo {
+            val file = files.eraseFile(projectId, eraseId)
+            file.parentFile?.mkdirs()
+            file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, PNG_QUALITY, it) }
+            ImageRef(file.absolutePath)
+        }
+    }
+
     override suspend fun duplicate(id: String): Result<String> = withContext(dispatchers.io) {
         val original = dao.findById(id) ?: return@withContext Result.Failure(AppError.MissingSource)
         val copyId = newId()

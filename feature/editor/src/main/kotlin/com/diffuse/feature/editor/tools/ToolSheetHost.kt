@@ -35,6 +35,7 @@ fun ToolSheetHost(
             document, onValueChange, onValueChangeFinished, onCancel, onApply, modifier, maskOption,
         )
         // Crop and Select carry their own state, so the route hosts them alongside the editor's.
-        Tool.Crop, Tool.Select, null -> Unit
+        // Erase has no sheet at all: tapping the tool runs it (generative_erase.md §5).
+        Tool.Crop, Tool.Select, Tool.Erase, null -> Unit
     }
 }

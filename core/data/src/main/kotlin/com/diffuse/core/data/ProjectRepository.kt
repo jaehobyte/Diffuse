@@ -33,6 +33,13 @@ interface ProjectRepository {
         maskId: String,
         alpha: Bitmap,
     ): Result<ImageRef>
+    /** Writes a generative result as `erase_<eraseId>.png` in the project folder. */
+    suspend fun saveEraseResult(
+        projectId: String,
+        eraseId: String,
+        bitmap: Bitmap,
+    ): Result<ImageRef>
+
     suspend fun duplicate(id: String): Result<String>
     suspend fun delete(id: String): Result<Unit>
 }

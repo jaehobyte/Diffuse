@@ -35,6 +35,9 @@ data class EditDocument(
 
     fun cutOuts(): List<Operation.CutOut> = operations.filterIsInstance<Operation.CutOut>()
 
+    fun generativeErases(): List<Operation.GenerativeErase> =
+        operations.filterIsInstance<Operation.GenerativeErase>()
+
     /**
      * specs/edit_model.md: `source.hasAlpha || operations.any { it is CutOut }`. The document
      * holds no `SourceImage`, but `DefaultProjectRepository` writes the source as `.png`
@@ -46,6 +49,12 @@ data class EditDocument(
     /** Applies the active mask as a cut-out, in the same step that records the mask. */
     fun withCutOut(maskId: String, id: String = newId()): EditDocument =
         copy(operations = operations + Operation.CutOut(id, maskId))
+
+    fun withGenerativeErase(
+        maskId: String,
+        resultRef: ImageRef,
+        id: String = newId(),
+    ): EditDocument = copy(operations = operations + Operation.GenerativeErase(id, maskId, resultRef))
 
     /**
      * Adds a selection and makes it active, as one step. Older masks stay in the list so undo
@@ -60,7 +69,8 @@ data class EditDocument(
      */
     fun referencesResolve(): Boolean =
         (activeMaskId == null || mask(activeMaskId) != null) &&
-            cutOuts().all { mask(it.maskId) != null }
+            cutOuts().all { mask(it.maskId) != null } &&
+            generativeErases().all { mask(it.maskId) != null }
 
     /**
      * One live [Operation.Adjust] per `(kind, maskId)` pair: setting one that already exists

@@ -5,6 +5,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.diffuse.core.ai.Availability
+import com.diffuse.core.ai.FakeEraseProvider
 import com.diffuse.core.ai.FakeSegmentationProvider
 import com.diffuse.core.ai.MaskBitmaps
 import com.diffuse.core.ai.sam3.Sam3Settings
@@ -18,6 +19,7 @@ import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.core.imaging.model.ImageRef
 import com.diffuse.core.imaging.model.Operation
 import com.diffuse.core.imaging.render.Renderer
+import com.diffuse.feature.editor.EditorAi
 import com.diffuse.feature.editor.EditorViewModel
 import com.diffuse.feature.editor.Tool
 import kotlinx.coroutines.Dispatchers
@@ -47,6 +49,7 @@ import org.robolectric.annotation.GraphicsMode
 class SelectionToolTest {
 
     private val provider = FakeSegmentationProvider(openDelayMs = 0)
+    private val eraseProvider = FakeEraseProvider()
     private lateinit var repository: RecordingRepository
     private lateinit var settings: Sam3Settings
 
@@ -481,9 +484,7 @@ class SelectionToolTest {
     private fun viewModel() = EditorViewModel(
         repository = repository,
         renderer = FakeRenderer(),
-        segmentation = provider,
-        sam3Settings = settings,
-        speech = FakeSpeechInput(),
+        ai = EditorAi(provider, eraseProvider, FakeSpeechInput(), settings),
         savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),
     )
 
@@ -499,6 +500,7 @@ class SelectionToolTest {
 
     private class RecordingRepository : ProjectRepository {
         val savedMasks = mutableListOf<String>()
+        val savedErases = mutableListOf<String>()
         var failMaskWrite = false
         private var document = EditDocument(
             id = PROJECT_ID,
@@ -523,6 +525,15 @@ class SelectionToolTest {
             if (failMaskWrite) return Result.Failure(AppError.Io(java.io.IOException("disk full")))
             savedMasks += maskId
             return Result.Success(ImageRef("/projects/$projectId/mask_$maskId.png"))
+        }
+
+        override suspend fun saveEraseResult(
+            projectId: String,
+            eraseId: String,
+            bitmap: Bitmap,
+        ): Result<ImageRef> {
+            savedErases += eraseId
+            return Result.Success(ImageRef("/projects/$projectId/erase_$eraseId.png"))
         }
 
         override suspend fun duplicate(id: String): Result<String> = Result.Success("copy")

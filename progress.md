@@ -14,11 +14,18 @@ Specs are written and consistent: `ai_provider.md`, `segmentation.md`, `selectio
 (rewritten), `prompt_input.md`, `generative_erase.md` (new), plus amendments to `edit_model.md`,
 `architecture.md` (§2, §6, §8, §9, §10) and `DESIGN.md` (§1 accent ruling, §4 prompt bar).
 
-**T26-T37 done.** Only T38 is left. The server's `/v1/edit/erase` is still unimplemented,
-so the eraser will not work against a real backend until that lands — the Android side
-depends only on the contract and is tested against MockWebServer.
+**T26-T38 done — the whole v2 backlog is implemented and `scripts/check.sh` is green offline.**
+
+One prerequisite is still open: `POST /v1/edit/erase` does not exist in `~/sam3-server` yet, so
+the generative eraser has nothing real to talk to. Everything else runs against a running SAM 3
+service once `sam3.baseUrl` / `sam3.token` are set (or entered in the in-app settings sheet).
 
 ## Done
+
+- T38 Generative eraser — `Operation.GenerativeErase` carrying its own pixels, the renderer
+  blending them through the mask, `erase_<id>.png` persistence, and a sheet-less 지우기 tool.
+  `EraseController` owns the run→save→commit sequence. 12 tests + golden
+  `generative_erase_render`.
 
 - T37 `EraseProvider` — `Sam3EraseClient` posting image + mask + hint to `/v1/edit/erase` with
   a 60s read timeout, `Sam3EraseProvider` reusing segmentation's availability, and `MaskPng`.
@@ -103,9 +110,30 @@ _T01–T14 trimmed per CLAUDE.md (keep the last 10). Their decisions are still i
 
 ## Next
 
-T38 the generative eraser tool — the last task in the backlog.
+Nothing in `work/tasks.md` is left. What a human still owes:
+
+1. `POST /v1/edit/erase` in `~/sam3-server` (the last prerequisite; T37/T38 are written against
+   the contract and tested with MockWebServer).
+2. Point `sam3.baseUrl` / `sam3.token` at a running service and try the tools on a device — none
+   of this has been exercised against the real model, only against the fakes.
+3. The APK is still over the 15MB budget; see "Open issues for a human".
 
 ## Decisions
+
+### T38
+
+- **`EraseController` owns run → save → commit, not `EditorViewModel`.** detekt flagged the
+  ViewModel at 20 functions, a 7-argument constructor and a complex condition, all from this one
+  task. The tool is one object now, the way the selection tool is; the ViewModel hands it the two
+  things it cannot reach (the repository and the history stack) as lambdas.
+- **`EditorAi` bundles the four AI dependencies.** The ViewModel's constructor is about the
+  screen, not about the model boundary.
+- **The result is stored, and export composites it.** generative_erase.md §7: re-running the
+  model at export resolution would produce different pixels than the user approved, so the stored
+  result is scaled instead.
+- **Nothing touches the document until the bitmap is on disk.** A failed write leaves the sheet
+  and the selection exactly as they were, rather than a document pointing at a file that is not
+  there.
 
 ### T36
 

@@ -2,6 +2,7 @@ package com.diffuse.feature.editor
 
 import androidx.annotation.StringRes
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.Crop
 import androidx.compose.material.icons.rounded.HighlightAlt
 import androidx.compose.material.icons.rounded.LightMode
@@ -21,4 +22,5 @@ enum class Tool(
     Crop(R.string.editor_tool_crop, Icons.Rounded.Crop),
     Detail(R.string.editor_tool_detail, Icons.Rounded.Tune),
     Select(R.string.editor_tool_select, Icons.Rounded.HighlightAlt, isAi = true),
+    Erase(R.string.editor_tool_erase, Icons.Rounded.AutoFixHigh, isAi = true),
 }

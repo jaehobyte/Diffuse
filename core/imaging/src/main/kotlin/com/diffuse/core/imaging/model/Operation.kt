@@ -71,6 +71,18 @@ sealed interface Operation {
      */
     data class CutOut(override val id: String, val maskId: String) : Operation
 
+    /**
+     * specs/generative_erase.md §6. The one op that carries its own pixels: the renderer takes
+     * [resultRef] inside [maskId] and leaves everything outside it alone, so the document stays
+     * composable and undo is still a single removal.
+     */
+    data class GenerativeErase(
+        override val id: String,
+        val maskId: String,
+        /** PNG at working resolution, in the project folder. */
+        val resultRef: ImageRef,
+    ) : Operation
+
     /** [rect] is normalised 0..1 against the un-cropped, un-rotated source. */
     data class Crop(
         override val id: String,

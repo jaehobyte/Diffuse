@@ -228,7 +228,7 @@ Only the server endpoint is still outstanding. If a task hits a missing prerequi
     - `MockWebServer` tests: success, timeout, 503, cancellation
   touches: core/ai/erase
 
-- [ ] T38 "지우기" generative eraser tool
+- [x] T38 "지우기" generative eraser tool
   spec: specs/generative_erase.md §Tool, specs/edit_model.md (GenerativeErase)
   deps: T31, T37
   done when:

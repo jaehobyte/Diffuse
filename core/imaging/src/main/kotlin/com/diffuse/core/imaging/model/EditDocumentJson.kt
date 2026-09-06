@@ -21,6 +21,7 @@ private const val TYPE_ADJUST = "adjust"
 private const val TYPE_CROP = "crop"
 private const val TYPE_MASK = "mask"
 private const val TYPE_CUTOUT = "cutout"
+private const val TYPE_GENERATIVE_ERASE = "generativeErase"
 
 /**
  * Operations are mapped by hand rather than through polymorphic serialisation, because
@@ -77,6 +78,12 @@ object EditDocumentJson {
             put("id", id)
             put("maskId", maskId)
         }
+        is Operation.GenerativeErase -> buildJsonObject {
+            put("type", TYPE_GENERATIVE_ERASE)
+            put("id", id)
+            put("maskId", maskId)
+            put("resultRef", resultRef.path)
+        }
         is Operation.Crop -> buildJsonObject {
             put("type", TYPE_CROP)
             put("id", id)
@@ -93,6 +100,7 @@ object EditDocumentJson {
         return when (val type = node["type"]?.jsonPrimitive?.content) {
             TYPE_ADJUST -> decodeAdjust(node, id, logger)
             TYPE_MASK -> decodeMask(node, id, logger)
+            TYPE_GENERATIVE_ERASE -> decodeGenerativeErase(node, id, logger)
             TYPE_CUTOUT -> node["maskId"]?.jsonPrimitive?.content
                 ?.let { Operation.CutOut(id, it) }
                 ?: warn(logger, "cutout '$id' without a maskId")
@@ -120,6 +128,15 @@ object EditDocumentJson {
         val ref = node["maskRef"]?.jsonPrimitive?.content
             ?: return warn(logger, "mask '$id' without a maskRef")
         return Operation.Mask(id, ImageRef(ref))
+    }
+
+    private fun decodeGenerativeErase(node: JsonObject, id: String, logger: Logger?): Operation? {
+        val maskId = node["maskId"]?.jsonPrimitive?.content
+        val ref = node["resultRef"]?.jsonPrimitive?.content
+        if (maskId == null || ref == null) {
+            return warn(logger, "generativeErase '$id' without a maskId or resultRef")
+        }
+        return Operation.GenerativeErase(id, maskId, ImageRef(ref))
     }
 
     private fun decodeAdjust(node: JsonObject, id: String, logger: Logger?): Operation? {

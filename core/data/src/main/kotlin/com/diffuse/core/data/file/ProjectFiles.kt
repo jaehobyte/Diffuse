@@ -21,6 +21,10 @@ class ProjectFiles(private val filesDir: File) {
     fun maskFile(projectId: String, maskId: String): File =
         File(projectDir(projectId), "mask_$maskId.png")
 
+    /** specs/generative_erase.md §6: one file per generative result, named by its op id. */
+    fun eraseFile(projectId: String, eraseId: String): File =
+        File(projectDir(projectId), "erase_$eraseId.png")
+
     /** The source keeps whatever extension it was written with; find it rather than guess. */
     fun findSource(id: String): File? =
         projectDir(id).listFiles { file -> file.nameWithoutExtension == "source" }?.firstOrNull()

@@ -35,3 +35,6 @@ exposure_+0.5_masked.png
 
 # T33 (specs/selection_tool.md 8.2)
 cutout_render.png
+
+# T38 (specs/generative_erase.md 6)
+generative_erase_render.png
