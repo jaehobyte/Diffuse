@@ -40,6 +40,7 @@ data class SegMask(val alpha: Bitmap, val score: Float /* 0..1 */)
 
 interface SegmentationProvider {
     val availability: StateFlow<Availability>
+    suspend fun refresh()                                          // re-probe, then update availability
     suspend fun open(image: Bitmap): Result<SegSession>
     suspend fun byPoints(session: SegSession, prompt: PointPrompt): Result<SegMask>
     suspend fun byText(session: SegSession, phrase: String): Result<List<SegMask>>
@@ -68,6 +69,10 @@ interface EraseProvider {
 - Session expiry is the provider's problem, not the caller's. A caller never sees a "session
   expired" error; see segmentation.md §5.
 - `close` is best-effort and never fails the caller. Losing the release only costs the server a TTL.
+- `refresh` is how `availability` becomes true rather than assumed. Probing costs a round trip, so
+  the provider never polls: the caller refreshes when the tool opens and when the settings change
+  (segmentation.md §7). Providers may also update `availability` as a side effect of a call that
+  proves the backend is or is not reachable.
 
 ## 5. Errors
 `Result.Failure(AppError)`, using the cases in architecture.md §9:

@@ -61,6 +61,13 @@ interface SegmentationProvider {
 
     val availability: StateFlow<Availability>
 
+    /**
+     * Re-probes the backend and updates [availability]. specs/segmentation.md §7: availability is
+     * checked when the tool is opened and when the settings change, never polled, so the caller
+     * decides when it is worth a round trip.
+     */
+    suspend fun refresh()
+
     /** Expensive. Call once per image, then reuse the session for every prompt. */
     suspend fun open(image: Bitmap): Result<SegSession>
 

@@ -74,21 +74,22 @@ Only the server endpoint is still outstanding. If a task hits a missing prerequi
       base64 alpha decoding, and normalized-coordinate encoding. No external host is contacted
   touches: core/ai/sam3
 
-- [ ] T28 `Sam3SegmentationProvider` and server settings
+- [x] T28 `Sam3SegmentationProvider` and server settings
   spec: specs/segmentation.md §Availability, §Settings
   deps: T27
   done when:
     - `Sam3SegmentationProvider : SegmentationProvider` implemented over `Sam3Client`;
       at most one live `SegSession`, and opening a second closes the first with `DELETE`
     - `Sam3Settings` holds base URL and token: `local.properties` supplies the build-time default
-      via a `BuildConfig` field (enable `buildConfig` for `:app` in build-logic; it is off globally
-      in gradle.properties), overridable at runtime from a settings sheet, persisted in
+      via a `BuildConfig` field on `:core:ai` itself (`:app` depends on `:core:ai`, not the other
+      way round, and BuildConfig is per-module), overridable at runtime, persisted in
       `SharedPreferences` (the same choice `ExportSettingsStore` already made)
     - `availability` is `Unavailable(AppError.Invalid)` when no base URL is configured and
       `Unavailable(AppError.Unavailable)` when `GET /healthz` fails; it re-checks when settings change
     - masks come back at the uploaded image's size and are scaled to the working image size
     - tests with `MockWebServer`: availability transitions, session replacement, settings round-trip
-  touches: core/ai/sam3, build-logic, app (settings sheet entry point only)
+  note: the settings *sheet* moved to T30, where the tool that needs it lives
+  touches: core/ai/sam3, core/ai build file
 
 ## Phase 6 — Selection tool
 

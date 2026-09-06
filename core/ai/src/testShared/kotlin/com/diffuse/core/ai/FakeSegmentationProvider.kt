@@ -36,6 +36,13 @@ class FakeSegmentationProvider(
         _availability.value = value
     }
 
+    var refreshCount: Int = 0
+        private set
+
+    override suspend fun refresh() {
+        refreshCount++
+    }
+
     override suspend fun open(image: Bitmap): Result<SegSession> {
         delay(openDelayMs)
         takeError()?.let { return Result.Failure(it) }

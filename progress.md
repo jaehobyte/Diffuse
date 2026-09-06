@@ -14,9 +14,15 @@ Specs are written and consistent: `ai_provider.md`, `segmentation.md`, `selectio
 (rewritten), `prompt_input.md`, `generative_erase.md` (new), plus amendments to `edit_model.md`,
 `architecture.md` (§2, §6, §8, §9, §10) and `DESIGN.md` (§1 accent ruling, §4 prompt bar).
 
-**T26-T27 done**; every prerequisite except the server's `/v1/edit/erase` is landed. Next is T28.
+**T26-T28 done**; the network line is complete. Every prerequisite except the server's
+`/v1/edit/erase` is landed. Next is T29.
 
 ## Done
+
+- T28 `Sam3SegmentationProvider` — one live session plus the bytes that opened it, so §5's
+  expiry replay (re-upload once, repeat the prompt) never reaches the caller. `Sam3Settings`
+  on SharedPreferences with `local.properties` defaults through `:core:ai`'s own BuildConfig,
+  `Sam3ImageCodec` (2048px, JPEG 90 → 75), and `AiModule`. 19 tests.
 
 - T27 `Sam3Client` — OkHttp + kotlinx.serialization over the five SAM 3 routes, `Sam3Outcome`
   with `SessionExpired` as its own case, and `MaskCodec`. 17 MockWebServer tests, localhost only.
@@ -57,10 +63,30 @@ _T01–T14 trimmed per CLAUDE.md (keep the last 10). Their decisions are still i
 
 ## Next
 
-T28 `Sam3SegmentationProvider` and server settings, which completes the network line.
-T29 and T34 have no deps and can go at any time.
+T29 `Operation.Mask` in the model and renderer — no deps. T34 (`PromptBar`) is also free-standing.
+T30 needs both T29 and the `:core:ai` testShared srcDir wired into `:feature:editor`.
 
 ## Decisions
+
+### T28
+
+- **`refresh()` was added to `SegmentationProvider`.** specs/segmentation.md §7 wants availability
+  probed when the tool opens and when settings change, never polled. Without an entry point that
+  means either a background scope in a `@Singleton` (a leak, and untestable) or a health check
+  bolted onto `open()` (a wasted round trip on the critical path). One suspend method is the
+  smaller change; ai_provider.md §3 and §4 record it.
+- **`SegSession` carries the *caller's* image size, not the uploaded one.** Prompts are normalized,
+  so nothing needs the upload's resolution but the mask rescale, and that is the provider's own
+  business. Keeping the upload size private is what lets §3's downscale change without any caller
+  noticing.
+- **A rejected prompt does not flip `availability`; an unreachable or unauthenticated backend
+  does.** §7 says one bad request is not a dead server. `AppError.Invalid` therefore leaves the
+  tool enabled, while `Unavailable` and `Unauthorized` grey it.
+- **`BuildConfig` lives on `:core:ai`, not `:app`.** `:app` depends on `:core:ai`, so the reverse
+  read is impossible, and BuildConfig fields are per-module. `gradle.properties` disables the
+  feature globally; this module turns it back on for itself.
+- **The settings sheet moved to T30.** T28's `touches` named `app`, but a sheet with no screen to
+  open it from is dead code, and the first screen that needs it is the selection tool.
 
 ### T24
 
