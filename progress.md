@@ -1,9 +1,18 @@
 ## Current
 
-_Idle._ T77 is committed. The Phase 14 queue still holds T70, T73, T74 and T75; T57, T66, T72 and
-T76 stay `[!]`.
+_Idle._ T70 is committed. The Phase 14 queue still holds T73, T74 and T75; T57, T66 and T72 stay
+`[!]`.
 
 ## Done
+
+- T70 채우기 belongs under the adjust stack too — and so did the 지시 tool's `Erase` step, which
+  `e3b00c5` never reached. The rule now has one home, `tools/AdjustStack.kt`: `generativeInput`
+  renders the frame minus the `Adjust` ops and `EditDocument.underTheAdjustments()` places the
+  result under them. Either half alone is wrong, which is why they sit in one file. `PlanRunner`
+  takes the frame as a **lambda per step**, not a bitmap per run — each step chains a new document,
+  so a plan whose first step adjusts still shows its `Fill` a clean frame; the run's `preview` stays
+  the segmentation session's, because a selection is made on what the user is looking at. 확대 was
+  checked rather than assumed: bare source in, `withOutpaint` at index 0, nothing to do. 8 tests.
 
 - T77 자동 — one tap, and the sheet arrives **after** the call holding MonetGPT's plan. What it
   commits is ordinary `Adjust` ops (ADR-015 reaching the UI), so the boost is something the user
@@ -46,26 +55,6 @@ T76 stay `[!]`.
   away from one pans. The mask-op guard is `EditDocument.canOutpaint`, passed in rather than
   re-implemented. 38 tests, goldens `expand_overlay` / `expand_sheet_open`; every existing golden
   passed unrecorded, `editor_shell_default` included — the strip already overflowed at nine items.
-
-- T64 `WhitePad` and `OutpaintProvider` — the mask trick generalized: `WhiteFill` paints a region
-  white, `WhitePad` paints a **border** white, and the padded image goes out through T60's
-  `GeminiEraseClient.edit` seam behind `OUTPAINT_INSTRUCTION`. §5's two guards are what make this
-  more than a third instruction: an answer whose aspect is more than 2% off the canvas that was
-  sent is `Unsupported` rather than scaled into place, because scaling it would move the user's
-  photograph; and T51's still-white guard now measures a border. That guard moved into
-  `StillWhite`, which takes a region predicate, so 지우기, 채우기 and 확대 share the one threshold.
-  `core:ai` declares its own `Margins` per ai_provider.md §3. 17 tests, one `@Binds`,
-  `FakeOutpaintProvider` in testShared.
-
-- T63 `Operation.Outpaint` — the only op that makes the canvas bigger, and so the only one that is
-  always `operations[0]`. `Margins` holds four fractions and `MAX_MARGIN_FRACTION = 0.5f`;
-  `withOutpaint` inserts at index 0, replaces rather than compounds, clamps, **refuses** while any
-  `Mask` / `CutOut` / `GenerativeErase` / `GenerativeFill` exists, and re-normalizes an existing
-  `Crop.rect` — all four rules in the model, so no tool or planner can go round them. The renderer
-  expands **before** T49's walk (`OutpaintOp`), draws the stored result to fill the new canvas and
-  the decoded source back over its interior with an 8px alpha ramp, so the photograph keeps its own
-  resolution and only the invented border is the model's. `v` stays 1. 15 tests, golden
-  `outpaint_render`; every existing golden passed unrecorded.
 
 ## Next
 

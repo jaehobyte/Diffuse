@@ -77,6 +77,9 @@ class PlanRunnerTest {
                 Result.Success(ImageRef("/p/erase_$eraseId.png"))
             },
         ),
+        // T70: the frame a generative step is shown, which is not the run's `preview`. Colour-coded
+        // so a test can say which of the two the step actually sent.
+        generativeInput = { plainFrame() },
     )
 
     // ---- §9.1 validation --------------------------------------------------
@@ -243,6 +246,23 @@ class PlanRunnerTest {
         assertEquals("a red umbrella", filler.lastPrompt)
         assertEquals(savedFills, listOf(fill.id))
         assertEquals(ImageRef("/p/fill_${fill.id}.png"), fill.resultRef)
+    }
+
+    /**
+     * T70: the two generative steps are shown `generativeInput`'s frame, not the run's `preview`
+     * — the same frame their taps send, which is what makes a plan and a tap agree. The `Select`
+     * step keeps the preview, because a selection is made on what the user is looking at.
+     */
+    @Test
+    fun `the generative steps are shown the frame without the adjustments`() = runTest {
+        val plan = EditPlan(
+            listOf(PlanStep.Select("chair"), PlanStep.Fill("a red umbrella"), PlanStep.Erase),
+        )
+
+        lastDocument(plan)
+
+        assertEquals(PLAIN, filler.lastImage!!.getPixel(0, 0))
+        assertEquals(PLAIN, eraser.lastImage!!.getPixel(0, 0))
     }
 
     @Test
@@ -501,7 +521,11 @@ class PlanRunnerTest {
         .withMask(ImageRef("/p/mask_m.png"), id = "m")
 
     private fun preview(): Bitmap =
-        Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888)
+        Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888).apply { eraseColor(ADJUSTED) }
+
+    /** T70: what `generativeInput` renders — the document minus its adjustments. */
+    private fun plainFrame(): Bitmap =
+        Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888).apply { eraseColor(PLAIN) }
 
     private suspend fun session() =
         (segmentation.open(preview()) as Result.Success).value
@@ -531,5 +555,7 @@ class PlanRunnerTest {
         const val SIZE = 32
         const val OPAQUE = 255
         const val ALPHA_SHIFT = 24
+        val PLAIN = android.graphics.Color.rgb(40, 50, 60)
+        val ADJUSTED = android.graphics.Color.rgb(200, 210, 220)
     }
 }

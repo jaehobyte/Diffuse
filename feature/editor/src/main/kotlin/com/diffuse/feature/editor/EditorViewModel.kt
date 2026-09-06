@@ -19,6 +19,7 @@ import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.core.imaging.model.Operation
 import com.diffuse.core.imaging.render.Renderer
 import com.diffuse.feature.editor.tools.ToolTap
+import com.diffuse.feature.editor.tools.generativeInput
 import com.diffuse.feature.editor.tools.auto.AutoController
 import com.diffuse.feature.editor.tools.auto.AutoState
 import com.diffuse.feature.editor.tools.crop.CropState
@@ -32,7 +33,6 @@ import com.diffuse.feature.editor.tools.direct.DirectTap
 import com.diffuse.feature.editor.tools.direct.PlanRunner
 import com.diffuse.feature.editor.tools.erase.EraseCommit
 import com.diffuse.feature.editor.tools.erase.EraseController
-import com.diffuse.feature.editor.tools.erase.eraseInput
 import com.diffuse.feature.editor.tools.erase.EraseState
 import com.diffuse.feature.editor.tools.expand.ExpandController
 import com.diffuse.feature.editor.tools.expand.ExpandState
@@ -157,6 +157,11 @@ class EditorViewModel @Inject constructor(
             saveMask = { maskId, mask -> repository.saveMask(projectId, maskId, mask) },
             fillCommit = fillCommit,
             eraseCommit = eraseCommit,
+            // T70: per step, not per run — each step chains a new document, and the frame a
+            // generative step is shown has to be the one it is actually editing.
+            generativeInput = { document ->
+                generativeInput(renderer, document, PREVIEW_LONG_EDGE_PX)
+            },
         ),
         scope = viewModelScope,
         host = object : DirectHost {
@@ -376,7 +381,9 @@ class EditorViewModel @Inject constructor(
                 viewModelScope.launch {
                     val document = state.document
                     erase.runAndCommit(
-                        image = document?.let { eraseInput(renderer, it, PREVIEW_LONG_EDGE_PX) }
+                        image = document?.let {
+                            generativeInput(renderer, it, PREVIEW_LONG_EDGE_PX)
+                        }
                             ?: state.preview?.asAndroidBitmap(),
                         mask = state.activeMask,
                         document = document,
@@ -445,16 +452,22 @@ class EditorViewModel @Inject constructor(
             Tool.Select -> applySelection()
             // specs/generative_fill.md §6: 적용 runs the model, and the sheet closes only once
             // the result is committed — a failure leaves it open with the prompt intact.
-            Tool.Fill -> fill.runAndCommit(
-                image = state.preview?.asAndroidBitmap(),
-                mask = state.activeMask,
-                document = state.document,
-                onCommitted = { document ->
-                    history?.push(document)
-                    sheetBaseline = null
-                    _uiState.value = _uiState.value.copy(selectedTool = null)
-                },
-            )
+            //
+            // T70: the frame is the one the eraser gets — without the adjustments — because the
+            // result carries its own pixels and `FillCommit` puts it under the adjust stack.
+            Tool.Fill -> viewModelScope.launch {
+                val document = state.document
+                fill.runAndCommit(
+                    image = document?.let { generativeInput(renderer, it, PREVIEW_LONG_EDGE_PX) },
+                    mask = state.activeMask,
+                    document = document,
+                    onCommitted = { committed ->
+                        history?.push(committed)
+                        sheetBaseline = null
+                        _uiState.value = _uiState.value.copy(selectedTool = null)
+                    },
+                )
+            }
             // specs/outpaint.md §6: the request is built from the **bare source**, not the
             // preview, so a second 확대 re-invents from the photograph rather than from the
             // model's last answer.

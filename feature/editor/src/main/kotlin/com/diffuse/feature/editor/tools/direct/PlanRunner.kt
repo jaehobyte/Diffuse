@@ -63,6 +63,14 @@ class PlanRunner(
     private val fillCommit: FillCommit,
     /** The 지우기 tool's commit, shared so both paths erase through the same margin (T50). */
     private val eraseCommit: EraseCommit,
+    /**
+     * T70: the frame a generative step is shown — the step's own document minus its `Adjust` ops,
+     * which is `tools/AdjustStack.kt`'s `generativeInput` bound by the ViewModel. The run's
+     * `preview` is what the *user* is looking at and stays the segmentation session's; a baked
+     * adjustment in a generated result could never be re-dragged, so these two frames differ on
+     * purpose.
+     */
+    private val generativeInput: suspend (EditDocument) -> Bitmap?,
 ) {
 
     /**
@@ -216,11 +224,12 @@ class PlanRunner(
 
         private suspend fun eraseSelection(document: EditDocument): Result<EditDocument> {
             val selected = mask
-            return if (document.activeMaskId == null || selected == null) {
+            val frame = generativeInput(document)
+            return if (document.activeMaskId == null || selected == null || frame == null) {
                 missing()
             } else {
                 val dilated = EraseMask.dilated(selected)
-                when (val result = erase.erase(preview, dilated, hint = phrase)) {
+                when (val result = erase.erase(frame, dilated, hint = phrase)) {
                     is Result.Failure -> result
                     is Result.Success -> eraseCommit.apply(document, dilated, result.value)
                 }
@@ -231,16 +240,19 @@ class PlanRunner(
          * §9.2, T67: the selection's **bounding box with a margin**, exactly as the 채우기 tool
          * sends it. 지우기 dilates the silhouette because it is reconstructing what was behind a
          * thing; 채우기 replaces the thing, and a silhouette would dictate the new one's shape.
+         *
+         * T70: and on the same frame the tool sends, so a plan and a tap agree (T53's property).
          */
         private suspend fun fillSelection(
             prompt: String,
             document: EditDocument,
         ): Result<EditDocument> {
             val rectangle = mask?.let(FillMask::rectangle)
-            return if (document.activeMaskId == null || rectangle == null) {
+            val frame = generativeInput(document)
+            return if (document.activeMaskId == null || rectangle == null || frame == null) {
                 missing()
             } else {
-                when (val result = fill.fill(preview, rectangle, prompt)) {
+                when (val result = fill.fill(frame, rectangle, prompt)) {
                     is Result.Failure -> result
                     is Result.Success ->
                         fillCommit.apply(document, rectangle, prompt, result.value)

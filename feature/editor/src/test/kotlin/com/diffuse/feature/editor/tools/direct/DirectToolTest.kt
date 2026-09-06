@@ -57,6 +57,7 @@ class DirectToolTest {
 
     private val segmentation = FakeSegmentationProvider(openDelayMs = 0)
     private val eraser = FakeEraseProvider()
+    private val filler = FakeFillProvider()
     private val planner = FakePlanProvider()
     private lateinit var repository: RecordingRepository
     private lateinit var settings: Sam3Settings
@@ -344,6 +345,38 @@ class DirectToolTest {
         assertNull("a whole-photo adjustment must not be scoped to the erased hole", adjust.maskId)
     }
 
+    /**
+     * T70: a plan's `Fill` and a tap on 채우기 send the same frame and commit to the same place,
+     * so the two paths cannot drift. Here the adjustment is made *first*, by an earlier step of
+     * the same plan, which is the case the run's one `preview` snapshot could never have got right.
+     */
+    @Test
+    fun `a plan's fill is shown the plain frame and lands under an earlier adjust`() = runTest {
+        val viewModel = opened()
+        planner.next(
+            EditPlan(
+                listOf(
+                    PlanStep.Adjust(AdjustKind.Saturation, 0.2f, masked = false),
+                    PlanStep.Select("chair"),
+                    PlanStep.Fill("a red umbrella"),
+                ),
+            ),
+        )
+        viewModel.direct.submit(REQUEST)
+
+        viewModel.applySheet()
+
+        assertEquals(PLAIN, filler.lastImage!!.getPixel(0, 0))
+        val operations = viewModel.uiState.value.document!!.operations
+        val fill = operations.indexOfFirst { it is Operation.GenerativeFill }
+        val adjust = operations.indexOfFirst { it is Operation.Adjust }
+        assertTrue(
+            "the fill must run before the adjustment, was $operations",
+            fill in 0 until adjust,
+        )
+        assertTrue(viewModel.uiState.value.document!!.referencesResolve())
+    }
+
     @Test
     fun `each step of a mixed plan is its own history entry`() = runTest {
         val viewModel = opened()
@@ -388,7 +421,7 @@ class DirectToolTest {
         ai = EditorAi(
             segmentation,
             eraser,
-            FakeFillProvider(),
+            filler,
             FakeOutpaintProvider(),
             planner,
             FakeSpeechInput(),
@@ -404,12 +437,20 @@ class DirectToolTest {
         assertTrue("expected a value, got null", value != null)
 
     /** Resolves any mask to a full-frame one, as the erase tool's test does. */
+    /** T70: colour-coded by whether the document still carries adjustments, as the tool tests are. */
     private class FakeRenderer : Renderer {
         override suspend fun preview(document: EditDocument, targetLongEdgePx: Int) =
-            Result.Success(Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888))
+            Result.Success(frame(document))
 
         override suspend fun full(document: EditDocument, onProgress: (Float) -> Unit) =
-            Result.Success(Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888))
+            Result.Success(frame(document))
+
+        private fun frame(document: EditDocument): Bitmap =
+            Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888).apply {
+                eraseColor(
+                    if (document.operations.any { it is Operation.Adjust }) ADJUSTED else PLAIN,
+                )
+            }
 
         override suspend fun resolveMask(document: EditDocument, maskId: String): Bitmap? =
             document.mask(maskId)?.let {
@@ -469,6 +510,8 @@ class DirectToolTest {
         const val PROJECT_ID = "p"
         const val REQUEST = "나무를 좀 더 푸르게 해줘"
         const val SIZE = 32
+        val PLAIN = android.graphics.Color.rgb(40, 50, 60)
+        val ADJUSTED = android.graphics.Color.rgb(200, 210, 220)
         const val OPAQUE = 255
         const val ALPHA_SHIFT = 24
     }

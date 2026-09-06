@@ -449,7 +449,7 @@ report. T68 needed one human answer — which ratios the app offers — and got 
       state as a tap on the tool
   touches: feature/editor/EditorViewModel.kt, feature/editor tests
 
-- [ ] T70 채우기 belongs under the adjust stack too
+- [x] T70 채우기 belongs under the adjust stack too
   spec: specs/generative_fill.md §5; specs/generative_erase.md §10; specs/edit_model.md
   deps: —
   found: while merging `origin/main` into `dev_outpainting`. `e3b00c5` fixed this for 지우기 —

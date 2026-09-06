@@ -8,6 +8,35 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T70
+
+- **The rule got one home, `tools/AdjustStack.kt`, holding both halves.** `generativeInput` (the
+  frame minus the `Adjust` ops) and `EditDocument.underTheAdjustments()` (the op placed under them)
+  are two halves of one rule, and either alone is wrong: a plain frame stored on top of the stack is
+  still overwritten, and a repositioned op carrying baked adjustments doubles them. 채우기 had
+  neither half, which is the defect. `EraseInput.kt` is gone and `EraseCommit`'s private copy of the
+  list surgery with it.
+
+- **`PlanRunner` takes the frame as a lambda, per step, not as a bitmap per run.** Each step chains
+  a new document, so the frame a generative step should see is the one *it* is editing — a single
+  snapshot taken before the run could not be right for a plan whose earlier step adjusts. The run's
+  `preview` stays, and stays the segmentation session's: a selection is made on what the user is
+  looking at, and the two frames now differ on purpose.
+
+- **The 지시 tool's `Erase` step had the same defect and was fixed with it.** T70's `found:` note
+  says `e3b00c5` fixed 지우기, but it fixed only the tool: `PlanRunner.eraseSelection` still sent the
+  adjusted `preview`, so a plan and a tap disagreed. One lambda feeds both steps, so fixing the fill
+  and leaving the erase would have been writing the disagreement down rather than removing it.
+
+- **`FakeFillProvider` gained `lastImage`**, mirroring `FakeEraseProvider`'s, because "which frame
+  was the model shown" is the assertion this task exists to make and the erase twin already makes
+  it. The alternative — digging the input's pixels out of the saved result — asserts the same thing
+  less legibly in two files.
+
+- **확대 was checked, not assumed** (`ExpandToolTest`): the request is built from the bare source and
+  `withOutpaint` inserts at index 0, so an outpaint is already under every adjustment. Nothing
+  changed there.
+
 ### T77
 
 - **One `ToolTap` for all four generative tools.** `EraseTap`, `FillTap` and `ExpandTap` were three
