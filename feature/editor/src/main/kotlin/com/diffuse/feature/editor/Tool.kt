@@ -3,11 +3,13 @@ package com.diffuse.feature.editor
 import androidx.annotation.StringRes
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.AutoAwesomeMotion
 import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.Colorize
 import androidx.compose.material.icons.rounded.Crop
 import androidx.compose.material.icons.rounded.HighlightAlt
 import androidx.compose.material.icons.rounded.LightMode
+import androidx.compose.material.icons.rounded.OpenInFull
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -29,6 +31,12 @@ enum class Tool(
     Select(R.string.editor_tool_select, Icons.Rounded.HighlightAlt, isAi = true),
     Erase(R.string.editor_tool_erase, Icons.Rounded.AutoFixHigh, isAi = true),
 
-    /** specs/vibe_edit.md §3: appended, so no existing entry moves. */
+    /** specs/generative_fill.md §6: the two generative region tools sit together. */
+    Fill(R.string.editor_tool_fill, Icons.Rounded.AutoAwesomeMotion, isAi = true),
+
+    /** specs/outpaint.md §6: the one tool that makes the canvas bigger, after the two that fill. */
+    Expand(R.string.editor_tool_expand, Icons.Rounded.OpenInFull, isAi = true),
+
+    /** specs/vibe_edit.md §3: last in the strip, because it can reach any of the others. */
     Direct(R.string.editor_tool_direct, Icons.Rounded.AutoAwesome, isAi = true),
 }

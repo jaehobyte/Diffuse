@@ -3,6 +3,7 @@ package com.diffuse.feature.editor.tools.direct
 import android.graphics.Bitmap
 import com.diffuse.core.ai.EditPlan
 import com.diffuse.core.ai.EraseProvider
+import com.diffuse.core.ai.FillProvider
 import com.diffuse.core.ai.PlanStep
 import com.diffuse.core.ai.SegSession
 import com.diffuse.core.ai.SegmentationProvider
@@ -12,8 +13,12 @@ import com.diffuse.core.common.Result
 import com.diffuse.core.common.newId
 import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.core.imaging.model.ImageRef
+import com.diffuse.feature.editor.tools.crop.CropState
+import com.diffuse.feature.editor.tools.crop.preset
 import com.diffuse.feature.editor.tools.erase.EraseCommit
 import com.diffuse.feature.editor.tools.erase.EraseMask
+import com.diffuse.feature.editor.tools.fill.FillCommit
+import com.diffuse.feature.editor.tools.fill.FillMask
 import com.diffuse.feature.editor.tools.select.MaskOps
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
@@ -42,12 +47,20 @@ sealed interface RunEvent {
  * `EditorViewModel`'s `SavedStateHandle`, the shape `EraseController` already uses. And it emits
  * events rather than pushing history, because only `EditorViewModel` holds the `HistoryStack`.
  */
+// The seventh parameter is specs/vibe_edit.md §9's own signature: three providers, a dispatcher
+// and one writer per thing a step can produce. Grouping the writers would hide which step writes
+// what, which is the only reason this class takes lambdas rather than the repository.
+@Suppress("LongParameterList")
 class PlanRunner(
     private val segmentation: SegmentationProvider,
     private val erase: EraseProvider,
+    /** T62: a `Fill` step is the only one that uses it (specs/generative_fill.md §8). */
+    private val fill: FillProvider,
     private val dispatchers: DispatcherProvider,
     /** `repository.saveMask(projectId, …)`, bound by the ViewModel. */
     private val saveMask: suspend (String, Bitmap) -> Result<ImageRef>,
+    /** T67: 채우기's rectangle and its result, committed the way the tool commits them. */
+    private val fillCommit: FillCommit,
     /** The 지우기 tool's commit, shared so both paths erase through the same margin (T50). */
     private val eraseCommit: EraseCommit,
 ) {
@@ -76,14 +89,18 @@ class PlanRunner(
      * @param preview what the canvas is showing; the session and the eraser both work on it.
      * @param activeMask the document's applied mask, already resolved by the caller. A `Select`
      * step replaces it for the steps that follow.
+     * @param sourceAspect width ÷ height of the **un-cropped** source, which is what a `Crop`
+     * step's rect is normalised against (specs/crop.md). The preview cannot supply it: once the
+     * document carries a crop, the preview is the cropped shape.
      */
     fun run(
         plan: EditPlan,
         document: EditDocument,
         preview: Bitmap,
         activeMask: Bitmap?,
+        sourceAspect: Float,
     ): Flow<RunEvent> = flow {
-        val run = Run(preview, activeMask)
+        val run = Run(preview, activeMask, sourceAspect)
         var current = document
         var stopped = false
         try {
@@ -109,7 +126,11 @@ class PlanRunner(
     }.flowOn(dispatchers.io)
 
     /** One run's mutable parts: the session it opened and the mask the steps share. */
-    private inner class Run(private val preview: Bitmap, private var mask: Bitmap?) {
+    private inner class Run(
+        private val preview: Bitmap,
+        private var mask: Bitmap?,
+        private val sourceAspect: Float,
+    ) {
 
         private var session: SegSession? = null
 
@@ -130,7 +151,9 @@ class PlanRunner(
                     ),
                 )
                 PlanStep.Erase -> eraseSelection(document)
+                is PlanStep.Fill -> fillSelection(step.prompt, document)
                 PlanStep.CutOut -> cutOut(document)
+                is PlanStep.Crop -> Result.Success(crop(step, document))
             }
 
         /** §9.2: the session is opened once, on the current preview, and closed with the run. */
@@ -204,6 +227,34 @@ class PlanRunner(
             }
         }
 
+        /**
+         * §9.2, T67: the selection's **bounding box with a margin**, exactly as the 채우기 tool
+         * sends it. 지우기 dilates the silhouette because it is reconstructing what was behind a
+         * thing; 채우기 replaces the thing, and a silhouette would dictate the new one's shape.
+         */
+        private suspend fun fillSelection(
+            prompt: String,
+            document: EditDocument,
+        ): Result<EditDocument> {
+            val rectangle = mask?.let(FillMask::rectangle)
+            return if (document.activeMaskId == null || rectangle == null) {
+                missing()
+            } else {
+                when (val result = fill.fill(preview, rectangle, prompt)) {
+                    is Result.Failure -> result
+                    is Result.Success ->
+                        fillCommit.apply(document, rectangle, prompt, result.value)
+                }
+            }
+        }
+
+        /**
+         * §4.1: the largest centred rect at the requested ratio, through the **same**
+         * `CropGeometry.applyPreset` a tap on the chip takes. No geometry is written here.
+         */
+        private fun crop(step: PlanStep.Crop, document: EditDocument): EditDocument =
+            CropState.from(document, sourceAspect).withPreset(step.ratio.preset).applyTo(document)
+
         private fun cutOut(document: EditDocument): Result<EditDocument> {
             val maskId = document.activeMaskId
             return if (maskId == null) missing() else Result.Success(document.withCutOut(maskId))
@@ -227,10 +278,14 @@ class PlanRunner(
     }
 }
 
-/** §9.1: `Select` produces a selection; these three consume one. */
+/**
+ * §9.1: `Select` produces a selection; these three consume one. `Crop` consumes none — §4.1 needed
+ * no new rule here, which is the signal the step carries only a ratio.
+ */
 private val PlanStep.consumesSelection: Boolean
     get() = when (this) {
-        is PlanStep.Select -> false
+        is PlanStep.Select, is PlanStep.Crop -> false
         is PlanStep.Adjust -> masked
+        is PlanStep.Fill -> true
         PlanStep.Erase, PlanStep.CutOut -> true
     }

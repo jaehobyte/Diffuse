@@ -1,5 +1,6 @@
 package com.diffuse.core.ai.gemini
 
+import com.diffuse.core.ai.CropRatio
 import com.diffuse.core.imaging.model.AdjustKind
 import com.diffuse.core.imaging.model.HslBand
 import com.diffuse.core.imaging.model.HslChannel
@@ -13,20 +14,27 @@ import com.diffuse.core.imaging.model.HslTarget
  * to a model, not strings a person reads, so DESIGN.md §9's "Korean, in strings.xml" does not
  * apply — the same rule generative_erase.md §5 applies to its instruction.
  *
- * 자르기 is deliberately absent: a crop is four normalised numbers a model would have to invent,
- * and a wrong crop throws away framing the user chose (§4).
+ * 자르기 is here as `crop_ratio` (§4.1) and only as a ratio. The objection that kept it out until
+ * T58 stands unchanged — a model asked for a rectangle has to invent four numbers it cannot check
+ * against what the user meant — which is exactly why `ratio` is a closed enum: the model answers
+ * "which aspect does 인스타 포스팅 mean", a language question, and the rect is computed from the
+ * preset the chips already use.
  */
 internal const val FN_SELECT_REGION = "select_region"
 internal const val FN_ADJUST = "adjust"
 internal const val FN_ADJUST_COLOR_RANGE = "adjust_color_range"
 internal const val FN_ERASE_SELECTION = "erase_selection"
 internal const val FN_CUT_OUT_SELECTION = "cut_out_selection"
+internal const val FN_FILL_SELECTION = "fill_selection"
+internal const val FN_CROP_RATIO = "crop_ratio"
 
 internal const val ARG_PHRASE = "phrase"
 internal const val ARG_KIND = "kind"
 internal const val ARG_VALUE = "value"
 internal const val ARG_MASKED = "masked"
 internal const val ARG_COLOR = "color"
+internal const val ARG_RATIO = "ratio"
+internal const val ARG_PROMPT = "prompt"
 
 /**
  * §4's ten `AdjustKind` names in lower snake case. Every one of them is a single word, so this is
@@ -43,6 +51,23 @@ internal val plannableKinds: List<AdjustKind> = AdjustKind.entries.filter { it.h
 
 internal fun adjustKindOf(wire: String): AdjustKind? =
     plannableKinds.firstOrNull { it.wireName == wire }
+
+/**
+ * §4.1's wire names. Spelled out rather than derived from the enum: "portrait_4_5" is not a
+ * lowercasing of `Portrait4x5`, and a name the model sees should read like a ratio.
+ */
+internal val CropRatio.wireName: String
+    get() = when (this) {
+        CropRatio.Square -> "square"
+        CropRatio.Portrait3x4 -> "portrait_3_4"
+        CropRatio.Portrait4x5 -> "portrait_4_5"
+        CropRatio.Story9x16 -> "story_9_16"
+        CropRatio.Landscape4x3 -> "landscape_4_3"
+        CropRatio.Landscape16x9 -> "landscape_16_9"
+    }
+
+internal fun cropRatioOf(wire: String): CropRatio? =
+    CropRatio.entries.firstOrNull { it.wireName == wire }
 
 internal val HslBand.wireName: String get() = name.lowercase()
 
@@ -83,11 +108,24 @@ internal const val PLAN_SYSTEM_INSTRUCTION =
         "- To change how one colour looks - \"the reds are too strong\", \"make the sky bluer\" " +
         "- call adjust_color_range. It needs no selection: select_region names a thing in the " +
         "photo, never a colour.\n" +
+        "- fill_selection replaces, erase_selection removes: call fill_selection when the " +
+        "request names what should be there instead (\"...으로 바꿔줘\", \"...를 넣어줘\"), and " +
+        "erase_selection when it only asks for something to be gone. Both need select_region " +
+        "first.\n" +
         "- After erase_selection or cut_out_selection, an adjustment meant for the whole photo " +
         "must pass masked=false, because the selection now names a region that is gone.\n" +
         "- Values are relative strengths, not absolute settings: a slight change is 0.2, a clear " +
         "change is 0.4, a strong change is 0.7. Use the ends of the range only when the user " +
         "asked for an extreme.\n" +
+        "- Call crop_ratio only when the request names a shape, a platform or a format - " +
+        "\"인스타\", \"스토리\", \"정사각형\", \"9:16\". Never crop to improve a photo the user " +
+        "did not ask to reframe. Call it at most once; it always runs last, so the user can " +
+        "adjust the framing afterwards.\n" +
+        "- A bare platform name with no shape - \"인스타\", \"인스타그램\", \"피드에 올릴거야\" - " +
+        "means an ordinary feed post, which is portrait_3_4, or landscape_4_3 when the request " +
+        "asks for a wide or horizontal one. It does not mean square: square is only for a " +
+        "request that actually says so (\"정사각형\", \"1:1\"). A story or a reel is still " +
+        "story_9_16.\n" +
         "- If the request cannot be met with these functions, call nothing.\n" +
         "Examples:\n" +
         "- \"버스를 지워줘\" -> select_region(phrase=\"bus\"), erase_selection()\n" +
@@ -97,7 +135,11 @@ internal const val PLAN_SYSTEM_INSTRUCTION =
         "erase_selection(), adjust(kind=\"contrast\", value=0.2, masked=false), " +
         "adjust(kind=\"saturation\", value=0.2, masked=false)\n" +
         "- \"배경 지워줘\" -> select_region(phrase=\"the main subject\"), cut_out_selection()\n" +
-        "- \"하늘을 더 파랗게 해줘\" -> adjust_color_range(color=\"blue\", saturation=0.4)"
+        "- \"의자를 빨간 우산으로 바꿔줘\" -> select_region(phrase=\"chair\"), " +
+        "fill_selection(prompt=\"a red umbrella\")\n" +
+        "- \"하늘을 더 파랗게 해줘\" -> adjust_color_range(color=\"blue\", saturation=0.4)\n" +
+        "- \"인스타 스토리에 올리게 잘라줘\" -> crop_ratio(ratio=\"story_9_16\")\n" +
+        "- \"인스타그램에 올릴거야\" -> crop_ratio(ratio=\"portrait_3_4\")"
 
 internal val PLAN_FUNCTIONS: List<FunctionDeclaration> = listOf(
     FunctionDeclaration(
@@ -190,6 +232,45 @@ internal val PLAN_FUNCTIONS: List<FunctionDeclaration> = listOf(
         name = FN_CUT_OUT_SELECTION,
         description = "Delete everything outside the current selection, leaving it on a " +
             "transparent background.",
+    ),
+    FunctionDeclaration(
+        name = FN_FILL_SELECTION,
+        description = "Replace whatever the current selection covers with a named thing, drawn " +
+            "to match the scene. Use this when the request says what should be there instead; " +
+            "use erase_selection when the request only says something should go.",
+        parameters = Schema(
+            type = TYPE_OBJECT,
+            properties = mapOf(
+                ARG_PROMPT to Schema(
+                    type = TYPE_STRING,
+                    description = "A short English description of what to put there, such as " +
+                        "\"a red umbrella\" or \"a wooden bench\". Always English, even when " +
+                        "the request is in another language.",
+                ),
+            ),
+            required = listOf(ARG_PROMPT),
+        ),
+    ),
+    FunctionDeclaration(
+        name = FN_CROP_RATIO,
+        description = "Crop the photo to a standard aspect ratio, centred. Use this when the " +
+            "request names a shape, a platform or a format rather than a change to the image. " +
+            "The crop tool opens afterwards so the user can move the frame, so choose the " +
+            "ratio and nothing else.",
+        parameters = Schema(
+            type = TYPE_OBJECT,
+            properties = mapOf(
+                ARG_RATIO to Schema(
+                    type = TYPE_STRING,
+                    description = "Which aspect ratio to crop to. portrait_3_4 is an ordinary " +
+                        "upright feed post and landscape_4_3 is the same post the other way " +
+                        "round; story_9_16 is a phone story or reel; portrait_4_5 is a taller " +
+                        "feed post; square is a square post; landscape_16_9 is a wide photo.",
+                    enumValues = CropRatio.entries.map { it.wireName },
+                ),
+            ),
+            required = listOf(ARG_RATIO),
+        ),
     ),
 )
 

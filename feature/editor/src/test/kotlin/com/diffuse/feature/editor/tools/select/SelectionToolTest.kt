@@ -6,6 +6,8 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.diffuse.core.ai.Availability
 import com.diffuse.core.ai.FakeEraseProvider
+import com.diffuse.core.ai.FakeFillProvider
+import com.diffuse.core.ai.FakeOutpaintProvider
 import com.diffuse.core.ai.FakePlanProvider
 import com.diffuse.core.ai.FakeSegmentationProvider
 import com.diffuse.core.ai.MaskBitmaps
@@ -617,7 +619,16 @@ class SelectionToolTest {
     ) = EditorViewModel(
         repository = repository,
         renderer = FakeRenderer(),
-        ai = EditorAi(segmentation, eraseProvider, FakePlanProvider(), FakeSpeechInput(), settings, geminiSettings),
+        ai = EditorAi(
+            segmentation,
+            eraseProvider,
+            FakeFillProvider(),
+            FakeOutpaintProvider(),
+            FakePlanProvider(),
+            FakeSpeechInput(),
+            settings,
+            geminiSettings,
+        ),
         dispatchers = TestDispatchers,
         savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),
     )
@@ -669,6 +680,18 @@ class SelectionToolTest {
             savedErases += eraseId
             return Result.Success(ImageRef("/projects/$projectId/erase_$eraseId.png"))
         }
+
+        override suspend fun saveFillResult(
+            projectId: String,
+            fillId: String,
+            bitmap: Bitmap,
+        ): Result<ImageRef> = Result.Success(ImageRef("/projects/$projectId/fill_$fillId.png"))
+
+        override suspend fun saveOutpaintResult(
+            projectId: String,
+            outpaintId: String,
+            bitmap: Bitmap,
+        ): Result<ImageRef> = Result.Success(ImageRef("/p/outpaint_$outpaintId.png"))
 
         override suspend fun duplicate(id: String): Result<String> = Result.Success("copy")
         override suspend fun delete(id: String): Result<Unit> = Result.Success(Unit)

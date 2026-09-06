@@ -16,8 +16,11 @@ import com.diffuse.core.data.ProjectRepository
 import com.diffuse.core.imaging.history.HistoryStack
 import com.diffuse.core.imaging.model.AdjustKind
 import com.diffuse.core.imaging.model.EditDocument
+import com.diffuse.core.imaging.model.Operation
 import com.diffuse.core.imaging.render.Renderer
 import com.diffuse.feature.editor.tools.crop.CropState
+import com.diffuse.core.ai.CropRatio
+import com.diffuse.feature.editor.tools.crop.preset
 import com.diffuse.feature.editor.tools.direct.DirectCanvas
 import com.diffuse.feature.editor.tools.direct.DirectController
 import com.diffuse.feature.editor.tools.direct.DirectHost
@@ -29,6 +32,13 @@ import com.diffuse.feature.editor.tools.erase.EraseController
 import com.diffuse.feature.editor.tools.erase.eraseInput
 import com.diffuse.feature.editor.tools.erase.EraseState
 import com.diffuse.feature.editor.tools.erase.EraseTap
+import com.diffuse.feature.editor.tools.expand.ExpandController
+import com.diffuse.feature.editor.tools.expand.ExpandState
+import com.diffuse.feature.editor.tools.expand.ExpandTap
+import com.diffuse.feature.editor.tools.fill.FillCommit
+import com.diffuse.feature.editor.tools.fill.FillController
+import com.diffuse.feature.editor.tools.fill.FillState
+import com.diffuse.feature.editor.tools.fill.FillTap
 import com.diffuse.feature.editor.tools.select.SelectionController
 import com.diffuse.feature.editor.tools.select.SelectionState
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -36,7 +46,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -55,6 +67,10 @@ data class EditorUiState(
     val selection: SelectionState = SelectionState(),
     /** specs/generative_erase.md §5: the tool has no sheet, so this is all its state. */
     val erase: EraseState = EraseState(),
+    /** specs/generative_fill.md §6: the prompt lives here between typing it and 적용. */
+    val fill: FillState = FillState(),
+    /** specs/outpaint.md §6: the pending margins live here between the drag and 적용. */
+    val expand: ExpandState = ExpandState(),
     /** specs/vibe_edit.md §3: the plan lives here between the response and 적용. */
     val direct: DirectState = DirectState(),
     /** specs/selection_tool.md §8.1: default on, so an adjustment lands where the user looked. */
@@ -103,6 +119,24 @@ class EditorViewModel @Inject constructor(
     /** specs/generative_erase.md: runs the model; this class is what pushes the result. */
     val erase = EraseController(ai.erase, eraseCommit, viewModelScope)
 
+    /** T67: one commit shape for both fill paths, the way `EraseCommit` serves both erase ones. */
+    private val fillCommit = FillCommit(
+        saveMask = { maskId, mask -> repository.saveMask(projectId, maskId, mask) },
+        saveResult = { fillId, result -> repository.saveFillResult(projectId, fillId, result) },
+    )
+
+    /** specs/generative_fill.md §6: same split — the tool runs it, this class commits it. */
+    val fill = FillController(ai.fill, fillCommit, viewModelScope)
+
+    /** specs/outpaint.md §6: same split again — the tool runs it, this class commits it. */
+    val expand = ExpandController(
+        provider = ai.outpaint,
+        saveResult = { outpaintId, result ->
+            repository.saveOutpaintResult(projectId, outpaintId, result)
+        },
+        scope = viewModelScope,
+    )
+
     /**
      * specs/vibe_edit.md §3, §9. The tool owns the plan and the run; what it cannot know is
      * which project is open, what the canvas is showing, and where history lives, so those
@@ -113,8 +147,10 @@ class EditorViewModel @Inject constructor(
         runner = PlanRunner(
             segmentation = ai.segmentation,
             erase = ai.erase,
+            fill = ai.fill,
             dispatchers = dispatchers,
             saveMask = { maskId, mask -> repository.saveMask(projectId, maskId, mask) },
+            fillCommit = fillCommit,
             eraseCommit = eraseCommit,
         ),
         scope = viewModelScope,
@@ -126,7 +162,7 @@ class EditorViewModel @Inject constructor(
                 return if (document == null || preview == null) {
                     null
                 } else {
-                    DirectCanvas(document, preview, state.activeMask)
+                    DirectCanvas(document, preview, state.activeMask, sourceAspect(state))
                 }
             }
 
@@ -136,9 +172,22 @@ class EditorViewModel @Inject constructor(
 
             override suspend fun releaseSession() = selection.release()
 
-            override fun onFinished() {
+            /**
+             * specs/vibe_edit.md §4.1: a plan that ended with a crop hands off to the 자르기
+             * tool, which opens on the rect that was just committed. The model chose the ratio;
+             * the user chooses the framing.
+             */
+            override fun onFinished(cropRatio: CropRatio?) {
                 sheetBaseline = null
                 _uiState.value = _uiState.value.copy(selectedTool = null)
+                if (cropRatio != null) {
+                    onToolClick(Tool.Crop)
+                    // The rect is already at this ratio; selecting the chip keeps it there while
+                    // the user drags, which is the whole point of having chosen a ratio.
+                    _uiState.value = _uiState.value.copy(
+                        cropState = _uiState.value.cropState.withPreset(cropRatio.preset),
+                    )
+                }
             }
         },
     )
@@ -150,6 +199,20 @@ class EditorViewModel @Inject constructor(
         }
         viewModelScope.launch {
             erase.state.collect { _uiState.value = _uiState.value.copy(erase = it) }
+        }
+        viewModelScope.launch {
+            fill.state.collect { _uiState.value = _uiState.value.copy(fill = it) }
+        }
+        viewModelScope.launch {
+            expand.state.collect { _uiState.value = _uiState.value.copy(expand = it) }
+        }
+        // T69: opening or closing 자르기 changes what the preview should show without changing
+        // the document, so the transition is what is collected — one place rather than a call at
+        // the end of `onToolClick`, `cancelSheet` and `applySheet`, one of which would be missed.
+        viewModelScope.launch {
+            _uiState.map { it.selectedTool == Tool.Crop }
+                .distinctUntilChanged()
+                .collect { _uiState.value.document?.let(::requestPreview) }
         }
         viewModelScope.launch {
             direct.state.collect { _uiState.value = _uiState.value.copy(direct = it) }
@@ -188,11 +251,23 @@ class EditorViewModel @Inject constructor(
     /**
      * specs/render.md wants a new preview to supersede the one in flight; the renderer is
      * cancellable, and the ViewModel owns the scope, so conflation belongs here.
+     *
+     * T69: while 자르기 is open the `Crop` itself is left out. specs/crop.md says opening the tool
+     * refits to the un-cropped source, and rendering the document as it stands puts the overlay on
+     * an already-cropped photo — which a plan ending in `crop_ratio` made obvious, because it
+     * commits the crop and *then* opens the tool. Nothing else is dropped: an outpaint, an erase
+     * and every adjust still show, because the user is framing the photo they actually have.
      */
     private fun requestPreview(document: EditDocument) {
         previewJob?.cancel()
+        val framing = _uiState.value.selectedTool == Tool.Crop
+        val shown = if (!framing) {
+            document
+        } else {
+            document.copy(operations = document.operations.filterNot { it is Operation.Crop })
+        }
         previewJob = viewModelScope.launch {
-            val rendered = renderer.preview(document, PREVIEW_LONG_EDGE_PX)
+            val rendered = renderer.preview(shown, PREVIEW_LONG_EDGE_PX)
             // Resolved here rather than in its own pass: it is cached, and this is the one
             // place that already knows the document changed.
             val mask = document.activeMaskId?.let { renderer.resolveMask(document, it) }
@@ -217,7 +292,8 @@ class EditorViewModel @Inject constructor(
         when {
             state.selectedTool == tool -> cancelSheet()
             tool == Tool.Select && !selection.onToolTapped() -> Unit
-            tool == Tool.Erase -> onEraseTapped(state)
+            tool == Tool.Erase || tool == Tool.Fill || tool == Tool.Expand ->
+                onGenerativeToolTapped(state, tool)
             // specs/vibe_edit.md §10: a blank key opens the 서버 설정 sheet, through the same
             // controller-returns-an-intent shape 지우기 uses. One sheet, one owner.
             tool == Tool.Direct -> when (direct.onToolTapped()) {
@@ -229,14 +305,7 @@ class EditorViewModel @Inject constructor(
             }
             else -> {
                 sheetBaseline = state.document
-                // T23: the crop geometry is normalised, so it needs the source's pixel aspect
-                // to hold a preset. The bare-source preview has the source's shape.
-                val source = state.source
-                val aspect = if (source == null || source.height <= 0) {
-                    1f
-                } else {
-                    source.width.toFloat() / source.height
-                }
+                val aspect = sourceAspect(state)
                 val document = state.document
                 _uiState.value = state.copy(
                     selectedTool = tool,
@@ -253,23 +322,50 @@ class EditorViewModel @Inject constructor(
 
 
     /**
-     * specs/generative_erase.md §5, §9: the tool has no sheet — tapping it either runs the model
-     * or says which of the four things is missing.
+     * The three tools that ask a provider for pixels. They share the controller-returns-an-intent
+     * shape and differ in what a yes means: 지우기 has no sheet and runs on the tap
+     * (generative_erase.md §5, §9), 채우기 opens one because it needs a noun
+     * (generative_fill.md §6), and 확대 opens one because it needs margins (outpaint.md §6).
+     *
+     * What each one asks the *document* differs too — a selection for the first two, and for 확대
+     * the absence of one (§3) — so the question is the argument rather than the branch.
      */
-    private fun onEraseTapped(state: EditorUiState) {
-        when (erase.onToolTapped(hasSelection = state.document?.activeMaskId != null)) {
-            EraseTap.Refused -> Unit
-            EraseTap.OpenSettings -> selection.setSettingsVisible(true)
-            // The eraser is shown the frame without the adjustments; see [eraseInput].
-            EraseTap.Run -> viewModelScope.launch {
-                val document = state.document
-                erase.runAndCommit(
-                    image = document?.let { eraseInput(renderer, it, PREVIEW_LONG_EDGE_PX) }
-                        ?: state.preview?.asAndroidBitmap(),
-                    mask = state.activeMask,
-                    document = document,
-                    onCommitted = { committed -> history?.push(committed) },
-                )
+    private fun onGenerativeToolTapped(state: EditorUiState, tool: Tool) {
+        val hasSelection = state.document?.activeMaskId != null
+        if (tool == Tool.Expand) {
+            when (expand.onToolTapped(state.document?.canOutpaint == true)) {
+                ExpandTap.Refused -> Unit
+                ExpandTap.OpenSettings -> selection.setSettingsVisible(true)
+                ExpandTap.Open -> {
+                    // specs/editor_shell.md: the snapshot Cancel restores to.
+                    sheetBaseline = state.document
+                    _uiState.value = state.copy(selectedTool = Tool.Expand)
+                }
+            }
+        } else if (tool == Tool.Erase) {
+            when (erase.onToolTapped(hasSelection)) {
+                EraseTap.Refused -> Unit
+                EraseTap.OpenSettings -> selection.setSettingsVisible(true)
+                // The eraser is shown the frame without the adjustments; see [eraseInput].
+                EraseTap.Run -> viewModelScope.launch {
+                    val document = state.document
+                    erase.runAndCommit(
+                        image = document?.let { eraseInput(renderer, it, PREVIEW_LONG_EDGE_PX) }
+                            ?: state.preview?.asAndroidBitmap(),
+                        mask = state.activeMask,
+                        document = document,
+                        onCommitted = { committed -> history?.push(committed) },
+                    )
+                }
+            }
+        } else {
+            when (fill.onToolTapped(hasSelection)) {
+                FillTap.Refused -> Unit
+                FillTap.OpenSettings -> selection.setSettingsVisible(true)
+                FillTap.Open -> {
+                    sheetBaseline = state.document
+                    _uiState.value = state.copy(selectedTool = Tool.Fill)
+                }
             }
         }
     }
@@ -307,6 +403,8 @@ class EditorViewModel @Inject constructor(
         }
         sheetBaseline = null
         selection.closeSheet()
+        fill.close()
+        expand.close()
         direct.close()
         _uiState.value = _uiState.value.copy(selectedTool = null)
     }
@@ -315,6 +413,30 @@ class EditorViewModel @Inject constructor(
         val state = _uiState.value
         when (state.selectedTool) {
             Tool.Select -> applySelection()
+            // specs/generative_fill.md §6: 적용 runs the model, and the sheet closes only once
+            // the result is committed — a failure leaves it open with the prompt intact.
+            Tool.Fill -> fill.runAndCommit(
+                image = state.preview?.asAndroidBitmap(),
+                mask = state.activeMask,
+                document = state.document,
+                onCommitted = { document ->
+                    history?.push(document)
+                    sheetBaseline = null
+                    _uiState.value = _uiState.value.copy(selectedTool = null)
+                },
+            )
+            // specs/outpaint.md §6: the request is built from the **bare source**, not the
+            // preview, so a second 확대 re-invents from the photograph rather than from the
+            // model's last answer.
+            Tool.Expand -> expand.runAndCommit(
+                source = state.source?.asAndroidBitmap(),
+                document = state.document,
+                onCommitted = { document ->
+                    history?.push(document)
+                    sheetBaseline = null
+                    _uiState.value = _uiState.value.copy(selectedTool = null)
+                },
+            )
             // specs/vibe_edit.md §3: 적용 runs the plan; the sheet closes when the run ends.
             Tool.Direct -> direct.apply()
             else -> {
@@ -387,5 +509,22 @@ class EditorViewModel @Inject constructor(
     companion object {
         const val PROJECT_ID = "projectId"
         const val PREVIEW_LONG_EDGE_PX = 1080
+    }
+}
+
+/**
+ * T23: the crop geometry is normalised, so it needs the source's pixel aspect to hold a preset.
+ * The bare-source preview has the source's shape. specs/vibe_edit.md §4.1's crop step needs the
+ * same number, which is why this is shared rather than computed twice.
+ *
+ * File-level rather than a member: `EditorViewModel` is at detekt's function ceiling, and this
+ * reads only its argument.
+ */
+private fun sourceAspect(state: EditorUiState): Float {
+    val source = state.source
+    return if (source == null || source.height <= 0) {
+        1f
+    } else {
+        source.width.toFloat() / source.height
     }
 }

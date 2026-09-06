@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.float
+import kotlinx.serialization.json.floatOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -22,6 +23,9 @@ private const val TYPE_CROP = "crop"
 private const val TYPE_MASK = "mask"
 private const val TYPE_CUTOUT = "cutout"
 private const val TYPE_GENERATIVE_ERASE = "generativeErase"
+private const val TYPE_GENERATIVE_FILL = "generativeFill"
+private const val TYPE_OUTPAINT = "outpaint"
+private val MARGIN_KEYS = listOf("left", "top", "right", "bottom")
 
 /**
  * Operations are mapped by hand rather than through polymorphic serialisation, because
@@ -84,6 +88,22 @@ object EditDocumentJson {
             put("maskId", maskId)
             put("resultRef", resultRef.path)
         }
+        is Operation.GenerativeFill -> buildJsonObject {
+            put("type", TYPE_GENERATIVE_FILL)
+            put("id", id)
+            put("maskId", maskId)
+            put("resultRef", resultRef.path)
+            put("prompt", prompt)
+        }
+        is Operation.Outpaint -> buildJsonObject {
+            put("type", TYPE_OUTPAINT)
+            put("id", id)
+            put("resultRef", resultRef.path)
+            put("left", margins.left)
+            put("top", margins.top)
+            put("right", margins.right)
+            put("bottom", margins.bottom)
+        }
         is Operation.Crop -> buildJsonObject {
             put("type", TYPE_CROP)
             put("id", id)
@@ -101,6 +121,8 @@ object EditDocumentJson {
             TYPE_ADJUST -> decodeAdjust(node, id, logger)
             TYPE_MASK -> decodeMask(node, id, logger)
             TYPE_GENERATIVE_ERASE -> decodeGenerativeErase(node, id, logger)
+            TYPE_GENERATIVE_FILL -> decodeGenerativeFill(node, id, logger)
+            TYPE_OUTPAINT -> decodeOutpaint(node, id, logger)
             TYPE_CUTOUT -> node["maskId"]?.jsonPrimitive?.content
                 ?.let { Operation.CutOut(id, it) }
                 ?: warn(logger, "cutout '$id' without a maskId")
@@ -139,6 +161,31 @@ object EditDocumentJson {
         return Operation.GenerativeErase(id, maskId, ImageRef(ref))
     }
 
+    /** A missing prompt is empty rather than fatal: the pixels are what the render needs. */
+    private fun decodeGenerativeFill(node: JsonObject, id: String, logger: Logger?): Operation? {
+        val maskId = node["maskId"]?.jsonPrimitive?.content
+        val ref = node["resultRef"]?.jsonPrimitive?.content
+        if (maskId == null || ref == null) {
+            return warn(logger, "generativeFill '$id' without a maskId or resultRef")
+        }
+        val prompt = node["prompt"]?.jsonPrimitive?.content.orEmpty()
+        return Operation.GenerativeFill(id, maskId, ImageRef(ref), prompt)
+    }
+
+    /**
+     * specs/outpaint.md §3. The margins are the geometry every later op measures against, so a
+     * node missing one of them is dropped rather than defaulted — a silently narrower canvas
+     * would move the photograph.
+     */
+    private fun decodeOutpaint(node: JsonObject, id: String, logger: Logger?): Operation? {
+        val ref = node["resultRef"]?.jsonPrimitive?.content
+        val margins = node.margins()
+        if (ref == null || margins == null) {
+            return warn(logger, "outpaint '$id' without a resultRef or margins")
+        }
+        return Operation.Outpaint(id, margins, ImageRef(ref))
+    }
+
     private fun decodeAdjust(node: JsonObject, id: String, logger: Logger?): Operation? {
         val rawKind = node["kind"]?.jsonPrimitive?.content
         val kind = AdjustKind.entries.firstOrNull { it.name == rawKind }
@@ -155,4 +202,10 @@ object EditDocumentJson {
         logger?.warn(TAG, "dropped: $message")
         return null
     }
+}
+
+/** All four or none: a margin that failed to parse would silently narrow the canvas. */
+private fun JsonObject.margins(): Margins? {
+    val sides = MARGIN_KEYS.map { this[it]?.jsonPrimitive?.floatOrNull ?: return null }
+    return Margins(sides.first(), sides[1], sides[2], sides.last())
 }

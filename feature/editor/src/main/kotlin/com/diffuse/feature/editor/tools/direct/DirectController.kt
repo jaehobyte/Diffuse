@@ -3,6 +3,7 @@ package com.diffuse.feature.editor.tools.direct
 import android.graphics.Bitmap
 import androidx.annotation.StringRes
 import com.diffuse.core.ai.Availability
+import com.diffuse.core.ai.CropRatio
 import com.diffuse.core.ai.EditPlan
 import com.diffuse.core.ai.EditPlanProvider
 import com.diffuse.core.ai.PlanStep
@@ -40,6 +41,8 @@ data class DirectCanvas(
     val document: EditDocument,
     val preview: Bitmap,
     val activeMask: Bitmap?,
+    /** Width ÷ height of the un-cropped source, which a `Crop` step needs (§4.1). */
+    val sourceAspect: Float,
 )
 
 /**
@@ -56,7 +59,13 @@ interface DirectHost {
 
     suspend fun releaseSession()
 
-    fun onFinished()
+    /**
+     * §3: the sheet closes when the run ends. [cropRatio] is §4.1's hand-off — non-null when the
+     * plan ended with a `Crop` and every step committed, so the 자르기 tool opens on the rect that
+     * was just applied, with that ratio still locked, and the user chooses the framing. The
+     * controller reports what ran; opening a tool is the ViewModel's, as the one object that can.
+     */
+    fun onFinished(cropRatio: CropRatio?)
 }
 
 /** specs/vibe_edit.md §3. Sheet state; nothing here reaches the document until 적용. */
@@ -169,7 +178,13 @@ class DirectController(
         job = scope.launch {
             if (plan.steps.any { it is PlanStep.Select }) host.releaseSession()
             var error: AppError? = null
-            runner.run(plan, canvas.document, canvas.preview, canvas.activeMask).collect { event ->
+            runner.run(
+                plan = plan,
+                document = canvas.document,
+                preview = canvas.preview,
+                activeMask = canvas.activeMask,
+                sourceAspect = canvas.sourceAspect,
+            ).collect { event ->
                 when (event) {
                     is RunEvent.Committed -> host.commit(event.document)
                     is RunEvent.Stopped -> error = event.error
@@ -177,7 +192,11 @@ class DirectController(
                 }
             }
             onRunEnded(error)
-            host.onFinished()
+            // §4.1: only a run that finished actually committed the crop. A run that stopped
+            // early may never have reached it, and opening the tool then would be a lie.
+            host.onFinished(
+                cropRatio = (plan.steps.lastOrNull() as? PlanStep.Crop)?.ratio.takeIf { error == null },
+            )
         }
     }
 

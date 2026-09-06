@@ -17,6 +17,8 @@
     <string name="editor_tool_detail">디테일</string>
     <string name="editor_tool_select">선택</string>
     <string name="editor_tool_erase">지우기</string>
+    <string name="editor_tool_fill">채우기</string>
+    <string name="editor_tool_expand">확대</string>
     <string name="editor_tool_direct">지시</string>
 
     <!-- specs/generative_erase.md §5 -->
@@ -27,6 +29,25 @@
     <string name="erase_needs_key">설정에서 Gemini API 키를 입력해주세요</string>
     <string name="erase_blocked">이 이미지는 편집할 수 없어요</string>
     <string name="adjust_masked_only">선택 영역에만</string>
+
+    <!-- specs/generative_fill.md §7 -->
+    <string name="fill_title">채우기</string>
+    <string name="fill_placeholder">무엇으로 채울까요? 예: 빨간 우산</string>
+    <string name="fill_working">채우는 중</string>
+    <string name="fill_needs_selection">먼저 영역을 선택해주세요</string>
+    <string name="fill_needs_key">설정에서 Gemini API 키를 입력해주세요</string>
+    <string name="fill_blocked">이 이미지는 편집할 수 없어요</string>
+    <string name="fill_empty">아무것도 만들지 못했어요. 다르게 말해보세요.</string>
+    <string name="fill_failed">채우지 못했어요</string>
+
+    <!-- specs/outpaint.md §7 -->
+    <string name="expand_title">확대</string>
+    <string name="expand_ratio">비율 %1$s → %2$s</string>
+    <string name="expand_working">바깥을 그리는 중</string>
+    <string name="expand_after_mask">선택이나 생성 작업 전에 먼저 확대해주세요</string>
+    <string name="expand_needs_key">설정에서 Gemini API 키를 입력해주세요</string>
+    <string name="expand_blocked">이 이미지는 편집할 수 없어요</string>
+    <string name="expand_failed">바깥을 그리지 못했어요</string>
 
     <!-- specs/vibe_edit.md §11 -->
     <string name="direct_title">지시</string>
@@ -43,6 +64,8 @@
     <string name="direct_step_adjust_masked">선택 영역 %1$s %2$d</string>
     <string name="direct_step_erase">선택 영역 지우기</string>
     <string name="direct_step_cutout">배경 지우기</string>
+    <string name="direct_step_fill">선택 영역에 %1$s 채우기</string>
+    <string name="direct_step_crop">%1$s 비율로 자르기</string>
 
     <!-- specs/selection_tool.md -->
     <string name="select_title">선택</string>
@@ -90,8 +113,10 @@
     <string name="crop_title">자르기</string>
     <string name="crop_free">자유</string>
     <string name="crop_square">1:1</string>
+    <string name="crop_three_four">3:4</string>
     <string name="crop_four_five">4:5</string>
     <string name="crop_nine_sixteen">9:16</string>
+    <string name="crop_four_three">4:3</string>
     <string name="crop_sixteen_nine">16:9</string>
     <string name="crop_straighten">수평</string>
     <string name="crop_rotate_left">왼쪽으로 90도 회전</string>

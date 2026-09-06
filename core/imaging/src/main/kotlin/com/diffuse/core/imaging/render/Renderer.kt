@@ -111,8 +111,20 @@ class CpuRenderer(
             is Result.Success -> decoded.value
         }
         return withContext(dispatchers.default) {
-            Result.Success(applyOperations(document, base, onProgress))
+            Result.Success(applyOperations(document, expanded(document, base), onProgress))
         }
+    }
+
+    /**
+     * specs/outpaint.md §4 step 2, ahead of the in-order walk: the canvas the rest of the
+     * operations measure against. `Outpaint` is `operations[0]` by construction
+     * (`EditDocument.withOutpaint`), and only that one is honoured — an `Outpaint` anywhere else
+     * is the in-list design §3 rejects, and applying it there would move every op before it.
+     */
+    private suspend fun expanded(document: EditDocument, base: Bitmap): Bitmap {
+        val outpaint = document.outpaint() ?: return base
+        val result = decodeResult(outpaint.resultRef)
+        return if (result == null) base else OutpaintOp.apply(base, result, outpaint.margins)
     }
 
     /**
@@ -133,7 +145,10 @@ class CpuRenderer(
         onProgress: (Float) -> Unit,
     ): Bitmap {
         val crop = document.crop()
-        val pixelOps = document.operations.filter { it !is Operation.Mask && it !is Operation.Crop }
+        // `Outpaint` produced the canvas this walk starts from, so it is not one of the steps.
+        val pixelOps = document.operations.filter {
+            it !is Operation.Mask && it !is Operation.Crop && it !is Operation.Outpaint
+        }
         val total = pixelOps.size + if (crop == null) 0 else 1
         var output = base
         var completed = 0
@@ -160,23 +175,29 @@ class CpuRenderer(
         operation: Operation,
     ): Bitmap = when (operation) {
         is Operation.Adjust -> applyAdjust(document, input, operation)
-        is Operation.GenerativeErase -> applyErase(document, input, operation)
+        is Operation.GenerativeErase ->
+            blendResult(document, input, operation.maskId, operation.resultRef)
+        is Operation.GenerativeFill ->
+            blendResult(document, input, operation.maskId, operation.resultRef)
         is Operation.CutOut -> applyCutOut(document, input, operation)
-        // A mask is a reference, and the crop ran last in applyOperations.
-        is Operation.Mask, is Operation.Crop -> input
+        // A mask is a reference, the crop runs last in applyOperations, and the outpaint already
+        // ran: it is what `input` is.
+        is Operation.Mask, is Operation.Crop, is Operation.Outpaint -> input
     }
 
     /**
-     * specs/generative_erase.md §6: the result replaces pixels inside the mask only, so
-     * everything after it still composes.
+     * specs/generative_erase.md §6 and specs/generative_fill.md §5: the stored result replaces
+     * pixels inside the mask only, so everything after it still composes. 지우기 and 채우기 differ
+     * in which file they load and in nothing else, so they share this.
      */
-    private suspend fun applyErase(
+    private suspend fun blendResult(
         document: EditDocument,
         input: Bitmap,
-        erase: Operation.GenerativeErase,
+        maskId: String,
+        resultRef: ImageRef,
     ): Bitmap {
-        val mask = resolveMask(document, erase.maskId)
-        val result = decodeResult(erase.resultRef)
+        val mask = resolveMask(document, maskId)
+        val result = decodeResult(resultRef)
         return if (mask == null || result == null) {
             input
         } else {

@@ -8,6 +8,319 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T68
+
+- **Option 1: `portrait_3_4` and `landscape_4_3` were added to the closed set.** The human chose it
+  over pointing Instagram at the existing `portrait_4_5`. So `CropRatio` is six values, and
+  `AspectPreset` is seven presets including 자유.
+
+- **The new presets were slotted beside their neighbours, not appended.** `ThreeFour` before
+  `FourFive`, `FourThree` before `SixteenNine`, so the chip row reads 자유 · 1:1 · 3:4 · 4:5 ·
+  9:16 · 4:3 · 16:9 — portraits together, landscapes together — and no existing chip moves
+  relative to another. `AspectPreset` is UI state and is never serialized (the document stores
+  `Crop(rect, angleDeg)`), so the ordinals are free to move.
+
+- **The chip row scrolls now.** Seven chips are not guaranteed to fit a phone's width, and
+  `CropSheet` laid them out in a plain `Row` that would have clipped the last one silently.
+  `horizontalScroll` is the answer DESIGN.md §4 already gives the tool strip. On a Pixel 6a they
+  happen to fit exactly; on a narrower device or at a larger font scale they will not.
+
+- **A bare platform name means the feed, and the feed is `portrait_3_4`.** `landscape_4_3` is for a
+  request that asks for a wide one. The instruction says square is only for a request that
+  actually says so, because the device run had the model answering square for "인스타그램 용으로".
+  T58's `"인스타 스토리에 올리게 잘라줘" -> story_9_16` example is untouched: a story is still 9:16,
+  and only the bare-feed case moved.
+
+- **`CropRatioPresetTest` asserts the mapping's *numbers*, not just that it compiles.** The `when`
+  in `CropRatio.preset` is exhaustive, so a new ratio cannot be forgotten — but it can be pointed
+  at the wrong preset, and nothing else would have caught 3:4 mapped to 4:5. It also asserts the
+  map covers `CropRatio.entries`, so a seventh ratio fails here rather than on a device.
+
+- **specs/vibe_edit.md §4.1, ai_provider.md §3 and crop.md are now stale** on the size of the
+  closed set and the chip list. They are frozen for the loop; this entry is the record until a
+  human amends them.
+
+### T69
+
+- **The transition is a collector on `_uiState`, not a call at the end of three methods.** 자르기
+  can be opened from `onToolClick` and from `DirectHost.onFinished`, and closed from `cancelSheet`
+  and `applySheet`; `applySheet` also pushes the crop, so a call placed after the push would race
+  the document collector that is already re-rendering. Collecting
+  `selectedTool == Tool.Crop`, `distinctUntilChanged`, fires exactly on the transition from every
+  path and costs `EditorViewModel` no function — it is still at detekt's ceiling.
+
+- **Only the `Crop` is dropped, not every operation.** crop.md says the tool "refits to the
+  un-cropped source", and the literal reading — render `document.copy(operations = emptyList())` —
+  would frame a photo the user is not looking at, with the outpaint, the erase and every adjust
+  gone. What the sentence is about is the *frame*, so the frame is what comes off.
+
+- **`CropState.from` was not touched.** The rect was always correct; the reported symptom ("원본
+  이미지가 1:1로 변하고 거기에 크롭 직사각형이 뜨네") is the image underneath it, and a fix that
+  moved the rect would have been fixing the wrong half.
+
+### T67
+
+- **The rectangle replaces the silhouette on the wire *and* in the document.** Sending a rectangle
+  but compositing through the silhouette would have been the smaller change and a useless one: the
+  renderer's `lerp(in, result, maskAlpha)` restores everything outside the stored mask from the
+  source, so every pixel of the new object that fell outside the old object's outline would be
+  thrown away. T50 made this argument for the erase margin; a bounding box makes it louder.
+
+- **The margin is 30% of the box on each side, so the box grows to 1.6×.** The report said "마진을
+  30퍼 정도", and per-side is the reading that gives the model somewhere to put the new thing's
+  shadow, contact point and perspective. It clamps at the bitmap, so a selection near an edge grows
+  only inward. One named constant, `FillMask.MARGIN_FRACTION`.
+
+- **`FillCommit` was written rather than extending `EraseCommit`.** They are the same five lines
+  apart from which op they append and that a fill carries a prompt. Merging them would need a
+  parameter saying which of the two it is, which is the shape ai_provider.md §3 argues against for
+  the providers themselves — and the erase's mask is a dilation while the fill's is a box, so the
+  two would still diverge above the seam.
+
+- **`MaskOps.isSet` became public.** It was already the codebase's definition of "this pixel is
+  selected", privately; `FillMask` needs to walk a mask to find its bounds, and a fourth local
+  copy of `(pixel ushr 24) != 0` is how those drift.
+
+- **`GenerativeFillToolTest`'s fake mask became a diagonal blob.** It resolved every mask to the
+  full frame, which made "the model was shown a rectangle" unfalsifiable — the full frame *is* a
+  rectangle. The blob has an edge no rectangle has.
+
+### T65
+
+- **The pending area is drawn by `OverlayTransform`, not by the overlay.** §6 says the photo
+  shrinks to leave room, which is a change to the size the canvas *fits* and to where the bitmap
+  lands inside it — the two things `OverlayTransform` already decides for 자르기's live rotation
+  (T24). Adding `margins` there means `EditorCanvas` needed no change at all: the checkerboard it
+  already paints behind every photo shows through the new area unaided, which is DESIGN.md §2's
+  existing word for "no pixels here". The overlay is then only the four handles. The alternative —
+  the overlay drawing the area itself — cannot work, because the overlay cannot move the photo.
+
+- **`canvas/CanvasViewport.kt` was edited, outside T65's `touches`.** That is where
+  `OverlayTransform` lives, and the point above is why. `EditorCanvas.kt` itself was not touched.
+  The interior arithmetic has one implementation, `ExpandDrag.interiorOf`, which
+  `OverlayTransform.drawRect` calls — so the handles cannot end up measuring against a different
+  interior than the one on screen. `canvas` already depends on `tools` (`CropOverlaySlot`).
+
+- **`saveOutpaintResult` was added to `ProjectRepository`, outside `touches` too.** The same call
+  T61 made for `saveFillResult`: outpaint.md §3 names `outpaint_<id>.png` and says the file store
+  keeps it alive "exactly as `erase_<id>.png`", so the method has to exist somewhere. Six test
+  fakes gained the one method.
+
+- **No new `EditorViewModel` function.** The class was at detekt's ceiling (20 reports *at* 20, not
+  above it), so 확대 folded into `onRegionToolTapped`, renamed `onGenerativeToolTapped`: the three
+  tools that ask a provider for pixels, sharing the controller-returns-an-intent shape and
+  differing in what they ask the *document* — a selection for 지우기 and 채우기, the absence of one
+  for 확대. An `openSheet` helper that would have removed the resulting duplication was written and
+  then reverted for the same ceiling; it is the obvious cleanup if another function is ever freed.
+
+- **The ratio readout takes the nearest ratio with terms under 20, not the gcd.** Reduced by gcd, a
+  4000×3000 source reads 4:3 and almost anything else reads its own pixel counts back — 2251:1689
+  is not a readout. §6 calls this "a computed number", and the number a person wants is the ratio
+  they were aiming at.
+
+- **The overlay draws handles only — no frame border.** §6 lists what it draws: the checkerboard
+  area and four handles. The crop overlay's 1dp `editInk` border would have read as a second
+  language for the same thing, and the checkerboard already separates the frame from
+  `editBackground`.
+
+- **No `expand_after_mask` check inside `ExpandController`; it takes `canOutpaint` as an
+  argument.** The rule is `EditDocument`'s (T63), and duplicating it in the controller would be a
+  second copy that could disagree with the one `withOutpaint` enforces.
+
+### T64
+
+- **`GeminiOutpaintProvider` does not reuse `GeminiMaskedEdit`.** It would have fit: pad the image,
+  build an ALPHA_8 mask over the border, and the masked path does the rest. But that path scales
+  whatever comes back to the caller's size, and §5's whole point is that the aspect is *checked*
+  rather than assumed — a model that answered at a different ratio shifts the photograph. It would
+  also have routed the padded image through `WhiteFill`, re-painting pixels `WhitePad` had already
+  made white, which is exactly the second white-fill generative_erase.md §4 says not to write.
+  What is shared instead is everything that would otherwise drift: `GeminiImageCodec`, the
+  transport, and the still-white threshold.
+
+- **T51's guard moved out of `GeminiMaskedEdit` into `StillWhite`, which takes a region
+  predicate.** The task says "at the same threshold constant — not a second one"; 지우기 and 채우기
+  ask about a mask, 확대 about a border, so the region is the argument and the number stays in one
+  place. Behaviour is unchanged — same sampling step, same near-white channel, same 0.9.
+
+- **`core:ai` declares its own `Margins`, as ai_provider.md §3 asks.** T63 put one in
+  `core:imaging` too. They are not the same type on purpose: `core:ai` reaches into `core:imaging`
+  for `AdjustKind` and nothing else (§2), the imaging one is a coordinate space a `Crop`
+  re-normalizes against, and this one is a request argument. `feature:editor` converts, exactly as
+  T58 made it convert `CropRatio` to `AspectPreset`.
+
+- **`WhitePad` owns the padded-size arithmetic rather than `Margins`.** ai_provider.md §3 declares
+  `Margins` as four floats and nothing else, and `WhitePad` is the only thing in `core:ai` that
+  needs pixel counts. It rounds each margin on its own and sums — `padLeft + width + padRight`, not
+  `(1 + left + right) * width` — matching `core:imaging`'s own arithmetic so the interior always
+  fits exactly.
+
+- **No empty-margins guard, unlike T60's blank-prompt one.** §8 requires `WhitePad` to return a
+  pixel-identical copy at zero margins, so zero is a supported input rather than a mistake, and
+  T65's 적용 is disabled there anyway. A negative margin *is* refused, with a `require` in
+  `WhitePad` for the reason `WhiteFill` has one: it would silently crop the photograph.
+
+- **The provider returns the answer at the padded size it sent, not at the caller's size.**
+  outpaint.md §3 says `resultRef` is "the whole expanded image, working resolution", and T63's
+  renderer derives its seam ramp from that file's own long edge. Returning the caller's expanded
+  size instead would have upscaled the model's ~1024px answer before it was ever stored, which is
+  the resolution loss §3 rejected flattening to avoid.
+
+### T63
+
+- **The interior-fidelity case is a pixel-exact assertion, not a second golden.** outpaint.md §8
+  and the task both say "a golden proving the interior is the source's pixels". A stored PNG
+  cannot prove that: it only proves the render matches a file recorded from the same render.
+  `OutpaintTest` renders the document without its `Outpaint`, renders it with one, and asserts
+  every sampled interior pixel is equal — which is the claim §3 actually makes. `outpaint_render`
+  is still recorded, for the composite as a whole.
+
+- **The blend width is derived from the stored result's own size, not from a working-resolution
+  constant.** §4 gives `OUTPAINT_BLEND_PX = 8` at working resolution and asks for it to scale at
+  export. The renderer has no way to know what working resolution was, but the stored PNG *is*
+  the expanded canvas at that resolution, so the ratio between this render and that file is
+  exactly the factor. A `WORKING_LONG_EDGE` constant in `core:imaging` would have been a second
+  copy of a number `core:ai` owns.
+
+- **The seam ramp is applied to a copy of the source, by scaling its alpha channel.** The
+  alternative — a `LinearGradient` shader per edge — needs four draws plus four corner cases
+  where two ramps meet, and `min(horizontal, vertical)` gives the corners for free. The copy also
+  needs `setHasAlpha(true)`: `Bitmap.copy` carries the source's opaque flag, and an opaque
+  bitmap's alpha channel is ignored when it is drawn, which would have silently removed the ramp.
+
+- **`Margins` lives in `core/imaging/model` rather than beside `Operation`.** `Operation.kt`
+  already carries every op; `MAX_MARGIN_FRACTION`, the clamp, the expanded-size arithmetic and
+  the crop re-normalization are a coordinate space, and putting them in their own file is what
+  lets §3's arithmetic be tested without a bitmap (`OutpaintGeometryTest`).
+
+- **`withOutpaint` returns the document unchanged when `canOutpaint` is false**, rather than
+  throwing or returning a `Result`. Every other `with*` helper on `EditDocument` returns a
+  document, and T65's tool greys itself on the same flag, so the model-layer guard is a backstop
+  for a path the UI already closed — not an error the caller is expected to handle.
+
+- **A replacing `withOutpaint` keeps the first op's `id`.** The `resultRef` filename is
+  `outpaint_<id>.png`, so a second 확대 overwrites one file rather than leaving the first
+  orphaned in the project folder. The margins re-base from the source either way, which is what
+  §3 asks for.
+
+### T62
+
+- **The instruction's new rule is written in English function names, not in 채우기/지우기.**
+  generative_fill.md §8 phrases it with the Korean verbs, and the model does see Korean requests,
+  so the Korean is kept where it belongs — inside the example request and a parenthetical of
+  request-shaped Korean ("...으로 바꿔줘"). The rule itself names the two functions, which is what
+  the model has to choose between.
+
+- **`PlanRunner` took a `@Suppress("LongParameterList")` at seven parameters.** That is vibe_edit.md
+  §9's own signature — three providers, a dispatcher, and one writer per thing a step can produce.
+  Grouping the writers into a holder would have hidden which step writes what, which is the only
+  reason this class takes lambdas instead of `ProjectRepository`.
+
+- **A plan's fill uses the selection undilated, exactly as the tool does (T61).** The `Fill` row
+  therefore adds one operation where `Erase` adds two, and `activeMaskId` is what the op names —
+  a plan and a tap produce the same document, which is the property T53 exists to check.
+
+### T61
+
+- **`saveFillResult` was added to `ProjectRepository`, outside T61's `touches`.** generative_fill.md
+  §5 names `fill_<id>.png`, and T62 already expects "a `saveFillResult` lambda", so the method has
+  to exist somewhere; T61 is the first task that persists a fill. The alternative — reusing
+  `saveEraseResult` — would have written a fill into `erase_<id>.png` and made the folder lie about
+  what produced each file. Five test fakes gained the one method.
+
+- **The fill's mask is the user's selection, undilated.** T50's margin exists so an erased object
+  leaves no halo; here the same margin would make the thing the user asked for larger than the
+  region they drew. The spec's §2 flow agrees — the mask goes straight from the 선택 tool to
+  `WhiteFill` — and the op names `activeMaskId` rather than storing a second mask, so a fill adds
+  one operation where an erase adds two.
+
+- **`AppError.Unavailable` is read as §6's "the answer came back still white" row.** The still-white
+  guard fails with `Unavailable` (T60, `GeminiMaskedEdit`), which a 429 or a 5xx also produces, so
+  the two are not distinguishable without a new error case that T60 explicitly ruled out. `fill_empty`
+  ("다르게 말해보세요") is the more useful of the two readings and is honest advice for both.
+
+- **`editor_shell_default` was *not* re-recorded.** The task allowed it for the ninth strip item, but
+  the strip is a `LazyRow` that already overflowed a Pixel 6a at eight items, so the ninth is
+  off-screen and the golden did not move. A re-record with no pixel change would have been noise.
+
+- **`onEraseTapped` became `onRegionToolTapped(state, tool)`.** `EditorViewModel` is at detekt's
+  20-function ceiling and `onToolClick` at its complexity ceiling, so 채우기's tap could be neither a
+  new method nor another inline `when`. Merging the two region tools' taps into one function is the
+  shape that fits: they ask the same question of the same selection, and differ only in what a yes
+  means. `EditorAi`'s constructor took a `@Suppress("LongParameterList")` for the same arithmetic —
+  it is a parameter bundle by design, which is what the rule is aimed at avoiding elsewhere.
+
+### T60
+
+- **The five steps became `GeminiMaskedEdit`, shared by 지우기 and 채우기.** The spec asked the
+  fill provider to run generative_erase.md §7 "verbatim", and the only honest way to do that is
+  to run the same code. It matters most for T51's still-white threshold: two copies of that
+  number is exactly how the two erase paths drifted before T50 pulled the margin into one place.
+  `GeminiEraseProvider` is now availability plus one sentence, and so is `GeminiFillProvider`.
+
+- **The instructions moved to `GeminiEditInstructions.kt`, not into the providers.** The spec said
+  each provider would own its constant. In practice both are wire payload for the same model,
+  their tests are about text rather than about a provider, and 확대 will want a third. One file of
+  `internal` constants beside the client keeps them together and keeps `GeminiEraseClient` pure
+  transport. The three erase-instruction tests moved with them into
+  `GeminiEditInstructionsTest`; the 22 client tests kept every assertion and changed only the
+  call, which is what the spec asked for.
+
+- **`geminiAvailability(config)` is a top-level internal function.** Both providers derive
+  availability from the same key by the same probe-free rule; duplicating the `when` in each
+  would invite them to disagree about what "configured" means.
+
+- **A blank prompt is refused in the provider as well as the sheet.** The sheet disables 적용, so
+  no user reaches it — but a plan's `fill_selection` with an empty argument does, and failing
+  before the encode keeps a billed call from being spent on nothing.
+
+- **`FakeFillProvider` colours the region from the prompt's hash, capped at 200 per channel.**
+  Deterministic enough for a golden, different per prompt so a test can tell two fills apart, and
+  never near-white so it cannot trip the still-white guard by accident.
+
+### T59
+
+- **`applyErase` became `blendResult(document, input, maskId, resultRef)`.** 지우기 and 채우기
+  differ only in which file they load, so the renderer got one shared helper and two `when`
+  branches rather than two near-identical functions. The existing `generative_erase_render`
+  golden did not move, which is the evidence the refactor is pixel-identical.
+
+- **A `generativeFill` node with no `prompt` decodes to an empty prompt rather than being
+  dropped.** A missing `maskId` or `resultRef` is still fatal to the op, because those are what
+  the render needs; the prompt is provenance, and losing it should not cost the user pixels.
+
+- **The document version stays 1, with a test that says so.** edit_model.md's "unknown operation
+  types are dropped with a warning" is what makes adding an op backward compatible, so the bump
+  would buy nothing and would invalidate every stored document.
+
+### T58
+
+- **`DirectHost.onFinished` carries the `CropRatio`, not a boolean.** The spec said the ViewModel
+  "sees that the plan's last step was a Crop"; a boolean would have said that, but the tool also
+  has to open with the chip selected, and only the controller knows which ratio ran. One nullable
+  enum says both things, and non-null already means "and every step committed" — a run that
+  stopped early may never have reached the crop, and opening 자르기 then would be a lie.
+
+- **The chip is restored by `withPreset` after the tool opens, not by teaching `CropState.from`
+  to recover it.** `CropState.from` deliberately restores the rect and the angle and leaves the
+  preset `Free` (specs/crop.md: "re-opening the tool shows the existing crop"). Changing that
+  would alter what a *manual* re-open shows and could move `crop_sheet_open`, for a gain this
+  task does not need. Keeping the ratio locked matters here for a specific reason: the model
+  chose 9:16 for a story, and a free drag would quietly lose it.
+
+- **A ratio the photo already is commits no `Crop`, and the tool still opens.** edit_model.md
+  deletes a full-frame crop as a no-op, so `crop_ratio(square)` on a square photo produces no
+  operation. The hand-off still runs, so the user gets the 자르기 tool with the chip selected and
+  can reframe. This surfaced as a failing test that had assumed a square source would crop.
+
+- **`sourceAspect` is a file-level private function, not a `EditorViewModel` member.**
+  `EditorViewModel` sits exactly at detekt's `TooManyFunctions` ceiling of 20, and adding a
+  twenty-first broke `check`. It reads only its argument, so moving it out of the class costs
+  nothing and is honest about why.
+
+- **`CropRatio.wireName` is spelled out rather than derived.** `Portrait4x5.name.lowercase()` is
+  "portrait4x5", not "portrait_4_5", and a name the model reads should look like a ratio.
+
 ### T56 — the spec's `masked` default was wrong, and the wire enum had quietly grown
 
 **`adjust_color_range` defaults `masked` to false; adjust_hsl.md §8 said true.** Writing the decoder

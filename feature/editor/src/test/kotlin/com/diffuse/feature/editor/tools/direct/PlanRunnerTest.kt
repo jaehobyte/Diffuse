@@ -2,8 +2,10 @@ package com.diffuse.feature.editor.tools.direct
 
 import android.graphics.Bitmap
 import app.cash.turbine.test
+import com.diffuse.core.ai.CropRatio
 import com.diffuse.core.ai.EditPlan
 import com.diffuse.core.ai.FakeEraseProvider
+import com.diffuse.core.ai.FakeFillProvider
 import com.diffuse.core.ai.FakeSegmentationProvider
 import com.diffuse.core.ai.PlanStep
 import com.diffuse.core.common.AppError
@@ -14,6 +16,7 @@ import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.core.imaging.model.ImageRef
 import com.diffuse.core.imaging.model.Operation
 import com.diffuse.feature.editor.tools.erase.EraseCommit
+import com.diffuse.feature.editor.tools.fill.FillCommit
 import com.diffuse.feature.editor.tools.select.MaskOps
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -21,6 +24,7 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -37,6 +41,8 @@ class PlanRunnerTest {
     private val eraser = FakeEraseProvider()
     private val savedMasks = mutableListOf<String>()
     private val savedErases = mutableListOf<String>()
+    private val filler = FakeFillProvider()
+    private val savedFills = mutableListOf<String>()
     private var failMaskWrite = false
 
     private val dispatchers = object : DispatcherProvider {
@@ -47,6 +53,7 @@ class PlanRunnerTest {
     private val runner = PlanRunner(
         segmentation = segmentation,
         erase = eraser,
+        fill = filler,
         dispatchers = dispatchers,
         saveMask = { maskId, _ ->
             if (failMaskWrite) {
@@ -56,6 +63,13 @@ class PlanRunnerTest {
                 Result.Success(ImageRef("/p/mask_$maskId.png"))
             }
         },
+        fillCommit = FillCommit(
+            saveMask = { maskId, _ -> Result.Success(ImageRef("/p/mask_$maskId.png")) },
+            saveResult = { fillId, _ ->
+                savedFills += fillId
+                Result.Success(ImageRef("/p/fill_$fillId.png"))
+            },
+        ),
         eraseCommit = EraseCommit(
             saveMask = { maskId, _ -> Result.Success(ImageRef("/p/mask_$maskId.png")) },
             saveResult = { eraseId, _ ->
@@ -136,7 +150,7 @@ class PlanRunnerTest {
             ),
         )
 
-        runner.run(plan, document(), preview(), activeMask = null).test {
+        runner.run(plan, document(), preview(), activeMask = null, sourceAspect = SOURCE_ASPECT).test {
             assertEquals(RunEvent.Started(0), awaitItem())
             val first = awaitItem() as RunEvent.Committed
             assertEquals(1, first.document.operations.size)
@@ -196,6 +210,78 @@ class PlanRunnerTest {
         assertEquals(savedErases, document.generativeErases().map { it.id })
     }
 
+    // ---- T62, specs/generative_fill.md §8 --------------------------------
+
+    @Test
+    fun `a fill with no selection is rejected before the plan is shown`() {
+        assertEquals(
+            PlanStep.Fill("a red umbrella"),
+            runner.validate(EditPlan(listOf(PlanStep.Fill("a red umbrella"))), document()),
+        )
+    }
+
+    @Test
+    fun `an earlier Select satisfies a fill, with no new validation rule`() {
+        val plan = EditPlan(listOf(PlanStep.Select("chair"), PlanStep.Fill("a red umbrella")))
+
+        assertNull(runner.validate(plan, document()))
+    }
+
+    @Test
+    fun `a fill runs against the selection the plan made and stores the prompt`() = runTest {
+        val plan = EditPlan(listOf(PlanStep.Select("chair"), PlanStep.Fill("a red umbrella")))
+
+        val document = lastDocument(plan)
+
+        val fill = document.generativeFills().single()
+        // T67: the fill names its own rectangle, so a plan's fill adds a second `Mask` exactly as
+        // an erase does — and the selection the plan made stays active on top of it.
+        assertNotEquals(document.activeMaskId, fill.maskId)
+        assertEquals(2, document.operations.filterIsInstance<Operation.Mask>().size)
+        assertNotNull(document.mask(fill.maskId))
+        assertEquals("a red umbrella", fill.prompt)
+        assertEquals("a red umbrella", filler.lastPrompt)
+        assertEquals(savedFills, listOf(fill.id))
+        assertEquals(ImageRef("/p/fill_${fill.id}.png"), fill.resultRef)
+    }
+
+    @Test
+    fun `a fill with no Select uses the mask the document already had`() = runTest {
+        val plan = EditPlan(listOf(PlanStep.Fill("a wooden bench")))
+
+        val events = runner.run(
+            plan,
+            documentWithMask(),
+            preview(),
+            activeMask = fullMask(),
+            sourceAspect = SOURCE_ASPECT,
+        ).toList()
+
+        val document = events.filterIsInstance<RunEvent.Committed>().last().document
+        // The document's own mask is what the rectangle was measured from; it stays active.
+        assertEquals("m", document.activeMaskId)
+        assertNotEquals("m", document.generativeFills().single().maskId)
+        assertEquals(1, filler.fillCount)
+    }
+
+    @Test
+    fun `a failing fill stops the run and commits nothing for that step`() = runTest {
+        filler.failNext(AppError.Unavailable)
+        val plan = EditPlan(listOf(PlanStep.Select("chair"), PlanStep.Fill("a red umbrella")))
+
+        val events = runner.run(
+            plan,
+            document(),
+            preview(),
+            activeMask = null,
+            sourceAspect = SOURCE_ASPECT,
+        ).toList()
+
+        assertEquals(1, events.filterIsInstance<RunEvent.Committed>().size)
+        assertEquals(AppError.Unavailable, events.filterIsInstance<RunEvent.Stopped>().single().error)
+        assertEquals(emptyList<String>(), savedFills)
+    }
+
     /** specs/vibe_edit.md §9.2 + T51: the eraser is told what was removed. */
     @Test
     fun `the erase hint is the phrase the Select used`() = runTest {
@@ -210,7 +296,7 @@ class PlanRunnerTest {
     fun `an erase with no Select in the plan has no hint to give`() = runTest {
         val plan = EditPlan(listOf(PlanStep.Erase))
 
-        runner.run(plan, documentWithMask(), preview(), activeMask = fullMask()).toList()
+        runner.run(plan, documentWithMask(), preview(), activeMask = fullMask(), sourceAspect = SOURCE_ASPECT).toList()
 
         assertNull(eraser.lastHint)
     }
@@ -239,7 +325,9 @@ class PlanRunnerTest {
         val plan = EditPlan(listOf(PlanStep.Erase))
         val document = documentWithMask()
 
-        val events = runner.run(plan, document, preview(), activeMask = fullMask()).toList()
+        val events = runner
+            .run(plan, document, preview(), fullMask(), SOURCE_ASPECT)
+            .toList()
 
         val committed = events.filterIsInstance<RunEvent.Committed>().single()
         // T50: the erase stores the margin mask it ran through, and leaves the user's selection
@@ -256,7 +344,7 @@ class PlanRunnerTest {
             listOf(PlanStep.Select("없음"), PlanStep.Adjust(AdjustKind.Saturation, 0.3f, true)),
         )
 
-        val events = runner.run(plan, document(), preview(), activeMask = null).toList()
+        val events = runner.run(plan, document(), preview(), activeMask = null, sourceAspect = SOURCE_ASPECT).toList()
 
         assertEquals(
             listOf(
@@ -278,7 +366,7 @@ class PlanRunnerTest {
         )
         failMaskWrite = true
 
-        val events = runner.run(plan, document(), preview(), activeMask = null).toList()
+        val events = runner.run(plan, document(), preview(), activeMask = null, sourceAspect = SOURCE_ASPECT).toList()
 
         val committed = events.filterIsInstance<RunEvent.Committed>().single()
         assertEquals(0, committed.index)
@@ -297,7 +385,7 @@ class PlanRunnerTest {
         )
         eraser.failNext(AppError.Invalid("blocked:SAFETY"))
 
-        val events = runner.run(plan, document(), preview(), activeMask = null).toList()
+        val events = runner.run(plan, document(), preview(), activeMask = null, sourceAspect = SOURCE_ASPECT).toList()
 
         assertEquals(RunEvent.Stopped(1, AppError.Invalid("blocked:SAFETY")), events.last())
         assertEquals(1, events.filterIsInstance<RunEvent.Committed>().size)
@@ -313,7 +401,7 @@ class PlanRunnerTest {
         )
 
         val events = mutableListOf<RunEvent>()
-        runner.run(plan, document(), preview(), activeMask = null).test {
+        runner.run(plan, document(), preview(), activeMask = null, sourceAspect = SOURCE_ASPECT).test {
             events += awaitItem()
             events += awaitItem()
             events += awaitItem()
@@ -330,7 +418,7 @@ class PlanRunnerTest {
     fun `one session is opened for the whole run and closed when it ends`() = runTest {
         val plan = EditPlan(listOf(PlanStep.Select("나무"), PlanStep.Select("하늘")))
 
-        runner.run(plan, document(), preview(), activeMask = null).toList()
+        runner.run(plan, document(), preview(), activeMask = null, sourceAspect = SOURCE_ASPECT).toList()
 
         assertEquals(1, segmentation.openCount)
         assertEquals(emptyList<Any>(), segmentation.openSessions)
@@ -340,7 +428,55 @@ class PlanRunnerTest {
     fun `a plan with no Select opens no session at all`() = runTest {
         val plan = EditPlan(listOf(PlanStep.Adjust(AdjustKind.Exposure, 0.5f, masked = false)))
 
-        runner.run(plan, document(), preview(), activeMask = null).toList()
+        runner.run(plan, document(), preview(), activeMask = null, sourceAspect = SOURCE_ASPECT).toList()
+
+        assertEquals(0, segmentation.openCount)
+    }
+
+    // ---- §4.1 crop_ratio (T58) -------------------------------------------
+
+    @Test
+    fun `a Crop step needs no selection`() {
+        val step = PlanStep.Crop(CropRatio.Square)
+
+        assertNull(runner.validate(EditPlan(listOf(step)), document()))
+    }
+
+    @Test
+    fun `a Crop step commits a centred rect at the requested ratio`() = runTest {
+        val plan = EditPlan(listOf(PlanStep.Crop(CropRatio.Square)))
+
+        val crop = lastDocument(plan).operations.filterIsInstance<Operation.Crop>().single()
+
+        // A 2:1 source cropped to 1:1 keeps its full height and half its width, centred.
+        assertEquals(0f, crop.angleDeg, 0f)
+        assertEquals(0.25f, crop.rect.left, TOLERANCE)
+        assertEquals(0.75f, crop.rect.right, TOLERANCE)
+        assertEquals(0f, crop.rect.top, TOLERANCE)
+        assertEquals(1f, crop.rect.bottom, TOLERANCE)
+    }
+
+    @Test
+    fun `the crop lands last, after the steps before it`() = runTest {
+        val plan = EditPlan(
+            listOf(
+                PlanStep.Adjust(AdjustKind.Exposure, 0.5f, masked = false),
+                PlanStep.Crop(CropRatio.Story9x16),
+            ),
+        )
+
+        val ops = lastDocument(plan).operations
+
+        assertTrue("the adjust must survive the crop", ops.any { it is Operation.Adjust })
+        assertTrue("the crop is the last op", ops.last() is Operation.Crop)
+    }
+
+    @Test
+    fun `a Crop step opens no segmentation session`() = runTest {
+        val plan = EditPlan(listOf(PlanStep.Crop(CropRatio.Portrait4x5)))
+
+        runner.run(plan, document(), preview(), activeMask = null, sourceAspect = SOURCE_ASPECT)
+            .toList()
 
         assertEquals(0, segmentation.openCount)
     }
@@ -348,7 +484,7 @@ class PlanRunnerTest {
     // ---- fixtures ---------------------------------------------------------
 
     private suspend fun lastDocument(plan: EditPlan): EditDocument =
-        runner.run(plan, document(), preview(), activeMask = null)
+        runner.run(plan, document(), preview(), activeMask = null, sourceAspect = SOURCE_ASPECT)
             .toList()
             .filterIsInstance<RunEvent.Committed>()
             .last()
@@ -388,6 +524,10 @@ class PlanRunnerTest {
         }
 
     private companion object {
+        /** A 2:1 source, so a centred 1:1 crop is an easy number to assert. */
+        const val SOURCE_ASPECT = 2f
+        const val TOLERANCE = 0.001f
+
         const val SIZE = 32
         const val OPAQUE = 255
         const val ALPHA_SHIFT = 24

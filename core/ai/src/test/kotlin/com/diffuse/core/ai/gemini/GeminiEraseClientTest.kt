@@ -55,7 +55,7 @@ class GeminiEraseClientTest {
     fun `it posts to the generateContent path`() = runTest {
         server.enqueue(imageResponse())
 
-        client.erase(JPEG, hint = null)
+        client.edit(JPEG, ERASE_INSTRUCTION)
 
         val recorded = server.takeRequest()
         assertEquals("POST", recorded.method)
@@ -69,7 +69,7 @@ class GeminiEraseClientTest {
     fun `the key travels in the header and never in the URL`() = runTest {
         server.enqueue(imageResponse())
 
-        client.erase(JPEG, hint = null)
+        client.edit(JPEG, ERASE_INSTRUCTION)
 
         val recorded = server.takeRequest()
         assertEquals(API_KEY, recorded.getHeader("x-goog-api-key"))
@@ -82,14 +82,14 @@ class GeminiEraseClientTest {
     fun `the body carries the image, the instruction and the IMAGE modality`() = runTest {
         server.enqueue(imageResponse())
 
-        client.erase(JPEG, hint = null)
+        client.edit(JPEG, ERASE_INSTRUCTION)
 
         val body = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject
         val parts = body["contents"]!!.jsonArray.single().jsonObject["parts"]!!.jsonArray
         val inline = parts[0].jsonObject["inlineData"]!!.jsonObject
         assertEquals("image/jpeg", inline["mimeType"]!!.jsonPrimitive.content)
         assertArrayEquals(JPEG, Base64.decode(inline["data"]!!.jsonPrimitive.content, Base64.DEFAULT))
-        assertEquals(GeminiEraseClient.INSTRUCTION, parts[1].jsonObject["text"]!!.jsonPrimitive.content)
+        assertEquals(ERASE_INSTRUCTION, parts[1].jsonObject["text"]!!.jsonPrimitive.content)
         assertEquals(
             listOf("IMAGE"),
             body["generationConfig"]!!.jsonObject["responseModalities"]!!.jsonArray
@@ -101,7 +101,7 @@ class GeminiEraseClientTest {
     fun `an unused part field is absent rather than null`() = runTest {
         server.enqueue(imageResponse())
 
-        client.erase(JPEG, hint = null)
+        client.edit(JPEG, ERASE_INSTRUCTION)
 
         val body = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject
         val parts = body["contents"]!!.jsonArray.single().jsonObject["parts"]!!.jsonArray
@@ -109,46 +109,13 @@ class GeminiEraseClientTest {
         assertFalse("inlineData" in parts[1].jsonObject)
     }
 
-    @Test
-    fun `a hint appends one sentence, and a blank one appends nothing`() {
-        assertEquals(
-            GeminiEraseClient.INSTRUCTION +
-                " The painted area used to contain a car, which has been removed on purpose: " +
-                "reconstruct what was behind it and do not draw it again.",
-            GeminiEraseClient.instruction("a car"),
-        )
-        assertEquals(GeminiEraseClient.INSTRUCTION, GeminiEraseClient.instruction("  "))
-        assertEquals(GeminiEraseClient.INSTRUCTION, GeminiEraseClient.instruction(null))
-    }
-
     // ---- the response ----------------------------------------------------
-
-    /** T51: the two sentences that close the "it came back white" failure the device showed. */
-    @Test
-    fun `the instruction forbids leaving white and forbids echoing the input`() {
-        assertTrue(
-            GeminiEraseClient.INSTRUCTION.contains("no white or near-white patch may remain"),
-        )
-        assertTrue(
-            GeminiEraseClient.INSTRUCTION
-                .contains("returning the input image unchanged is not an acceptable answer"),
-        )
-        assertTrue(GeminiEraseClient.INSTRUCTION.contains("do not draw any new object"))
-    }
-
-    @Test
-    fun `the hint says the thing was removed, never what to draw`() {
-        val instruction = GeminiEraseClient.instruction("a bus")
-
-        assertTrue(instruction.contains("has been removed on purpose"))
-        assertTrue(instruction.contains("do not draw it again"))
-    }
 
     @Test
     fun `a base64 image part decodes`() = runTest {
         server.enqueue(imageResponse())
 
-        val outcome = client.erase(JPEG, hint = null)
+        val outcome = client.edit(JPEG, ERASE_INSTRUCTION)
 
         assertEquals(GeminiEraseClient.Outcome.Success(RESULT), outcome)
     }
@@ -166,7 +133,7 @@ class GeminiEraseClientTest {
             ),
         )
 
-        val outcome = client.erase(JPEG, hint = null)
+        val outcome = client.edit(JPEG, ERASE_INSTRUCTION)
 
         assertEquals(GeminiEraseClient.Outcome.Success(RESULT), outcome)
     }
@@ -175,7 +142,7 @@ class GeminiEraseClientTest {
     fun `a 200 with no image part is Unsupported`() = runTest {
         server.enqueue(json("""{"candidates":[{"content":{"parts":[{"text":"I cannot."}]}}]}"""))
 
-        assertEquals(failure(AppError.Unsupported), client.erase(JPEG, hint = null))
+        assertEquals(failure(AppError.Unsupported), client.edit(JPEG, ERASE_INSTRUCTION))
     }
 
     @Test
@@ -184,7 +151,7 @@ class GeminiEraseClientTest {
 
         assertEquals(
             failure(AppError.Invalid("blocked:SAFETY")),
-            client.erase(JPEG, hint = null),
+            client.edit(JPEG, ERASE_INSTRUCTION),
         )
     }
 
@@ -194,7 +161,7 @@ class GeminiEraseClientTest {
 
         assertEquals(
             failure(AppError.Invalid("blocked:IMAGE_SAFETY")),
-            client.erase(JPEG, hint = null),
+            client.edit(JPEG, ERASE_INSTRUCTION),
         )
     }
 
@@ -210,7 +177,7 @@ class GeminiEraseClientTest {
             ),
         )
 
-        assertEquals(GeminiEraseClient.Outcome.Success(RESULT), client.erase(JPEG, hint = null))
+        assertEquals(GeminiEraseClient.Outcome.Success(RESULT), client.edit(JPEG, ERASE_INSTRUCTION))
     }
 
     // ---- §6, row by row --------------------------------------------------
@@ -219,14 +186,14 @@ class GeminiEraseClientTest {
     fun `400 INVALID_ARGUMENT is Invalid carrying the message`() = runTest {
         server.enqueue(error(400, "INVALID_ARGUMENT", "bad image"))
 
-        assertEquals(failure(AppError.Invalid("bad image")), client.erase(JPEG, hint = null))
+        assertEquals(failure(AppError.Invalid("bad image")), client.edit(JPEG, ERASE_INSTRUCTION))
     }
 
     @Test
     fun `400 FAILED_PRECONDITION is Unavailable`() = runTest {
         server.enqueue(error(400, "FAILED_PRECONDITION", "billing not enabled"))
 
-        assertEquals(failure(AppError.Unavailable), client.erase(JPEG, hint = null))
+        assertEquals(failure(AppError.Unavailable), client.edit(JPEG, ERASE_INSTRUCTION))
     }
 
     @Test
@@ -234,29 +201,29 @@ class GeminiEraseClientTest {
         server.enqueue(error(401, "UNAUTHENTICATED", "no key"))
         server.enqueue(error(403, "PERMISSION_DENIED", "denied"))
 
-        assertEquals(failure(AppError.Unauthorized), client.erase(JPEG, hint = null))
-        assertEquals(failure(AppError.Unauthorized), client.erase(JPEG, hint = null))
+        assertEquals(failure(AppError.Unauthorized), client.edit(JPEG, ERASE_INSTRUCTION))
+        assertEquals(failure(AppError.Unauthorized), client.edit(JPEG, ERASE_INSTRUCTION))
     }
 
     @Test
     fun `404 is Unsupported`() = runTest {
         server.enqueue(error(404, "NOT_FOUND", "model retired"))
 
-        assertEquals(failure(AppError.Unsupported), client.erase(JPEG, hint = null))
+        assertEquals(failure(AppError.Unsupported), client.edit(JPEG, ERASE_INSTRUCTION))
     }
 
     @Test
     fun `413 is TooLarge`() = runTest {
         server.enqueue(error(413, "", "too big"))
 
-        assertEquals(failure(AppError.TooLarge), client.erase(JPEG, hint = null))
+        assertEquals(failure(AppError.TooLarge), client.edit(JPEG, ERASE_INSTRUCTION))
     }
 
     @Test
     fun `429 is Unavailable rather than a retry`() = runTest {
         server.enqueue(error(429, "RESOURCE_EXHAUSTED", "quota"))
 
-        assertEquals(failure(AppError.Unavailable), client.erase(JPEG, hint = null))
+        assertEquals(failure(AppError.Unavailable), client.edit(JPEG, ERASE_INSTRUCTION))
     }
 
     @Test
@@ -264,7 +231,7 @@ class GeminiEraseClientTest {
         listOf(500 to "INTERNAL", 503 to "UNAVAILABLE", 504 to "DEADLINE_EXCEEDED")
             .forEach { (code, status) ->
                 server.enqueue(error(code, status, status))
-                assertEquals(failure(AppError.Unavailable), client.erase(JPEG, hint = null))
+                assertEquals(failure(AppError.Unavailable), client.edit(JPEG, ERASE_INSTRUCTION))
             }
     }
 
@@ -272,7 +239,7 @@ class GeminiEraseClientTest {
     fun `an unmapped status is Io`() = runTest {
         server.enqueue(error(418, "TEAPOT", "short and stout"))
 
-        val outcome = client.erase(JPEG, hint = null)
+        val outcome = client.edit(JPEG, ERASE_INSTRUCTION)
 
         assertTrue((outcome as GeminiEraseClient.Outcome.Failure).error is AppError.Io)
     }
@@ -281,7 +248,7 @@ class GeminiEraseClientTest {
     fun `a transport failure is Io`() = runTest {
         server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START))
 
-        val outcome = client.erase(JPEG, hint = null)
+        val outcome = client.edit(JPEG, ERASE_INSTRUCTION)
 
         assertTrue((outcome as GeminiEraseClient.Outcome.Failure).error is AppError.Io)
     }
@@ -290,7 +257,7 @@ class GeminiEraseClientTest {
     fun `an undecodable body is Io`() = runTest {
         server.enqueue(json("not json at all"))
 
-        val outcome = client.erase(JPEG, hint = null)
+        val outcome = client.edit(JPEG, ERASE_INSTRUCTION)
 
         assertTrue((outcome as GeminiEraseClient.Outcome.Failure).error is AppError.Io)
     }
@@ -299,7 +266,7 @@ class GeminiEraseClientTest {
     fun `a blank key never reaches the wire`() = runTest {
         config = GeminiConfig("", server.url("/").toString().trimEnd('/'))
 
-        assertEquals(failure(AppError.Invalid("no api key")), client.erase(JPEG, hint = null))
+        assertEquals(failure(AppError.Invalid("no api key")), client.edit(JPEG, ERASE_INSTRUCTION))
         assertEquals(0, server.requestCount)
     }
 
@@ -309,7 +276,7 @@ class GeminiEraseClientTest {
     fun `cancelling mid-flight closes the call`() = runTest {
         server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
 
-        val job = async(Dispatchers.IO) { client.erase(JPEG, hint = null) }
+        val job = async(Dispatchers.IO) { client.edit(JPEG, ERASE_INSTRUCTION) }
         server.takeRequest()
         job.cancel()
 

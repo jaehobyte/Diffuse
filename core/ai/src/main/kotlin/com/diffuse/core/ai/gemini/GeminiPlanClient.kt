@@ -117,9 +117,11 @@ internal class GeminiPlanClient(
                 .flatMap(::steps)
             // A plan that is accepted logs nothing otherwise, so "the tool only selected the
             // thing" cannot be told apart from "the run stopped at step 0" after the fact. The
-            // failure T52 fought is invisible without this line.
-            logger?.debug(TAG, "plan (${steps.size}): ${steps.joinToString(" -> ")}")
-            Result.Success(EditPlan(steps))
+            // failure T52 fought is invisible without this line. It logs the plan **after** §5's
+            // reordering, because that is the order the run will actually take.
+            val plan = cropLast(steps)
+            logger?.debug(TAG, "plan (${plan.size}): ${plan.joinToString(" -> ")}")
+            Result.Success(EditPlan(plan))
         }
     }
 
@@ -138,10 +140,29 @@ internal class GeminiPlanClient(
             FN_ADJUST_COLOR_RANGE -> colorRange(call.args)
             FN_ERASE_SELECTION -> listOf(PlanStep.Erase)
             FN_CUT_OUT_SELECTION -> listOf(PlanStep.CutOut)
+            FN_FILL_SELECTION -> listOfNotNull(
+                call.args.string(ARG_PROMPT)
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let(PlanStep::Fill),
+            )
+            FN_CROP_RATIO -> listOfNotNull(
+                call.args.string(ARG_RATIO)?.let(::cropRatioOf)?.let(PlanStep::Crop),
+            )
             else -> emptyList()
         }
         if (steps.isEmpty()) logger?.warn(TAG, "dropped function call '${call.name}' ${call.args}")
         return steps
+    }
+
+    /**
+     * specs/vibe_edit.md §5, §4.1: however many crops the model emitted and wherever it put them,
+     * keep the **last** and move it to the **end**. Two crops in one plan is the model restating
+     * itself rather than asking to crop twice, and `Operation.Crop` is at-most-one anyway
+     * (edit_model.md). No other step is reordered — the model's order is the plan everywhere else.
+     */
+    private fun cropLast(steps: List<PlanStep>): List<PlanStep> {
+        val crop = steps.lastOrNull { it is PlanStep.Crop } ?: return steps
+        return steps.filterNot { it is PlanStep.Crop } + crop
     }
 
     private fun adjust(args: JsonObject): PlanStep.Adjust? {

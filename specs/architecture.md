@@ -25,7 +25,9 @@ When two attributes conflict, the higher one wins. Example: a GPU renderer would
 - OkHttp + kotlinx.serialization for the two v2 HTTP clients (`core:ai`). No Retrofit, no Ktor — five
   endpoints do not earn a framework, and okhttp already arrives transitively through Coil.
 - Roborazzi (screenshot), JUnit5, Turbine (Flow tests), Macrobenchmark (render budget).
-- minSdk 26, targetSdk latest stable. Portrait only in v1.
+- minSdk 26, targetSdk latest stable. Portrait only in v1. **specs/gpu_render.md §1 asks for
+  minSdk 33** (AGSL arrives at API 33); that bump is a human decision on a frozen file, and this
+  line plus imaging.md's HEIF caveat are what it has to correct.
 
 Anything not in `libs.versions.toml` is not available to the loop.
 
@@ -107,7 +109,7 @@ State is a single immutable data class. Side effects (snackbar, navigation) go t
 | AI provider | new `core:ai` module depended on by `feature:editor` (v2: shipped) | v1 must not hardcode the tool list length or assume all ops are pure functions of the source |
 | Mask brush | `Operation.Mask` + canvas one-finger mode toggle | v1 canvas keeps a `gestureMode` field even though only `Pan` exists |
 | AI result bitmaps | `Operation.GenerativeErase(maskId, resultRef)` — v2 shipped this as a plain `ImageRef`; `ImageRef` did not need to become sealed | v1 `ImageRef` stays a value class; the renderer resolves it through one `resolve(ref)` function |
-| GPU render | replace `Ops.kt` internals with AGSL; interface unchanged | v1 op math lives only in `Ops.kt` |
+| GPU render | replace `Ops.kt` internals with AGSL; interface unchanged | v1 op math lives only in `Ops.kt` — now specified as specs/gpu_render.md (T66) |
 | Layers | `EditDocument.layers: List<Layer>` | v1 code accesses `operations` only via `EditDocument` accessors, never by destructuring |
 | Tablet layout | `WindowSizeClass` switch in `EditorScreen` | v1 sheet/panel content is a separate composable from its container |
 
@@ -165,5 +167,6 @@ The last three were added in T25 for the HTTP clients. `detail` is for logs, nev
 | ~~010~~ | ~~Generative editing through a sam3-server proxy, never a direct Gemini call~~ | **Retired by ADR-011.** The endpoint was never implemented, and the proxy did not actually remove the key — it only moved it |
 | 012 | One planning call decides a whole workflow; the app executes it against the tools it already has | vibe_edit.md. The alternative was a multi-turn loop feeding each step's result back to the model, which buys self-correction for one billed round trip per step, a much wider failure surface, and a progress overlay that cannot say how many steps remain. A single shot plus a preview the user approves plus undo covers the same ground. The planner returns only function calls — no pixels, no new `Operation`, no new `AppError` |
 | 011 | The device calls `gemini-2.5-flash-image` directly; the key is entered at runtime and never shipped | ADR-010's real goal was "no credential in a published APK", and this achieves it more completely: there is no build-time key at all, so decompiling the APK yields nothing. It also keeps `~/sam3-server` doing one job. Costs: the key sits in `SharedPreferences` (the exposure the SAM 3 token already had), and each user brings their own quota. See generative_erase.md §2 |
+| 013 | Outpainting extends the source: `Outpaint` is always `operations[0]`, at most one, and the renderer draws the model's answer under the full-resolution source | outpaint.md §3. It is the only op that makes the canvas bigger, so the coordinate space had to be decided rather than discovered. Flattening the result into a new `source` has no coordinate problem at all but caps a 12MP export at the model's ~1MP output for the **whole** frame; an ordinary in-list op breaks `Crop`'s normalization, every stored mask's size and the export maths at once. The cost of this choice is one guard: 확대 is refused while a mask-bearing op exists |
 
 New ADRs go in `docs/decisions/NNN-title.md` and get a row here.

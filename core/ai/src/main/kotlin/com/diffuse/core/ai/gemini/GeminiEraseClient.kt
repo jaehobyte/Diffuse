@@ -55,10 +55,14 @@ internal class GeminiEraseClient(
         .build()
 
     /**
-     * @param jpeg the whitened image, already downscaled and compressed by the caller.
-     * @param hint an optional phrase naming what used to be under the white region.
+     * One request shape, one model. What to ask for comes from the caller
+     * (specs/generative_fill.md §3), so 지우기, 채우기 and 확대 share this transport and differ
+     * only in their instruction.
+     *
+     * @param jpeg the image, already downscaled and compressed by the caller.
+     * @param instruction the English sentence the provider sends with it.
      */
-    suspend fun erase(jpeg: ByteArray, hint: String?): Outcome = withContext(dispatchers.io) {
+    suspend fun edit(jpeg: ByteArray, instruction: String): Outcome = withContext(dispatchers.io) {
         val config = configSource.current()
         if (!config.isConfigured) {
             return@withContext Outcome.Failure(AppError.Invalid("no api key"))
@@ -71,7 +75,7 @@ internal class GeminiEraseClient(
                     role = "user",
                     parts = listOf(
                         Part(inlineData = InlineData(JPEG_MEDIA_TYPE, base64(jpeg))),
-                        Part(text = instruction(hint)),
+                        Part(text = instruction),
                     ),
                 ),
             ),
@@ -150,35 +154,6 @@ internal class GeminiEraseClient(
 
         const val API_KEY_HEADER = GEMINI_API_KEY_HEADER
         const val PATH = "/v1beta/models/gemini-2.5-flash-image:generateContent"
-
-        /**
-         * §5, verbatim. Wire payload, not user-facing copy, so DESIGN.md §9's "Korean, in
-         * strings.xml" does not apply: English is where the model's instruction following is
-         * most reliable.
-         */
-        const val INSTRUCTION =
-            "You are editing a photograph. A solid pure-white patch has been painted over the " +
-                "area to remove. Fill that entire patch with photorealistic content that " +
-                "continues the scene behind it, matching the surrounding lighting, texture, " +
-                "perspective, focus, grain and noise, so the result looks like one unedited " +
-                "photograph that never contained the thing that was there. Requirements: no " +
-                "white or near-white patch may remain where the painted area was; returning the " +
-                "input image unchanged is not an acceptable answer; do not draw any new object, " +
-                "person, text or watermark; do not alter anything outside the painted area; do " +
-                "not add a border, frame or caption. Return only the edited image."
-
-        /**
-         * T51: the hint says what was **removed**, not what to draw. It used to read "The white
-         * region previously contained: <hint>." beside "Do not introduce any new object", which
-         * a model can read as an instruction to paint the thing back in.
-         */
-        fun instruction(hint: String?): String =
-            if (hint.isNullOrBlank()) {
-                INSTRUCTION
-            } else {
-                "$INSTRUCTION The painted area used to contain $hint, which has been removed on " +
-                    "purpose: reconstruct what was behind it and do not draw it again."
-            }
 
         private const val TAG = "GeminiEraseClient"
         private const val JPEG_MEDIA_TYPE = "image/jpeg"
