@@ -2,16 +2,24 @@
 
 ## Current
 
-**T39–T43 done — Phase 8 is complete and `scripts/check.sh` is green offline.**
+**Phase 8 is complete; Phase 9 (`지시` tool) is specified and open.**
 
-The eraser now calls `gemini-2.5-flash-image` from the device (ADR-011). The proxy transport is
-gone: `Sam3EraseClient.kt`, `Sam3EraseProvider.kt`, `Sam3EraseClientTest.kt` and `MaskPng.kt` were
-deleted, and nothing else was. Everything T38 built — `Operation.GenerativeErase`, the renderer
-blend, `erase_<id>.png` persistence, `EraseController`, `FakeEraseProvider` and the
-`generative_erase_render` golden — survived the swap without an edit.
+The eraser calls `gemini-2.5-flash-image` from the device (ADR-011) and the proxy transport is gone.
+`work/tasks.md` now holds T44–T48: one planning call to `gemini-2.5-flash` with the four editing
+functions declared, a preview of the steps it returns, and a runner that executes them against the
+providers the manual tools already use. specs/vibe_edit.md is the whole feature; ADR-012 records why
+it is one shot and not a multi-turn loop.
 
-`work/tasks.md` has no open tasks. Nothing in this line can be verified further on this machine:
-the two things left are a device run and a Gemini key, both under "Open issues" below.
+**Mask-scoped local editing needs no work** — T29–T33 shipped it (selection_tool.md §8.1), and
+Phase 9 consumes it rather than rebuilding it.
+
+What a human still owes, in order:
+
+1. Paste a Gemini API key into the 서버 설정 sheet and point `sam3.baseUrl` / `sam3.token` at a
+   running service. Nothing in v2 or v3 has run against a real model from the app.
+2. Try the tools on a device. `check` is green offline with the fakes, which is exactly why this
+   is still open.
+3. The APK is over the 15MB budget; see "Open issues for a human".
 
 ## Done
 

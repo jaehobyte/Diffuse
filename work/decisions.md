@@ -6,18 +6,6 @@ Every entry records a choice that the specs did not make for us, or one where th
 spec disagreed and the code won. Read the entry for a task before changing that task's code:
 most of these are the second attempt, not the first.
 
-## Decisions below, and the full text is in git history._
-
-## Next
-
-Nothing in `work/tasks.md` is left. What a human still owes:
-
-1. `POST /v1/edit/erase` in `~/sam3-server` (the last prerequisite; T37/T38 are written against
-   the contract and tested with MockWebServer).
-2. Point `sam3.baseUrl` / `sam3.token` at a running service and try the tools on a device — none
-   of this has been exercised against the real model, only against the fakes.
-3. The APK is still over the 15MB budget; see "Open issues for a human".
-
 ## Decisions
 
 ### T43 — `EraseTap` is returned, not acted on

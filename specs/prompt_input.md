@@ -1,16 +1,25 @@
 # specs/prompt_input.md — Prompt bar and voice input
 
-Owner tasks: T34 (`PromptBar`), T35 (voice), T36 (prompt → mask)
+Owner tasks: T34 (`PromptBar`), T35 (voice), T36 (prompt → mask), T48 (the 지시 tool)
 Modules: `core:ui/components` (the composable), `core/ai/speech` (the device service)
 Depends on: DESIGN.md §4 (prompt bar row, added in T25), selection_tool.md, segmentation.md
 
 ## 1. Purpose
-One text field that carries a short natural-language phrase to whichever tool is open. In v2 the
-only consumer is the selection tool's `byText`. It is specified as a reusable component because the
-generative tools (T38, D10) take the same input, not because reuse was speculated at.
+One text field that carries natural language to whichever tool is open. It has two consumers, and
+they want different kinds of sentence:
 
-The phrase is a **short noun phrase**, not a sentence — `"신발"`, `"노란 버스"`. This matters:
-SAM 3's text endpoint is concept segmentation, and a sentence degrades it. The placeholder says so.
+| Host | What the user types | Where it goes |
+|---|---|---|
+| 선택 tool (T36) | a **short noun phrase** — `"신발"`, `"노란 버스"` | `byText`, straight to SAM 3 |
+| 지시 tool (T48) | a **request** — `"나무를 좀 더 푸르게 해줘"` | `EditPlanProvider.plan` (vibe_edit.md) |
+
+The noun-phrase rule is not style advice: SAM 3's text endpoint is concept segmentation and a
+sentence degrades it. It binds the 선택 tool, whose placeholder says so. The 지시 tool takes a whole
+request instead and has its own placeholder (vibe_edit.md §11) — there the *model* writes the noun
+phrase, and its system instruction carries the same rule.
+
+The component itself is unchanged by the second host: `PromptBar` takes a placeholder and a submit
+callback and knows nothing about either destination.
 
 ## 2. `PromptBar` (T34)
 ```kotlin
@@ -21,6 +30,7 @@ SAM 3's text endpoint is concept segmentation, and a sentence degrades it. The p
     onMicClick: (() -> Unit)?,     // null hides the mic entirely
     listening: Boolean,
     enabled: Boolean,
+    placeholder: String = stringResource(R.string.prompt_placeholder),   // T48
     modifier: Modifier = Modifier,
 )
 ```
@@ -46,8 +56,14 @@ Behavior:
 - `listening = true` tints the mic `accent` — the transient exception in DESIGN.md §1. **A fill
   change only**: no glow, no pulse, no animation (§7 forbids glow). While listening, the send icon is
   replaced by a stop icon in the same slot.
-- Every string is Korean and lives in `strings.xml`: placeholder `"무엇을 선택할까요? 예: 사람, 하늘"`,
-  and content descriptions for the mic, stop, and send icons.
+- Every string is Korean and lives in `strings.xml`: `prompt_placeholder`
+  `"무엇을 선택할까요? 예: 사람, 하늘"` in `core:ui`, and content descriptions for the mic, stop, and
+  send icons.
+- `placeholder` was a hardcoded `stringResource` until T48, when the 지시 tool needed a different
+  one. It became a parameter with the old value as its default, so the 선택 tool and all three
+  goldens are unaffected; `VoicePromptBar` forwards it. A second host does not justify a second
+  component — the mic, the permission dance and the IME behaviour are identical, and only the hint
+  text differs.
 
 Goldens: `prompt_bar_empty`, `prompt_bar_filled`, `prompt_bar_listening`.
 
