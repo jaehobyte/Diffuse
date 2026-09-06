@@ -20,6 +20,21 @@ Nothing in `work/tasks.md` is left. What a human still owes:
 
 ## Decisions
 
+### T30/T41 — the third device run: it works
+
+Verified on an SM-S948N against the real model, over the public endpoint: a tap on the dog's coat
+segmented the coat, and the phrase `"dog"` segmented the whole animal. Server log confirms
+`POST /v1/images 201` then `segment/points 200` and `segment/text 200`.
+
+One more defect, found only because the run got that far:
+
+- **A rejected token had no way to be corrected.** `/healthz` needs no auth, so a bad token sits
+  behind a perfectly healthy server: `everReady` was true, the T40 rule called it a transient
+  blip and showed a snackbar. `Unauthorized` is a configuration problem by definition, so it
+  joins `Invalid` in always opening the settings sheet. The rule is now one question — *can the
+  user fix this by editing the settings?* — rather than three overlapping conditions.
+- `select_unavailable_unauthorized` became dead when that branch went, and was deleted.
+
 ### T30/T40 — the second device run: an unreachable default with no way out
 
 The tool was greyed and there was no way to change the address. Three things had to line up:

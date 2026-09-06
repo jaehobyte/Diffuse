@@ -16,5 +16,14 @@
         <domain includeSubdomains="false">127.0.0.1</domain>
         <domain includeSubdomains="false">localhost</domain>
     </domain-config>
+    <!--
+      TEST ONLY, and the one entry here that is not loopback. The SAM 3 service has no DNS
+      record yet, so a phone reaches it as plain HTTP on a world-open port: the bearer token
+      and every uploaded photograph cross the internet in the clear. Delete this block the
+      moment sam.auto-grapher.com resolves — the app needs no change to speak HTTPS.
+    -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">44.233.156.159</domain>
+    </domain-config>
     <base-config cleartextTrafficPermitted="false" />
 </network-security-config>

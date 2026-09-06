@@ -141,6 +141,27 @@ class SelectionToolTest {
         assertNotNull(viewModel.uiState.value.selection.message)
     }
 
+    /**
+     * A rejected token is a configuration problem however healthy the server is — and `/healthz`
+     * needs no auth, so the backend answers, `everReady` is true, and the "it was working a
+     * moment ago" branch would offer a snackbar and no way to fix it. Seen on the device: the
+     * upload came back `401 unauthorized` and the tool had nothing to offer.
+     */
+    @Test
+    fun `a rejected token offers the settings sheet even though the server is up`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onToolClick(Tool.Select)
+        viewModel.cancelSheet()
+
+        provider.setAvailability(Availability.Unavailable(AppError.Unauthorized))
+        viewModel.onToolClick(Tool.Select)
+
+        assertTrue(
+            "no way to correct the token",
+            viewModel.uiState.value.selection.showSettings,
+        )
+    }
+
     // ---- sessions --------------------------------------------------------
 
     @Test

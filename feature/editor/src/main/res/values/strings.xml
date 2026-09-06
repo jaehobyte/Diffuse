@@ -37,7 +37,6 @@
     <string name="select_hint">사진을 탭해 영역을 선택하세요. 길게 누르면 제외돼요.</string>
     <string name="select_unavailable_not_configured">서버 주소를 먼저 설정해주세요</string>
     <string name="select_unavailable_offline">서버에 연결할 수 없어요</string>
-    <string name="select_unavailable_unauthorized">서버 인증에 실패했어요</string>
     <string name="select_failed">영역을 선택하지 못했어요</string>
     <string name="select_cancel_work">취소</string>
 

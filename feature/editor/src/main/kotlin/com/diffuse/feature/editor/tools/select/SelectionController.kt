@@ -71,26 +71,25 @@ class SelectionController(
     }
 
     /**
-     * A wrong address and a server that is merely down are the same `Unavailable` to us, and the
-     * difference that matters is whether this backend has *ever* answered:
+     * Only one question matters: can the user fix this by editing the settings?
      *
-     * - never → the settings are probably wrong, and the sheet is the only thing that helps.
-     *   A default that does not resolve — the emulator's `10.0.2.2` on a real phone — otherwise
-     *   greys the tool forever with no way in.
-     * - once → a rate limit, a dropped connection or a restart. Say so, re-probe, and do not
-     *   throw a settings sheet at someone whose settings are fine.
+     * - `Invalid` (no address) and `Unauthorized` (the token was rejected) always can be —
+     *   `/healthz` needs no auth, so a bad token sits behind a perfectly healthy server.
+     * - Anything else, from a backend that has never once answered, is most likely a wrong
+     *   address. A default that does not resolve — the emulator's `10.0.2.2` on a real phone —
+     *   would otherwise grey the tool forever with no way in.
+     * - Anything else, from a backend that has answered before, is a rate limit, a dropped
+     *   connection or a restart. Say so and re-probe; do not throw a sheet at someone whose
+     *   settings are fine.
      */
     private fun explain(reason: AppError?) {
-        if (reason is AppError.Invalid || !everReady) {
+        val fixableInSettings =
+            reason is AppError.Invalid || reason is AppError.Unauthorized || !everReady
+        if (fixableInSettings) {
             _state.value = _state.value.copy(showSettings = true)
             return
         }
-        _state.value = _state.value.copy(
-            message = when (reason) {
-                AppError.Unauthorized -> R.string.select_unavailable_unauthorized
-                else -> R.string.select_unavailable_offline
-            },
-        )
+        _state.value = _state.value.copy(message = R.string.select_unavailable_offline)
         scope.launch { segmentation.refresh() }
     }
 
