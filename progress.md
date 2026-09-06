@@ -2,12 +2,22 @@
 
 ## Current
 
-**Phase 9 is complete. T44–T48 are done and `check` is green; nothing is open in `work/tasks.md`.**
+**Phase 9 shipped; the first device run found three defects. Phase 10 (T49–T53) is planned and open.**
 
-What a human still owes is unchanged and now covers three tools: paste a Gemini API key into the
-서버 설정 sheet, point `sam3.baseUrl` / `sam3.token` at a running service, and try 선택 / 지우기 /
-지시 on a device. Every test here is a fake or `MockWebServer`, so `check` is green with no key and
-no server at all — which is exactly why "never run on a device" is still the top open issue.
+Installed on an SM-S948U (Android 16) on 2026-09-06 over a reverse-tunnelled adb, against live
+Gemini and live SAM 3 — the first time any of v2/v3 has met a real model. What it found:
+
+1. The eraser sometimes returns the whitened image unchanged, and SAM 3's tight masks leave the
+   object's fringe as a halo → T50 (mask margin), T51 (instruction + a no-op guard).
+2. The planner writes Korean phrases, which SAM 3's English-concept endpoint cannot match, and it
+   often stops after `select_region` instead of finishing the plan → T52.
+3. **A masked adjust after an erase is invisible.** Not prompting: `Renderer.applyOperations`
+   groups by type — every adjust, then every erase — so the erase result overwrites the adjustment
+   inside the same mask. generative_erase.md §10 already requires list order, so this is a
+   spec-conformance bug → T49, proven by T53.
+
+`check` never saw any of it: every test in T26–T48 is a fake or `MockWebServer`, which is the
+argument for T53 existing at all.
 
 ## Done
 
@@ -88,20 +98,20 @@ Moved to `work/decisions.md`, one entry per task, newest first.
 
 ## Open issues for a human
 
-- **The v2 tools have never run on a device.** Every test uses the fakes or MockWebServer.
-  The *server* half was verified for real on 2026-09-06: `facebook/sam3` on the T4, a click
-  returning 3 masks at 0.97, and `"parrot"` finding both birds in `photo_512.png` at 0.98. The
-  app half cannot be checked on this machine — no `/dev/kvm`, no emulator package, no attached
-  device — so it needs a phone or a workstation.
+- **The device run happened on 2026-09-06** (SM-S948U, Android 16, adb over a reverse SSH tunnel
+  from the user's machine; this EC2 box still has no `/dev/kvm`, no emulator and no local device).
+  What it found is Phase 10 in `work/tasks.md`. Still untested on a device: 자르기 and the export
+  path with a generative result in the document.
 
 - **The eraser needs a Gemini API key entered on the device.** No key is shipped, committed, or
   read from `.env` at build time (ADR-011, generative_erase.md §2), so until someone pastes one
   into the 서버 설정 sheet the 지우기 tool is greyed and, on tap, opens that sheet (T43). `check`
   is unaffected — every test uses `FakeEraseProvider` or `MockWebServer`.
 
-- **The Gemini call itself has never reached Google.** Every T40/T42 test is `MockWebServer` on
-  localhost, so the request shape is verified against specs/generative_erase.md §5 and not against
-  the live API. The first real key will also be the first real response.
+- **The Gemini calls now reach Google, and both of them work at the transport level** — the erase
+  and the planner returned real answers on the device, so §5's request shape is right. What is
+  wrong is what we asked for, not how we asked: see T51 and T52. Every test is still
+  `MockWebServer`, so `check` will keep passing whatever the prompts say.
 
 - **The crop tool previews the *cropped* image, not the full source.** specs/crop.md says
   opening 자르기 refits to the un-cropped source; the ViewModel just renders the current
