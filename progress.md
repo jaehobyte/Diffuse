@@ -2,24 +2,18 @@
 
 ## Current
 
-**Phase 9 shipped; the first device run found three defects. Phase 10 (T49–T53) is planned and open.**
+**T49 done. Next: T50 — the erase mask margin.**
 
-Installed on an SM-S948U (Android 16) on 2026-09-06 over a reverse-tunnelled adb, against live
-Gemini and live SAM 3 — the first time any of v2/v3 has met a real model. What it found:
-
-1. The eraser sometimes returns the whitened image unchanged, and SAM 3's tight masks leave the
-   object's fringe as a halo → T50 (mask margin), T51 (instruction + a no-op guard).
-2. The planner writes Korean phrases, which SAM 3's English-concept endpoint cannot match, and it
-   often stops after `select_region` instead of finishing the plan → T52.
-3. **A masked adjust after an erase is invisible.** Not prompting: `Renderer.applyOperations`
-   groups by type — every adjust, then every erase — so the erase result overwrites the adjustment
-   inside the same mask. generative_erase.md §10 already requires list order, so this is a
-   spec-conformance bug → T49, proven by T53.
-
-`check` never saw any of it: every test in T26–T48 is a fake or `MockWebServer`, which is the
-argument for T53 existing at all.
+Phase 10's remaining tasks are T50 (dilate, and store the dilated mask so the blend agrees), T51
+(erase instruction + a no-op guard), T52 (English phrases, complete plans) and T53 (the
+combinations, proven).
 
 ## Done
+
+- T49 The renderer walks `document.operations` once, in list order, instead of grouping by type.
+  A masked adjustment committed after an erase used to be computed and then overwritten by the
+  erase result — the third device report. `Crop` stays last, `Mask` stays pixel-less, the three
+  render goldens did not move. 5 order tests.
 
 - T48 지시 tool — `Tool.Direct` appended, a `placeholder` parameter on `PromptBar` /
   `VoicePromptBar` (the three prompt-bar goldens pass unrecorded), `DirectSheet` with §11's step

@@ -213,7 +213,7 @@ SAM 3. Three defects, all of them invisible to `check`, because every test in T2
 **None of these needs a new `Operation`, a new `AppError` case or a new dependency.** T49 is a
 straight spec-conformance bug; the rest are a mask margin, two prompt rewrites and a guard.
 
-- [ ] T49 The renderer applies operations in list order
+- [x] T49 The renderer applies operations in list order
   spec: specs/generative_erase.md §10, specs/render.md "Pipeline order", specs/selection_tool.md §8.1, §8.2
   deps: —
   report: "지우기 되면 그 이후에 채도가 적용이 안 되네" — a plan of [Select, Erase, Adjust] applies

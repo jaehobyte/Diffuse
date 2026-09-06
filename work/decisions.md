@@ -8,6 +8,24 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T49 — one walk over the list, and `Crop` stays the only exception
+
+`applyOperations` filtered the list into `adjustments` / `erases` / `cutOuts` and ran the three
+groups in that fixed order. For a document the manual tools produce that is indistinguishable from
+list order, which is why it survived T38 and T48: the sheets only ever append an adjust to a
+document whose erase came first. The 지시 tool is the first thing that commits
+[Mask, GenerativeErase, Adjust] in one go, and there the grouping applied the adjustment *first*
+and then overwrote it with the erase result inside the very same mask.
+
+The fix is the shape generative_erase.md §10 already asked for: walk `document.operations` once and
+dispatch per type. `Crop` keeps its exception (render.md: last regardless of position, so
+adjustments are visible inside it) and `Mask` contributes no pixels. The three render goldens did
+not move, which is the evidence that no *existing* document's output changed.
+
+`onProgress` now counts one step per pixel op rather than per group, so a document with three
+adjusts and one erase reports quarters instead of halves — still monotonic and still exactly 1f at
+the end, which is all export's progress bar promises.
+
 ### T48 — `DirectHost`, and why the tool run left `EditorViewModel`
 
 The first cut put the run loop in the ViewModel, which pushed it to 25 functions against detekt's
