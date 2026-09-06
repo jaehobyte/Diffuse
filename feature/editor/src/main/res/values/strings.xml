@@ -33,6 +33,10 @@
     <string name="select_failed">영역을 선택하지 못했어요</string>
     <string name="select_cancel_work">취소</string>
 
+    <!-- specs/prompt_input.md §3 -->
+    <string name="prompt_mic_permission">마이크 권한이 필요해요</string>
+    <string name="prompt_voice_failed">음성을 알아듣지 못했어요</string>
+
     <!-- specs/segmentation.md §6 -->
     <string name="sam3_settings_title">서버 설정</string>
     <string name="sam3_settings_base_url">서버 주소</string>

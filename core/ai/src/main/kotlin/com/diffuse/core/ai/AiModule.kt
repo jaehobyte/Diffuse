@@ -4,6 +4,8 @@ import com.diffuse.core.ai.sam3.Sam3Client
 import com.diffuse.core.ai.sam3.Sam3ConfigSource
 import com.diffuse.core.ai.sam3.Sam3SegmentationProvider
 import com.diffuse.core.ai.sam3.Sam3Settings
+import com.diffuse.core.ai.speech.AndroidSpeechInput
+import com.diffuse.core.ai.speech.SpeechInput
 import com.diffuse.core.common.DispatcherProvider
 import dagger.Binds
 import dagger.Module
@@ -23,6 +25,9 @@ internal abstract class AiModule {
 
     @Binds
     abstract fun config(impl: Sam3Settings): Sam3ConfigSource
+
+    @Binds
+    abstract fun speech(impl: AndroidSpeechInput): SpeechInput
 
     companion object {
         @Provides

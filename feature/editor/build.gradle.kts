@@ -24,6 +24,9 @@ dependencies {
     // the 15MB APK budget (specs/architecture.md §8).
     implementation(libs.compose.material.icons.extended)
 
+    // specs/prompt_input.md §3: RECORD_AUDIO is requested from the composable that owns the
+    // mic, so the launcher API has to be visible here.
+    implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.hilt.navigation.compose)
 }

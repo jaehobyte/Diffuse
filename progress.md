@@ -14,10 +14,14 @@ Specs are written and consistent: `ai_provider.md`, `segmentation.md`, `selectio
 (rewritten), `prompt_input.md`, `generative_erase.md` (new), plus amendments to `edit_model.md`,
 `architecture.md` (§2, §6, §8, §9, §10) and `DESIGN.md` (§1 accent ruling, §4 prompt bar).
 
-**T26-T34 done.** The selection tool is complete and the prompt bar exists. Next is T35,
-voice input.
+**T26-T35 done.** Next is T36, which joins the prompt bar to SAM 3's text endpoint — the
+end-to-end behaviour the whole phase exists for.
 
 ## Done
+
+- T35 Voice input — `SpeechInput` / `SpeechState`, `AndroidSpeechInput` over the OS recogniser
+  in `ko-KR` with partial results, `FakeSpeechInput`, and `VoicePromptBar` owning the
+  RECORD_AUDIO grant. 7 tests.
 
 - T34 `PromptBar` — 48dp / 16dp radius / `editSurfaceRaised`, mic and send at 48dp hit areas,
   Korean placeholder, IME Done submitting the trimmed value, and the mic turning accent only
@@ -90,9 +94,20 @@ _T01–T14 trimmed per CLAUDE.md (keep the last 10). Their decisions are still i
 
 ## Next
 
-T35 voice input behind `SpeechInput`, then T36 the prompt → mask flow.
+T36 prompt or speech → SAM 3 text segmentation, then Phase 8 (T37, T38).
 
 ## Decisions
+
+### T35
+
+- **`SpeechInput` is not an `ai_provider.md` provider.** It has no `Availability` flow and no
+  suspend entry point, because it is a streaming device service rather than a request/response
+  model. Forcing it into that shape would have meant a fake `Availability` and a `suspend fun`
+  that never returns.
+- **Permission lives in the composable, not the ViewModel.** The launcher needs a composition,
+  and the ViewModel has no business knowing about Android grants.
+- **A second denial hides the mic for the session.** Asking again on every tap is the nagging
+  DESIGN.md §7 rules out, and there is nothing else the app can do about it.
 
 ### T34
 

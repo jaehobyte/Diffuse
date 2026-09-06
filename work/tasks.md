@@ -183,7 +183,7 @@ Only the server endpoint is still outstanding. If a task hits a missing prerequi
     - goldens: `prompt_bar_empty`, `prompt_bar_filled`, `prompt_bar_listening`; 3 behavior tests
   touches: core/ui/components, core/ui/src/main/res (strings)
 
-- [ ] T35 Voice input behind a `SpeechInput` interface
+- [x] T35 Voice input behind a `SpeechInput` interface
   spec: specs/prompt_input.md §Voice
   deps: T34
   done when:
