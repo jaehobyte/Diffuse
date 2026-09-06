@@ -115,7 +115,13 @@ internal class GeminiPlanClient(
             val steps = response.candidates.firstOrNull()?.content?.parts.orEmpty()
                 .mapNotNull { it.functionCall }
                 .flatMap(::steps)
-            Result.Success(EditPlan(cropLast(steps)))
+            // A plan that is accepted logs nothing otherwise, so "the tool only selected the
+            // thing" cannot be told apart from "the run stopped at step 0" after the fact. The
+            // failure T52 fought is invisible without this line. It logs the plan **after** §5's
+            // reordering, because that is the order the run will actually take.
+            val plan = cropLast(steps)
+            logger?.debug(TAG, "plan (${plan.size}): ${plan.joinToString(" -> ")}")
+            Result.Success(EditPlan(plan))
         }
     }
 
