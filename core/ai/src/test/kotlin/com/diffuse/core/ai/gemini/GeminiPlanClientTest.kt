@@ -652,18 +652,57 @@ class GeminiPlanClientTest {
         assertEquals(EditPlan(listOf(PlanStep.Crop(CropRatio.Story9x16))), plan)
     }
 
+    /** One at a time, because §5 keeps only the last crop of a plan. */
     @Test
-    fun `every ratio the catalog offers decodes`() = runTest {
-        val wire = listOf("square", "portrait_4_5", "story_9_16", "landscape_16_9")
-        server.enqueue(
-            calls(*wire.map { cropCall(it) }.toTypedArray()),
+    fun `every ratio the catalog offers decodes to its own value`() = runTest {
+        val expected = mapOf(
+            "square" to CropRatio.Square,
+            "portrait_3_4" to CropRatio.Portrait3x4,
+            "portrait_4_5" to CropRatio.Portrait4x5,
+            "story_9_16" to CropRatio.Story9x16,
+            "landscape_4_3" to CropRatio.Landscape4x3,
+            "landscape_16_9" to CropRatio.Landscape16x9,
         )
 
-        val plan = client.plan(JPEG, REQUEST).valueOrFail()
+        expected.forEach { (wire, ratio) ->
+            server.enqueue(calls(cropCall(wire)))
+            val plan = client.plan(JPEG, REQUEST).valueOrFail()
+            assertEquals(wire, listOf(PlanStep.Crop(ratio)), plan.steps)
+        }
+    }
 
-        // Only the last survives — §5 keeps one crop per plan — so ask about the mapping
-        // one ratio at a time instead.
-        assertEquals(listOf(PlanStep.Crop(CropRatio.Landscape16x9)), plan.steps)
+    /** T68: the two the device run asked for are on the wire, so the model can pick them. */
+    @Test
+    fun `the declared ratios include the two feed shapes`() = runTest {
+        server.enqueue(calls(CROP_CALL))
+
+        client.plan(JPEG, REQUEST)
+
+        val ratio = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject
+            .let { it["tools"]!!.jsonArray[0].jsonObject["functionDeclarations"]!!.jsonArray }
+            .single { it.jsonObject["name"]!!.jsonPrimitive.content == "crop_ratio" }
+            .jsonObject["parameters"]!!.jsonObject["properties"]!!
+            .jsonObject["ratio"]!!.jsonObject["enum"]!!.jsonArray
+            .map { it.jsonPrimitive.content }
+
+        assertEquals(CropRatio.entries.size, ratio.size)
+        assertTrue("portrait_3_4" in ratio)
+        assertTrue("landscape_4_3" in ratio)
+    }
+
+    /** §4: a bare platform name is a feed post, and a feed post is not a square. */
+    @Test
+    fun `the instruction says a bare platform name is a feed post`() {
+        assertTrue(
+            PLAN_SYSTEM_INSTRUCTION.contains("means an ordinary feed post, which is portrait_3_4"),
+        )
+        assertTrue(
+            PLAN_SYSTEM_INSTRUCTION.contains("crop_ratio(ratio=\"portrait_3_4\")"),
+        )
+        // A story is still a story: T58's example is untouched.
+        assertTrue(
+            PLAN_SYSTEM_INSTRUCTION.contains("crop_ratio(ratio=\"story_9_16\")"),
+        )
     }
 
     @Test

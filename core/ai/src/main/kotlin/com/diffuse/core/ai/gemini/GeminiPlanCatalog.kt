@@ -59,8 +59,10 @@ internal fun adjustKindOf(wire: String): AdjustKind? =
 internal val CropRatio.wireName: String
     get() = when (this) {
         CropRatio.Square -> "square"
+        CropRatio.Portrait3x4 -> "portrait_3_4"
         CropRatio.Portrait4x5 -> "portrait_4_5"
         CropRatio.Story9x16 -> "story_9_16"
+        CropRatio.Landscape4x3 -> "landscape_4_3"
         CropRatio.Landscape16x9 -> "landscape_16_9"
     }
 
@@ -119,6 +121,11 @@ internal const val PLAN_SYSTEM_INSTRUCTION =
         "\"인스타\", \"스토리\", \"정사각형\", \"9:16\". Never crop to improve a photo the user " +
         "did not ask to reframe. Call it at most once; it always runs last, so the user can " +
         "adjust the framing afterwards.\n" +
+        "- A bare platform name with no shape - \"인스타\", \"인스타그램\", \"피드에 올릴거야\" - " +
+        "means an ordinary feed post, which is portrait_3_4, or landscape_4_3 when the request " +
+        "asks for a wide or horizontal one. It does not mean square: square is only for a " +
+        "request that actually says so (\"정사각형\", \"1:1\"). A story or a reel is still " +
+        "story_9_16.\n" +
         "- If the request cannot be met with these functions, call nothing.\n" +
         "Examples:\n" +
         "- \"버스를 지워줘\" -> select_region(phrase=\"bus\"), erase_selection()\n" +
@@ -131,7 +138,8 @@ internal const val PLAN_SYSTEM_INSTRUCTION =
         "- \"의자를 빨간 우산으로 바꿔줘\" -> select_region(phrase=\"chair\"), " +
         "fill_selection(prompt=\"a red umbrella\")\n" +
         "- \"하늘을 더 파랗게 해줘\" -> adjust_color_range(color=\"blue\", saturation=0.4)\n" +
-        "- \"인스타 스토리에 올리게 잘라줘\" -> crop_ratio(ratio=\"story_9_16\")"
+        "- \"인스타 스토리에 올리게 잘라줘\" -> crop_ratio(ratio=\"story_9_16\")\n" +
+        "- \"인스타그램에 올릴거야\" -> crop_ratio(ratio=\"portrait_3_4\")"
 
 internal val PLAN_FUNCTIONS: List<FunctionDeclaration> = listOf(
     FunctionDeclaration(
@@ -254,9 +262,10 @@ internal val PLAN_FUNCTIONS: List<FunctionDeclaration> = listOf(
             properties = mapOf(
                 ARG_RATIO to Schema(
                     type = TYPE_STRING,
-                    description = "Which aspect ratio to crop to. story_9_16 is a phone story " +
-                        "or reel, portrait_4_5 is a tall feed post, square is a square post, " +
-                        "and landscape_16_9 is a wide photo.",
+                    description = "Which aspect ratio to crop to. portrait_3_4 is an ordinary " +
+                        "upright feed post and landscape_4_3 is the same post the other way " +
+                        "round; story_9_16 is a phone story or reel; portrait_4_5 is a taller " +
+                        "feed post; square is a square post; landscape_16_9 is a wide photo.",
                     enumValues = CropRatio.entries.map { it.wireName },
                 ),
             ),

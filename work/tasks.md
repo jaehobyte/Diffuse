@@ -13,7 +13,7 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `[H]` human-only, loop must
 
 ## Queue
 
-**Phase 13, T67–T69.** T57, T66 and T68 are `[!]` — all three need a human. Pick the first `[ ]`
+**Phase 13 is done (T67–T69).** T57 and T66 stay `[!]` — both need a human. Pick the first `[ ]`
 whose deps are all `[x]`, as always.
 
 ---
@@ -367,7 +367,7 @@ design drifted — block it rather than adding one.
 ## Phase 13 — what the second device run found
 
 The 2026-09-06 evening run, on a second device (SM-S948N). Three defects, two of them in the same
-report. **T68 is `[!]` pending one human answer** — see its `blocked:` line.
+report. T68 needed one human answer — which ratios the app offers — and got option 1.
 
 - [x] T67 채우기 sends a rectangle, not the silhouette
   spec: specs/generative_fill.md §2, §4, §6, §9; specs/generative_erase.md §4, §10; specs/vibe_edit.md §9.2
@@ -396,12 +396,12 @@ report. **T68 is `[!]` pending one human answer** — see its `blocked:` line.
   touches: feature/editor/tools/fill, feature/editor/tools/direct/PlanRunner.kt,
   feature/editor/EditorViewModel.kt, feature/editor tests
 
-- [!] T68 "인스타그램 용으로" must not crop to 1:1
+- [x] T68 "인스타그램 용으로" must not crop to 1:1
   spec: specs/vibe_edit.md §4, §4.1, §5; specs/crop.md; specs/ai_provider.md §3
   deps: —
   report: "바이브로 인스타그램 용으로 만든다고 하면 왜 1:1로 크롭되지? 인스타용은 3:4나 4:3
   이어야해."
-  blocked: **`CropRatio` has no 3:4 and no 4:3.** The closed set is {square, portrait_4_5,
+  resolved: the human chose **option 1**. `CropRatio` has no 3:4 and no 4:3, so: The closed set is {square, portrait_4_5,
   story_9_16, landscape_16_9}, and vibe_edit.md §4.1's whole argument for closing it is that the
   model contributes no geometry. Adding the two the report names is not a prompt fix: it changes
   `CropRatio` (ai_provider.md §3) *and* `AspectPreset`, which drives the 자르기 chip row — five

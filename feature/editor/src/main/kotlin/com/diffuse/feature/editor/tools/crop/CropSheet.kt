@@ -3,6 +3,8 @@ package com.diffuse.feature.editor.tools.crop
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -42,6 +44,8 @@ const val RotateRightTestTag = "CropRotateRight"
 fun presetLabelRes(preset: AspectPreset): Int = when (preset) {
     AspectPreset.Free -> R.string.crop_free
     AspectPreset.Square -> R.string.crop_square
+    AspectPreset.ThreeFour -> R.string.crop_three_four
+    AspectPreset.FourThree -> R.string.crop_four_three
     AspectPreset.FourFive -> R.string.crop_four_five
     AspectPreset.NineSixteen -> R.string.crop_nine_sixteen
     AspectPreset.SixteenNine -> R.string.crop_sixteen_nine
@@ -66,8 +70,13 @@ fun CropSheet(
         onApply = onApply,
         modifier = modifier,
     ) {
+        // T68: seven presets no longer fit a phone's width, so the row scrolls — the same
+        // answer DESIGN.md §4 already gives the tool strip.
         Row(
-            modifier = Modifier.testTag(CropPresetRowTestTag).fillMaxWidth(),
+            modifier = Modifier
+                .testTag(CropPresetRowTestTag)
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             AspectPreset.entries.forEach { entry ->

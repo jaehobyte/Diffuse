@@ -46,7 +46,12 @@ sealed interface PlanStep {
  * validation into two modules. It maps to the tool's `AspectPreset` at the feature boundary;
  * `core:ai` never reaches for crop geometry.
  */
-enum class CropRatio { Square, Portrait4x5, Story9x16, Landscape16x9 }
+/**
+ * specs/vibe_edit.md §4.1's closed set. T68 added `Portrait3x4` and `Landscape4x3`: a bare
+ * "인스타그램" is a feed post, and a feed post is 3:4 or 4:3 — the device run had the model
+ * answering `Square` for it, which is a shape almost nobody posts any more.
+ */
+enum class CropRatio { Square, Portrait3x4, Portrait4x5, Story9x16, Landscape4x3, Landscape16x9 }
 
 /** [steps] in execution order. Empty means the model declined to act — not a failure. */
 data class EditPlan(val steps: List<PlanStep>)

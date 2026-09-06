@@ -8,6 +8,38 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T68
+
+- **Option 1: `portrait_3_4` and `landscape_4_3` were added to the closed set.** The human chose it
+  over pointing Instagram at the existing `portrait_4_5`. So `CropRatio` is six values, and
+  `AspectPreset` is seven presets including 자유.
+
+- **The new presets were slotted beside their neighbours, not appended.** `ThreeFour` before
+  `FourFive`, `FourThree` before `SixteenNine`, so the chip row reads 자유 · 1:1 · 3:4 · 4:5 ·
+  9:16 · 4:3 · 16:9 — portraits together, landscapes together — and no existing chip moves
+  relative to another. `AspectPreset` is UI state and is never serialized (the document stores
+  `Crop(rect, angleDeg)`), so the ordinals are free to move.
+
+- **The chip row scrolls now.** Seven chips are not guaranteed to fit a phone's width, and
+  `CropSheet` laid them out in a plain `Row` that would have clipped the last one silently.
+  `horizontalScroll` is the answer DESIGN.md §4 already gives the tool strip. On a Pixel 6a they
+  happen to fit exactly; on a narrower device or at a larger font scale they will not.
+
+- **A bare platform name means the feed, and the feed is `portrait_3_4`.** `landscape_4_3` is for a
+  request that asks for a wide one. The instruction says square is only for a request that
+  actually says so, because the device run had the model answering square for "인스타그램 용으로".
+  T58's `"인스타 스토리에 올리게 잘라줘" -> story_9_16` example is untouched: a story is still 9:16,
+  and only the bare-feed case moved.
+
+- **`CropRatioPresetTest` asserts the mapping's *numbers*, not just that it compiles.** The `when`
+  in `CropRatio.preset` is exhaustive, so a new ratio cannot be forgotten — but it can be pointed
+  at the wrong preset, and nothing else would have caught 3:4 mapped to 4:5. It also asserts the
+  map covers `CropRatio.entries`, so a seventh ratio fails here rather than on a device.
+
+- **specs/vibe_edit.md §4.1, ai_provider.md §3 and crop.md are now stale** on the size of the
+  closed set and the chip list. They are frozen for the loop; this entry is the record until a
+  human amends them.
+
 ### T69
 
 - **The transition is a collector on `_uiState`, not a call at the end of three methods.** 자르기

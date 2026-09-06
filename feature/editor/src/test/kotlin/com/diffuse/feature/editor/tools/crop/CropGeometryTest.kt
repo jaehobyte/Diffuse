@@ -50,7 +50,9 @@ class CropGeometryTest {
     fun `presets hold their aspect within half a percent`() {
         listOf(
             AspectPreset.Square to 1f,
+            AspectPreset.ThreeFour to 3f / 4f,
             AspectPreset.FourFive to 4f / 5f,
+            AspectPreset.FourThree to 4f / 3f,
             AspectPreset.NineSixteen to 9f / 16f,
             AspectPreset.SixteenNine to 16f / 9f,
         ).forEach { (preset, expected) ->

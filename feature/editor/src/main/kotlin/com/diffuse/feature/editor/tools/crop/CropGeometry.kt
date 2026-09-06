@@ -9,14 +9,20 @@ import kotlin.math.sin
 enum class AspectPreset(val ratio: Float?) {
     Free(null),
     Square(SQUARE_RATIO),
+    /** T68: an ordinary feed post. Slotted beside 4:5 rather than appended, so the row reads. */
+    ThreeFour(THREE_FOUR_RATIO),
     FourFive(FOUR_FIVE_RATIO),
     NineSixteen(NINE_SIXTEEN_RATIO),
+    /** T68: the same feed post the other way round, beside the other landscape. */
+    FourThree(FOUR_THREE_RATIO),
     SixteenNine(SIXTEEN_NINE_RATIO),
 }
 
 private const val SQUARE_RATIO = 1f
+private const val THREE_FOUR_RATIO = 0.75f
 private const val FOUR_FIVE_RATIO = 0.8f
 private const val NINE_SIXTEEN_RATIO = 0.5625f
+private const val FOUR_THREE_RATIO = 1.3333334f
 private const val SIXTEEN_NINE_RATIO = 1.7777778f
 
 /**

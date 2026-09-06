@@ -14,7 +14,9 @@ import com.diffuse.core.ai.CropRatio
 val CropRatio.preset: AspectPreset
     get() = when (this) {
         CropRatio.Square -> AspectPreset.Square
+        CropRatio.Portrait3x4 -> AspectPreset.ThreeFour
         CropRatio.Portrait4x5 -> AspectPreset.FourFive
         CropRatio.Story9x16 -> AspectPreset.NineSixteen
+        CropRatio.Landscape4x3 -> AspectPreset.FourThree
         CropRatio.Landscape16x9 -> AspectPreset.SixteenNine
     }
