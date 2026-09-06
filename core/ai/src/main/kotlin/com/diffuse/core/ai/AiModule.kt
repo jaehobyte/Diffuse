@@ -49,6 +49,7 @@ internal abstract class AiModule {
             config: Sam3ConfigSource,
             dispatchers: DispatcherProvider,
             okHttp: OkHttpClient,
-        ): Sam3Client = Sam3Client(config, dispatchers, okHttp)
+            logger: com.diffuse.core.common.Logger,
+        ): Sam3Client = Sam3Client(config, dispatchers, okHttp, logger)
     }
 }

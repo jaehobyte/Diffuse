@@ -84,8 +84,14 @@ class SelectionToolTest {
 
         viewModel.onToolClick(Tool.Select)
 
-        assertNull(viewModel.uiState.value.selectedTool)
-        assertNotNull(viewModel.uiState.value.selection.message)
+        val selection = viewModel.uiState.value.selection
+        assertNull("the selection sheet must not open", viewModel.uiState.value.selectedTool)
+        // Which of the two channels it uses depends on whether the backend ever answered; the
+        // two tests above pin that. What matters here is that the user is not left with nothing.
+        assertTrue(
+            "the user was told nothing",
+            selection.showSettings || selection.message != null,
+        )
     }
 
     @Test
@@ -97,6 +103,42 @@ class SelectionToolTest {
 
         assertTrue(viewModel.uiState.value.selection.showSettings)
         assertNull(viewModel.uiState.value.selection.message)
+    }
+
+    /**
+     * A wrong address and a down server are the same `Unavailable` to the app, but only one of
+     * them the user can fix — and the settings sheet was reachable only while the URL was
+     * *blank*. Ship a default that does not resolve (the emulator's 10.0.2.2 on a real phone)
+     * and the tool is greyed forever with no way in. Found on the first device run.
+     */
+    @Test
+    fun `a backend that has never answered offers the settings sheet, not just a snackbar`() =
+        runTest {
+            provider.setAvailability(Availability.Unavailable(AppError.Unavailable))
+            val viewModel = viewModel()
+
+            viewModel.onToolClick(Tool.Select)
+
+            assertTrue(
+                "no way to fix a wrong address",
+                viewModel.uiState.value.selection.showSettings,
+            )
+        }
+
+    @Test
+    fun `a backend that worked before is treated as a blip, not a misconfiguration`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onToolClick(Tool.Select)
+        viewModel.cancelSheet()
+
+        provider.setAvailability(Availability.Unavailable(AppError.Unavailable))
+        viewModel.onToolClick(Tool.Select)
+
+        assertFalse(
+            "a transient outage should not throw the settings sheet at the user",
+            viewModel.uiState.value.selection.showSettings,
+        )
+        assertNotNull(viewModel.uiState.value.selection.message)
     }
 
     // ---- sessions --------------------------------------------------------

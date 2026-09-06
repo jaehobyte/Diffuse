@@ -101,8 +101,11 @@ guessing. Only **one** replay per prompt — no loop.
   `ExportSettingsStore` already made, since the catalog has no DataStore entry.
 - Empty base URL is the default when `local.properties` says nothing. It is not an error state to
   hide; it is what `availability` reports.
-- The emulator reaches a host-local server at `http://10.0.2.2:8080`. Say so in the settings sheet
-  helper text.
+- A USB-attached phone reaches a host-local server at `http://127.0.0.1:8080` once
+  `adb reverse tcp:8080 tcp:8080` is set; an emulator uses `http://10.0.2.2:8080`. Say both in the
+  settings sheet helper text.
+- **The build-time token stays empty.** `BuildConfig` is compiled into the APK and the APK is
+  published, so a token belongs in the settings sheet and nowhere else.
 
 ## 7. Availability
 ```

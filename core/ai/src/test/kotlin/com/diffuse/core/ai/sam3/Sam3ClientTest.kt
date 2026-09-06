@@ -8,6 +8,7 @@ import com.diffuse.core.ai.MaskBitmaps
 import com.diffuse.core.ai.PointPrompt
 import com.diffuse.core.common.AppError
 import com.diffuse.core.common.DispatcherProvider
+import com.diffuse.core.common.Logger
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
@@ -34,6 +35,19 @@ class Sam3ClientTest {
     private lateinit var server: MockWebServer
     private lateinit var client: Sam3Client
     private var config = Sam3Config(baseUrl = "", token = TOKEN)
+    private val logger = RecordingLogger()
+
+    private class RecordingLogger : Logger {
+        val warnings = mutableListOf<String>()
+        override fun debug(tag: String, message: String) = Unit
+        override fun warn(tag: String, message: String, cause: Throwable?) {
+            warnings += message
+        }
+
+        override fun error(tag: String, message: String, cause: Throwable?) {
+            warnings += message
+        }
+    }
 
     private val dispatchers = object : DispatcherProvider {
         override val default: CoroutineDispatcher get() = Dispatchers.IO
@@ -48,7 +62,7 @@ class Sam3ClientTest {
             baseUrl = server.url("/").toString().trimEnd('/'),
             token = TOKEN,
         )
-        client = Sam3Client({ config }, dispatchers)
+        client = Sam3Client({ config }, dispatchers, logger = logger)
     }
 
     @After
@@ -226,6 +240,31 @@ class Sam3ClientTest {
         server.enqueue(json(200, "not json at all"))
 
         assertTrue(client.points("abc", fg()).failure() is AppError.Io)
+    }
+
+    /**
+     * The first device run was debugged from the *server's* log, because the app kept none:
+     * a failed call surfaced as a Korean snackbar and nothing else. architecture.md §9 puts
+     * logging behind `core:common`'s `Logger`; this is what makes it non-optional here.
+     */
+    @Test
+    fun `a failed call is logged with the route and the mapped error`() = runTest {
+        server.enqueue(json(503, """{"error":"not_ready","detail":"loading"}"""))
+
+        client.points("abc", fg()).failure()
+
+        val line = logger.warnings.single()
+        assertTrue("route missing from '$line'", line.contains("/v1/images/abc/segment/points"))
+        assertTrue("status missing from '$line'", line.contains("503"))
+    }
+
+    @Test
+    fun `a successful call logs nothing`() = runTest {
+        server.enqueue(json(200, """{"masks":[]}"""))
+
+        client.points("abc", fg()).success()
+
+        assertTrue(logger.warnings.isEmpty())
     }
 
     @Test

@@ -20,6 +20,24 @@ Nothing in `work/tasks.md` is left. What a human still owes:
 
 ## Decisions
 
+### T30/T40 — the second device run: an unreachable default with no way out
+
+The tool was greyed and there was no way to change the address. Three things had to line up:
+
+- **The shipped default was `http://10.0.2.2:8080`** — the *emulator's* alias for its host, which
+  resolves to nothing on a real phone. `local.properties` now defaults to `127.0.0.1:8080`, what
+  `adb reverse` gives a USB-attached device.
+- **The settings sheet was reachable only while the URL was blank.** A wrong address and a server
+  that is merely down are the same `Unavailable` to the app, so a non-blank wrong URL greyed the
+  tool permanently. The rule is now whether the backend has *ever* answered: never → the settings
+  are probably wrong, open the sheet; once → a blip, say so and re-probe.
+- **A fresh install wipes the in-app override.** `firstInstallTime == lastUpdateTime` on the
+  device confirmed the settings entered before v0.3.1 were gone, which is why something that had
+  demonstrably worked stopped.
+
+Also: **the build-time token stays empty**, because `BuildConfig` is compiled into the APK and the
+APK is published. A token belongs in the settings sheet.
+
 ### T30/T39 — the first device run
 
 Three defects, found from the server's access log after the tool went permanently grey. The log
@@ -41,6 +59,10 @@ the server's `upload_rate` is 6 per 60 seconds, so the limiter fired exactly as 
 does; without that the leak was invisible to tests, and the first two versions of the regression
 test passed for the wrong reason.
 
+- **The app logged nothing.** The whole first run had to be debugged from the *server's* access
+  log, because a failed call surfaced as a Korean snackbar and nothing else. `Sam3Client` now logs
+  the route and the mapped status through `core:common`'s `Logger`, as architecture.md §9 always
+  required.
 - **Nobody ever called `close()`.** selection_tool.md §6 says leaving the editor releases the
   session; `EditorViewModel.onLeave` now does, before the autosave so a slow write cannot hold it.
 

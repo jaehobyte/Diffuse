@@ -39,9 +39,13 @@ class SelectionController(
     /** Set when the user gives up on an `open` that is already on the wire. See [open]. */
     private var abandonedOpen = false
 
+    /** Whether this backend has ever answered. See [explain]. */
+    private var everReady = false
+
     init {
         scope.launch {
             segmentation.availability.collect { availability ->
+                if (availability is Availability.Ready) everReady = true
                 _state.value = _state.value.copy(availability = availability)
             }
         }
@@ -66,8 +70,18 @@ class SelectionController(
         return false
     }
 
+    /**
+     * A wrong address and a server that is merely down are the same `Unavailable` to us, and the
+     * difference that matters is whether this backend has *ever* answered:
+     *
+     * - never → the settings are probably wrong, and the sheet is the only thing that helps.
+     *   A default that does not resolve — the emulator's `10.0.2.2` on a real phone — otherwise
+     *   greys the tool forever with no way in.
+     * - once → a rate limit, a dropped connection or a restart. Say so, re-probe, and do not
+     *   throw a settings sheet at someone whose settings are fine.
+     */
     private fun explain(reason: AppError?) {
-        if (reason is AppError.Invalid) {
+        if (reason is AppError.Invalid || !everReady) {
             _state.value = _state.value.copy(showSettings = true)
             return
         }
@@ -77,9 +91,6 @@ class SelectionController(
                 else -> R.string.select_unavailable_offline
             },
         )
-        // A rate limit, a dropped connection and a restarting server all arrive as `Unavailable`,
-        // and all three pass. Without a probe here the tool stays greyed until the settings
-        // change, which is a dead end the user cannot get out of.
         scope.launch { segmentation.refresh() }
     }
 

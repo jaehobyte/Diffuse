@@ -48,7 +48,7 @@
     <!-- specs/segmentation.md §6 -->
     <string name="sam3_settings_title">서버 설정</string>
     <string name="sam3_settings_base_url">서버 주소</string>
-    <string name="sam3_settings_base_url_hint">에뮬레이터에서는 http://10.0.2.2:8080</string>
+    <string name="sam3_settings_base_url_hint">USB 연결은 http://127.0.0.1:8080, 에뮬레이터는 http://10.0.2.2:8080</string>
     <string name="sam3_settings_token">토큰</string>
     <string name="sam3_settings_save">저장</string>
 

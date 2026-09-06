@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import com.diffuse.core.ai.PointPrompt
 import com.diffuse.core.common.AppError
 import com.diffuse.core.common.DispatcherProvider
+import com.diffuse.core.common.Logger
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -42,6 +43,11 @@ internal class Sam3Client(
     private val configSource: Sam3ConfigSource,
     private val dispatchers: DispatcherProvider,
     private val okHttp: OkHttpClient = defaultOkHttp(),
+    /**
+     * architecture.md §9. The first device run had to be debugged from the *server's* access
+     * log, because a failed call surfaced as a Korean snackbar and nothing else.
+     */
+    private val logger: Logger? = null,
 ) {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -152,10 +158,17 @@ internal class Sam3Client(
                 if (response.isSuccessful) {
                     Sam3Outcome.Success(parse(body))
                 } else {
+                    logger?.warn(
+                        TAG,
+                        "${request.method} ${request.url.encodedPath} -> " +
+                            "${response.code}: ${detailOf(body)}",
+                    )
                     statusFailure(response.code, body)
                 }
             }
         } catch (e: IOException) {
+            // The one a misconfigured tunnel produces, and the one that used to be invisible.
+            logger?.warn(TAG, "${request.method} ${request.url} unreachable", e)
             Sam3Outcome.Failure(AppError.Io(e))
         } catch (e: IllegalStateException) {
             // A malformed body, an undecodable mask PNG, or an unparseable timestamp.
@@ -205,6 +218,8 @@ internal class Sam3Client(
     }
 
     companion object {
+        private const val TAG = "Sam3Client"
+
         const val PNG_MEDIA_TYPE = "image/png"
         const val JPEG_MEDIA_TYPE = "image/jpeg"
 
