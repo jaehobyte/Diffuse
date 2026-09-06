@@ -147,7 +147,7 @@ private fun sheetFor(
                 config = state.selection.config,
                 geminiApiKey = state.selection.geminiApiKey,
                 onSave = viewModel.selection::saveSettings,
-                onCancel = viewModel.selection::dismissSettings,
+                onCancel = { viewModel.selection.setSettingsVisible(false) },
             )
         }
     }

@@ -129,7 +129,7 @@ generative_erase.md §13 lists the three files that come out, and nothing else m
       stop and block rather than editing the test
   touches: core/ai/gemini, core/ai/AiModule.kt, core/ai/erase (deletions only), core/ai tests
 
-- [ ] T43 지우기 tool — telling the user which thing is missing
+- [x] T43 지우기 tool — telling the user which thing is missing
   spec: specs/generative_erase.md §9
   deps: T42
   done when:
@@ -151,7 +151,7 @@ generative_erase.md §13 lists the three files that come out, and nothing else m
 
 ## Backlog
 
-_Empty beyond Phase 8._ T26–T38 completed the v2 line — server-side SAM 3 selection, add/subtract
+_Empty. Phase 8 is complete._ T26–T38 completed the v2 line — server-side SAM 3 selection, add/subtract
 merging, masked adjustments, cut-out, the prompt bar with voice, and the generative eraser — and the
 segmentation half is verified on a device against the real model.
 

@@ -97,7 +97,7 @@ class SelectionController(
         val fixableInSettings =
             reason is AppError.Invalid || reason is AppError.Unauthorized || !everReady
         if (fixableInSettings) {
-            _state.value = _state.value.copy(showSettings = true)
+            setSettingsVisible(true)
             return
         }
         _state.value = _state.value.copy(message = R.string.select_unavailable_offline)
@@ -274,8 +274,12 @@ class SelectionController(
         _state.value = _state.value.copy(showSettings = false)
     }
 
-    fun dismissSettings() {
-        _state.value = _state.value.copy(showSettings = false)
+    /**
+     * specs/generative_erase.md §9: the 지우기 tool opens the same 서버 설정 sheet when its key is
+     * missing. One sheet, one owner — this controller — so one function opens and closes it.
+     */
+    fun setSettingsVisible(visible: Boolean) {
+        _state.value = _state.value.copy(showSettings = visible)
     }
 
     fun showMessage(res: Int) {

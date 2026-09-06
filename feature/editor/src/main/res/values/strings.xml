@@ -21,6 +21,9 @@
     <string name="erase_working">지우는 중</string>
     <string name="erase_failed">지우지 못했어요</string>
     <string name="erase_needs_selection">먼저 영역을 선택해주세요</string>
+    <!-- specs/generative_erase.md §9 -->
+    <string name="erase_needs_key">설정에서 Gemini API 키를 입력해주세요</string>
+    <string name="erase_blocked">이 이미지는 편집할 수 없어요</string>
     <string name="adjust_masked_only">선택 영역에만</string>
 
     <!-- specs/selection_tool.md -->

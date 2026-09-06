@@ -16,6 +16,20 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+/**
+ * specs/generative_erase.md §9. What tapping the tool should do. Returned rather than acted on,
+ * because opening the 서버 설정 sheet is the selection tool's to do — there is only one sheet.
+ */
+enum class EraseTap {
+    Run,
+
+    /** The key is missing, which the settings sheet can fix; a snackbar alone cannot. */
+    OpenSettings,
+
+    /** The reason is already in [EraseState.message]; nothing more to offer. */
+    Refused,
+}
+
 /** specs/generative_erase.md §5. The tool has no sheet: tapping it runs the model. */
 data class EraseState(
     val availability: Availability = Availability.Unavailable(AppError.Unavailable),
@@ -47,6 +61,33 @@ class EraseController(
     }
 
     /**
+     * specs/generative_erase.md §9. A greyed tool still explains itself, and the four states it
+     * can be greyed in are not interchangeable: "select something first" and "paste a key" ask
+     * the user for completely different things.
+     *
+     * The order is §9's table order — a missing selection is reported before a missing key.
+     */
+    fun onToolTapped(hasSelection: Boolean): EraseTap {
+        val availability = _state.value.availability
+        return when {
+            !hasSelection -> refuse(R.string.erase_needs_selection)
+            availability is Availability.Ready -> EraseTap.Run
+            // §7: for the Gemini provider `Unavailable` carries `Invalid` only when the key is
+            // blank, so this is the "no key" row rather than a general outage.
+            (availability as? Availability.Unavailable)?.reason is AppError.Invalid -> {
+                showMessage(R.string.erase_needs_key)
+                EraseTap.OpenSettings
+            }
+            else -> refuse(R.string.erase_failed)
+        }
+    }
+
+    private fun refuse(res: Int): EraseTap {
+        showMessage(res)
+        return EraseTap.Refused
+    }
+
+    /**
      * specs/generative_erase.md §5, §6. Runs the model and, only once the result is safely on
      * disk, hands it to [commit] as one history entry.
      *
@@ -74,7 +115,7 @@ class EraseController(
             when (val result = provider.erase(image, mask, hint = null)) {
                 is Result.Success -> store(maskId, result.value, save, commit)
                 is Result.Failure -> _state.value =
-                    _state.value.copy(busy = false, message = R.string.erase_failed)
+                    _state.value.copy(busy = false, message = messageFor(result.error))
             }
         }
     }
@@ -95,6 +136,21 @@ class EraseController(
         }
     }
 
+    /**
+     * specs/generative_erase.md §9: a safety block is an `Invalid` with a recognizable prefix,
+     * not its own `AppError`, so this is where the two are told apart.
+     *
+     * The prefix is duplicated from `GeminiEraseClient` rather than imported: that class is
+     * `internal` to `core:ai`, which is the boundary working as intended — the feature knows the
+     * contract, not the client.
+     */
+    private fun messageFor(error: AppError): Int =
+        if (error is AppError.Invalid && error.detail.startsWith(BLOCKED_PREFIX)) {
+            R.string.erase_blocked
+        } else {
+            R.string.erase_failed
+        }
+
     /** DESIGN.md §7: cancelling leaves the document byte-for-byte untouched. */
     fun cancel() {
         job?.cancel()
@@ -107,5 +163,9 @@ class EraseController(
 
     fun onMessageShown() {
         _state.value = _state.value.copy(message = null)
+    }
+
+    private companion object {
+        const val BLOCKED_PREFIX = "blocked:"
     }
 }

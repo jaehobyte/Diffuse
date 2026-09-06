@@ -19,6 +19,7 @@ import com.diffuse.core.imaging.render.Renderer
 import com.diffuse.feature.editor.tools.crop.CropState
 import com.diffuse.feature.editor.tools.erase.EraseController
 import com.diffuse.feature.editor.tools.erase.EraseState
+import com.diffuse.feature.editor.tools.erase.EraseTap
 import com.diffuse.feature.editor.tools.select.SelectionController
 import com.diffuse.feature.editor.tools.select.SelectionState
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -157,19 +158,7 @@ class EditorViewModel @Inject constructor(
         } else if (tool == Tool.Select && !selection.onToolTapped()) {
             return
         } else if (tool == Tool.Erase) {
-            // specs/generative_erase.md §5: no sheet — tapping the tool runs it.
-            erase.runAndCommit(
-                image = state.preview?.asAndroidBitmap(),
-                mask = state.activeMask,
-                maskId = state.document?.activeMaskId,
-                save = { eraseId, result -> repository.saveEraseResult(projectId, eraseId, result) },
-                commit = { maskId, ref, eraseId ->
-                    history?.run {
-                        push(current.value.withGenerativeErase(maskId, ref, eraseId))
-                        commitCoalesce()
-                    }
-                },
-            )
+            onEraseTapped(state)
         } else {
             sheetBaseline = state.document
             // T23: the crop geometry is normalised, so it needs the source's pixel aspect to
@@ -183,6 +172,29 @@ class EditorViewModel @Inject constructor(
                 cropState = state.document?.let { CropState.from(it, aspect) } ?: CropState(),
             )
             if (tool == Tool.Select) state.preview?.let { selection.open(it.asAndroidBitmap()) }
+        }
+    }
+
+    /**
+     * specs/generative_erase.md §5, §9: the tool has no sheet — tapping it either runs the model
+     * or says which of the four things is missing.
+     */
+    private fun onEraseTapped(state: EditorUiState) {
+        when (erase.onToolTapped(hasSelection = state.document?.activeMaskId != null)) {
+            EraseTap.Refused -> Unit
+            EraseTap.OpenSettings -> selection.setSettingsVisible(true)
+            EraseTap.Run -> erase.runAndCommit(
+                image = state.preview?.asAndroidBitmap(),
+                mask = state.activeMask,
+                maskId = state.document?.activeMaskId,
+                save = { eraseId, result -> repository.saveEraseResult(projectId, eraseId, result) },
+                commit = { maskId, ref, eraseId ->
+                    history?.run {
+                        push(current.value.withGenerativeErase(maskId, ref, eraseId))
+                        commitCoalesce()
+                    }
+                },
+            )
         }
     }
 

@@ -20,6 +20,38 @@ Nothing in `work/tasks.md` is left. What a human still owes:
 
 ## Decisions
 
+### T43 — `EraseTap` is returned, not acted on
+
+§9 wants a missing key to open the 서버 설정 sheet, and that sheet is `SelectionController`'s:
+`showSettings` lives in `SelectionState`, and `EditorRoute` renders it from there. Giving
+`EraseController` its own copy would mean two owners of one sheet and two things to clear on
+cancel. So `onToolTapped` returns `EraseTap.Run` / `OpenSettings` / `Refused` and
+`EditorViewModel` — the one object holding both controllers — does the routing.
+
+`SelectionController.setSettingsVisible(visible)` replaced `dismissSettings()` rather than sitting
+beside a new `requestSettings()`: adding a function put the class at 21 and detekt's
+`TooManyFunctions` threshold is 20. One function that opens and closes reads better than two
+anyway, and `explain()` now goes through it too.
+
+`onToolClick` hit `CyclomaticComplexMethod` at the same time, so the erase branch moved into a
+private `onEraseTapped`.
+
+### T43 — the no-selection row is reported before the no-key row
+
+§9's table lists `activeMaskId == null` first, and it is the only ordering signal the spec gives.
+It means someone with neither a selection nor a key is told to select first and only then to paste
+a key — two steps. The alternative (key first) reads as more helpful but is invented, and the tool
+is greyed for both reasons either way, so the table order stands.
+
+### T43 — `"blocked:"` is duplicated rather than imported
+
+`GeminiEraseClient` is `internal` to `core:ai`, so `feature:editor` cannot see its
+`BLOCKED_PREFIX`. That is the module boundary working: §6 makes the prefix part of the
+`AppError.Invalid` contract, and a feature reading the contract is right where a feature reaching
+into the HTTP client would be wrong. The constant is `private` in `EraseController` with the spec
+reference next to it.
+
+
 ### T42 — the provider takes `DispatcherProvider`, which §7's snippet does not show
 
 §7 sketches `GeminiEraseProvider(client, settings)` but then requires "all of it on
