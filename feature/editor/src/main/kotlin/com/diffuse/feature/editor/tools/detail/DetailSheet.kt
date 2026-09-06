@@ -7,6 +7,7 @@ import com.diffuse.core.imaging.model.AdjustKind
 import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.feature.editor.R
 import com.diffuse.feature.editor.tools.AdjustSheet
+import com.diffuse.feature.editor.tools.MaskOption
 
 /** specs/adjust_detail.md: 선명도 / 비네트, both one-sided, so no centre tick. */
 val DetailKinds = listOf(AdjustKind.Sharpen, AdjustKind.Vignette)
@@ -19,6 +20,7 @@ fun DetailSheet(
     onCancel: () -> Unit,
     onApply: () -> Unit,
     modifier: Modifier = Modifier,
+    maskOption: MaskOption = MaskOption.None,
 ) {
     AdjustSheet(
         title = stringResource(R.string.detail_title),
@@ -29,5 +31,6 @@ fun DetailSheet(
         onCancel = onCancel,
         onApply = onApply,
         modifier = modifier,
+        maskOption = maskOption,
     )
 }

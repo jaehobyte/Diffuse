@@ -91,18 +91,22 @@ You are running unattended in a loop. No one will answer questions. Follow these
 ### Hard limits
 - Never modify: `.github/`, `settings.gradle.kts`, root `build.gradle.kts`, `gradle/libs.versions.toml`, `local.properties`, `scripts/check.sh`, any `*.md` under `specs/`, `DESIGN.md`, this file.
 - Never add a dependency not already in `libs.versions.toml`. If a task seems to need one, block it.
-- Never make a network call from code or tests. `FakeAiProvider` only. `USE_REMOTE_AI` stays `false`.
+- Never call an **external** host from code or tests. `MockWebServer` on localhost is the only
+  network a test may touch, and only in `core:ai`. Everywhere else use the fakes in
+  `ai_provider.md` §6. `USE_REMOTE_AI` stays `false`.
 - Never delete or weaken an existing test to make `check` pass. Never widen a golden tolerance. Never add `@Ignore`.
 - Never regenerate screenshot goldens unless the task's `done when` names that golden.
 - Never commit with a red `check`. Never force-push. Never touch branches other than the current one.
 - Never work on two tasks in one iteration, even if the second looks trivial.
 
 ### When the spec is silent
-- Choose the simplest option consistent with the spec and DESIGN.md, implement it, and record the decision in `progress.md` under `## Decisions` with the task id. Do not ask.
+- Choose the simplest option consistent with the spec and DESIGN.md, implement it, and record the decision in `work/decisions.md` under a `### T<NN>` heading, newest first. Do not ask.
 - If the choice would change a public interface another task depends on, do not choose — block the task instead.
 
 ### progress.md format
-Keep `progress.md` under 150 lines; trim `## Done` entries older than 10 tasks.
+Keep `progress.md` under 150 lines; trim `## Done` entries older than 10 tasks. Decisions live in
+`work/decisions.md`, not here — that file has no line limit, because it is read when touching a
+task's code rather than on every iteration.
 
 ### Definition of green
 `scripts/check.sh` exits 0: lint, detekt, unit tests, Roborazzi verify. Nothing else counts.

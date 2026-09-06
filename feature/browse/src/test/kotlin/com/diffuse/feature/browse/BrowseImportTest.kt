@@ -39,6 +39,26 @@ class BrowseImportTest {
 
         override suspend fun load(id: String) = Result.Failure(AppError.MissingSource)
         override suspend fun save(document: EditDocument) = Result.Success(Unit)
+        override suspend fun saveMask(
+            projectId: String,
+            maskId: String,
+            alpha: android.graphics.Bitmap,
+        ): Result<com.diffuse.core.imaging.model.ImageRef> =
+            Result.Success(com.diffuse.core.imaging.model.ImageRef("/mask_$maskId.png"))
+
+        override suspend fun saveEraseResult(
+
+            projectId: String,
+
+            eraseId: String,
+
+            bitmap: android.graphics.Bitmap,
+
+        ): Result<com.diffuse.core.imaging.model.ImageRef> =
+
+            Result.Success(com.diffuse.core.imaging.model.ImageRef("/erase_$eraseId.png"))
+
+
         override suspend fun duplicate(id: String) = Result.Success("copy")
         override suspend fun delete(id: String) = Result.Success(Unit)
     }

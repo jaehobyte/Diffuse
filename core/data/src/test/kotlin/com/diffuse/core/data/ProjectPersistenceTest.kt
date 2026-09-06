@@ -45,6 +45,8 @@ class ProjectPersistenceTest {
 
         override suspend fun full(document: EditDocument, onProgress: (Float) -> Unit) =
             Result.Success(Bitmap.createBitmap(64, 48, Bitmap.Config.ARGB_8888))
+
+        override suspend fun resolveMask(document: EditDocument, maskId: String): Bitmap? = null
     }
 
     @Before

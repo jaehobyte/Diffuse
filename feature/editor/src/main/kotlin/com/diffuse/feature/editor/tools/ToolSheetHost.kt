@@ -22,18 +22,20 @@ fun ToolSheetHost(
     onCancel: () -> Unit,
     onApply: () -> Unit,
     modifier: Modifier = Modifier,
+    maskOption: MaskOption = MaskOption.None,
 ) {
     when (selectedTool) {
         Tool.Light -> LightSheet(
-            document, onValueChange, onValueChangeFinished, onCancel, onApply, modifier,
+            document, onValueChange, onValueChangeFinished, onCancel, onApply, modifier, maskOption,
         )
         Tool.Color -> ColorSheet(
-            document, onValueChange, onValueChangeFinished, onCancel, onApply, modifier,
+            document, onValueChange, onValueChangeFinished, onCancel, onApply, modifier, maskOption,
         )
         Tool.Detail -> DetailSheet(
-            document, onValueChange, onValueChangeFinished, onCancel, onApply, modifier,
+            document, onValueChange, onValueChangeFinished, onCancel, onApply, modifier, maskOption,
         )
-        // Crop carries its own state, so T21 hosts it alongside the editor's.
-        Tool.Crop, null -> Unit
+        // Crop and Select carry their own state, so the route hosts them alongside the editor's.
+        // Erase has no sheet at all: tapping the tool runs it (generative_erase.md §5).
+        Tool.Crop, Tool.Select, Tool.Erase, null -> Unit
     }
 }

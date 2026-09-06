@@ -35,8 +35,7 @@ private val ZERO_CENTRED = -1f..1f
 private val UNIT_RANGE = 0f..1f
 
 /**
- * specs/edit_model.md. Sealed so v2 can add `Mask` and `AiResult` without touching the
- * existing ops. Do not pre-add them.
+ * specs/edit_model.md. Sealed so new ops arrive without touching the existing ones.
  */
 sealed interface Operation {
 
@@ -46,6 +45,42 @@ sealed interface Operation {
         override val id: String,
         val kind: AdjustKind,
         val value: Float,
+        /**
+         * specs/selection_tool.md §8.1: when set, the renderer blends this adjustment through
+         * the named [Mask] instead of applying it to the whole frame.
+         */
+        val maskId: String? = null,
+    ) : Operation
+
+    /**
+     * A selection. Changes no pixels on its own; other ops reference it by [id].
+     *
+     * It stores the resulting alpha and **not** the prompts that produced it: a v2 selection is
+     * built by merging point runs and text phrases (specs/selection_tool.md §4), so no single
+     * prompt reproduces it.
+     */
+    data class Mask(
+        override val id: String,
+        /** `ALPHA_8` PNG at working resolution, in the project folder. */
+        val maskRef: ImageRef,
+    ) : Operation
+
+    /**
+     * specs/selection_tool.md §8.2: clears the alpha outside [maskId], leaving a cut-out.
+     * Several may stack; each one restricts the alpha further.
+     */
+    data class CutOut(override val id: String, val maskId: String) : Operation
+
+    /**
+     * specs/generative_erase.md §6. The one op that carries its own pixels: the renderer takes
+     * [resultRef] inside [maskId] and leaves everything outside it alone, so the document stays
+     * composable and undo is still a single removal.
+     */
+    data class GenerativeErase(
+        override val id: String,
+        val maskId: String,
+        /** PNG at working resolution, in the project folder. */
+        val resultRef: ImageRef,
     ) : Operation
 
     /** [rect] is normalised 0..1 against the un-cropped, un-rotated source. */

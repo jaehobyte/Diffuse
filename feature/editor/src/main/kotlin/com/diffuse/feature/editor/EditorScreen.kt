@@ -7,7 +7,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -28,6 +31,8 @@ import androidx.compose.ui.unit.dp
 import com.diffuse.core.ui.theme.AppTheme
 import com.diffuse.core.ui.theme.ThemeMode
 import com.diffuse.core.ui.theme.Tokens
+import com.diffuse.feature.editor.canvas.CanvasGestureMode
+import com.diffuse.feature.editor.canvas.CanvasPointTaps
 import com.diffuse.feature.editor.canvas.CanvasViewport
 import com.diffuse.feature.editor.canvas.EditorCanvas
 import com.diffuse.feature.editor.canvas.OverlayTransform
@@ -56,10 +61,22 @@ fun EditorScreen(
     modifier: Modifier = Modifier,
     /** DESIGN.md §4: sheets rise above the tool strip rather than replacing it. */
     sheet: (@Composable () -> Unit)? = null,
-    /** specs/canvas.md: the crop tool draws inside the canvas, not over the whole screen. */
-    cropOverlay: (@Composable BoxScope.() -> Unit)? = null,
+    /** specs/canvas.md: a tool draws inside the canvas, not over the whole screen. */
+    canvasOverlay: (@Composable BoxScope.() -> Unit)? = null,
     /** tasks.md T24: the crop tool's rotation, previewed live without a re-render. */
     overlayTransform: OverlayTransform = OverlayTransform.None,
+    /** specs/selection_tool.md §1: a tool with no working provider is greyed but still tappable. */
+    disabledTools: Set<Tool> = emptySet(),
+    /** specs/selection_tool.md §2: the select sheet claims the single finger while it is open. */
+    gestureMode: CanvasGestureMode = CanvasGestureMode.Pan,
+    pointTaps: CanvasPointTaps? = null,
+    /** DESIGN.md §7: AI work always shows progress and a way out. */
+    busy: Boolean = false,
+    @androidx.annotation.StringRes busyLabelRes: Int = R.string.select_preparing,
+    onCancelWork: () -> Unit = {},
+    /** One-shot snackbar text; DESIGN.md §4 forbids toasts. */
+    message: String? = null,
+    onMessageShown: () -> Unit = {},
 ) {
     // DESIGN.md §1: the editor is always warm-dark chrome, never the browse palette.
     AppTheme(mode = ThemeMode.Edit) {
@@ -69,14 +86,9 @@ fun EditorScreen(
         // DESIGN.md §7: hold to compare with the original is the single comparison gesture.
         var comparing by remember { mutableStateOf(false) }
         var sheetHeightPx by remember { mutableIntStateOf(0) }
-        var toolStripHeightPx by remember { mutableIntStateOf(0) }
-        val sheetInset = canvasInset(sheet != null, sheetHeightPx, toolStripHeightPx)
-        Box(modifier = modifier.testTag(EditorScreenTestTag).fillMaxSize()) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Tokens.editBackground),
-        ) {
+        val snackbarHost = remember { SnackbarHostState() }
+        ShowMessage(message, snackbarHost, onMessageShown)
+        val topBar: @Composable () -> Unit = {
             EditorTopBar(
                 canUndo = canUndo,
                 canRedo = canRedo,
@@ -96,24 +108,91 @@ fun EditorScreen(
                 },
                 onExport = onExport,
             )
-            EditorCanvas(
-                bitmap = if (comparing) source ?: preview else preview,
-                viewport = viewport,
-                onViewportChange = { viewport = it },
-                modifier = Modifier.weight(1f).padding(bottom = sheetInset),
-                contentDescription = stringResource(
-                    if (comparing) R.string.editor_canvas_source else R.string.editor_canvas_edited,
-                ),
-                overlayTransform = overlayTransform,
-                overlay = cropOverlay,
-            )
-            EditorToolStrip(
+        }
+        var toolStripHeightPx by remember { mutableIntStateOf(0) }
+        val sheetInset = canvasInset(sheet != null, sheetHeightPx, toolStripHeightPx)
+        Box(modifier = modifier.testTag(EditorScreenTestTag).fillMaxSize()) {
+            EditorBody(
+                preview = preview,
+                source = source,
+                comparing = comparing,
                 selectedTool = selectedTool,
                 onToolClick = onToolClick,
-                modifier = Modifier.navigationBarsPadding().onSizeChanged { toolStripHeightPx = it.height },
+                disabledTools = disabledTools,
+                topBar = topBar,
+                viewport = viewport,
+                onViewportChange = { viewport = it },
+                sheetInset = sheetInset,
+                overlayTransform = overlayTransform,
+                gestureMode = gestureMode,
+                pointTaps = pointTaps,
+                canvasOverlay = canvasOverlay,
+                onToolStripHeight = { toolStripHeightPx = it },
+            )
+            if (busy) SelectionProgressOverlay(onCancel = onCancelWork, labelRes = busyLabelRes)
+            if (sheet != null) SheetOverlay(sheet) { sheetHeightPx = it }
+            SnackbarHost(
+                hostState = snackbarHost,
+                modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding(),
             )
         }
-        if (sheet != null) SheetOverlay(sheet) { sheetHeightPx = it }
+    }
+}
+
+/** specs/editor_shell.md: top bar 56dp / canvas / tool strip 72dp, in that order. */
+@Composable
+private fun EditorBody(
+    preview: ImageBitmap?,
+    source: ImageBitmap?,
+    comparing: Boolean,
+    selectedTool: Tool?,
+    onToolClick: (Tool) -> Unit,
+    disabledTools: Set<Tool>,
+    topBar: @Composable () -> Unit,
+    viewport: CanvasViewport,
+    onViewportChange: (CanvasViewport) -> Unit,
+    sheetInset: Dp,
+    overlayTransform: OverlayTransform,
+    gestureMode: CanvasGestureMode,
+    pointTaps: CanvasPointTaps?,
+    canvasOverlay: (@Composable BoxScope.() -> Unit)?,
+    onToolStripHeight: (Int) -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxSize().background(Tokens.editBackground)) {
+        topBar()
+        EditorCanvas(
+            bitmap = if (comparing) source ?: preview else preview,
+            viewport = viewport,
+            onViewportChange = onViewportChange,
+            modifier = Modifier.weight(1f).padding(bottom = sheetInset),
+            contentDescription = stringResource(
+                if (comparing) R.string.editor_canvas_source else R.string.editor_canvas_edited,
+            ),
+            overlayTransform = overlayTransform,
+            gestureMode = gestureMode,
+            pointTaps = pointTaps,
+            overlay = canvasOverlay,
+        )
+        EditorToolStrip(
+            selectedTool = selectedTool,
+            onToolClick = onToolClick,
+            disabledTools = disabledTools,
+            modifier = Modifier.navigationBarsPadding().onSizeChanged { onToolStripHeight(it.height) },
+        )
+    }
+}
+
+/** DESIGN.md §4 State display: errors are a snackbar on a dark surface, never a toast. */
+@Composable
+private fun ShowMessage(
+    message: String?,
+    host: SnackbarHostState,
+    onMessageShown: () -> Unit,
+) {
+    LaunchedEffect(message) {
+        if (message != null) {
+            host.showSnackbar(message)
+            onMessageShown()
         }
     }
 }

@@ -1,0 +1,307 @@
+package com.diffuse.feature.editor.tools.select
+
+import android.graphics.Bitmap
+import android.graphics.PointF
+import com.diffuse.core.ai.Availability
+import com.diffuse.core.ai.SegmentationProvider
+import com.diffuse.core.ai.sam3.Sam3Settings
+import com.diffuse.core.common.AppError
+import com.diffuse.core.common.Result
+import com.diffuse.feature.editor.R
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+
+/**
+ * specs/selection_tool.md. The "선택" tool in one object: availability, the session, the points
+ * and the mask. It is deliberately not part of `EditorViewModel` — the tool has its own
+ * lifecycle (a session outlives the sheet) and its own undo stack, and mixing the two made both
+ * harder to read.
+ *
+ * Nothing here touches the document. Committing the mask is `EditorViewModel`'s job, because
+ * only it owns the history stack.
+ */
+class SelectionController(
+    private val segmentation: SegmentationProvider,
+    private val settings: Sam3Settings,
+    private val scope: CoroutineScope,
+) {
+
+    private val _state = MutableStateFlow(SelectionState())
+    val state: StateFlow<SelectionState> = _state.asStateFlow()
+
+    /** In flight `byPoints` or `byText`; a new prompt supersedes it rather than queueing (§4). */
+    private var job: Job? = null
+
+    /** Set when the user gives up on an `open` that is already on the wire. See [open]. */
+    private var abandonedOpen = false
+
+    /** Whether this backend has ever answered. See [explain]. */
+    private var everReady = false
+
+    init {
+        scope.launch {
+            segmentation.availability.collect { availability ->
+                if (availability is Availability.Ready) everReady = true
+                _state.value = _state.value.copy(availability = availability)
+            }
+        }
+        scope.launch {
+            settings.config.collect { config ->
+                _state.value = _state.value.copy(config = config)
+                segmentation.refresh()
+            }
+        }
+    }
+
+    /**
+     * specs/selection_tool.md §1: a greyed tool still explains itself. When the reason is that
+     * nothing is configured, the settings sheet is more use than a snackbar saying so.
+     *
+     * @return true when the sheet may open.
+     */
+    fun onToolTapped(): Boolean {
+        val availability = _state.value.availability
+        if (availability is Availability.Ready) return true
+        explain((availability as? Availability.Unavailable)?.reason)
+        return false
+    }
+
+    /**
+     * Only one question matters: can the user fix this by editing the settings?
+     *
+     * - `Invalid` (no address) and `Unauthorized` (the token was rejected) always can be —
+     *   `/healthz` needs no auth, so a bad token sits behind a perfectly healthy server.
+     * - Anything else, from a backend that has never once answered, is most likely a wrong
+     *   address. A default that does not resolve — the emulator's `10.0.2.2` on a real phone —
+     *   would otherwise grey the tool forever with no way in.
+     * - Anything else, from a backend that has answered before, is a rate limit, a dropped
+     *   connection or a restart. Say so and re-probe; do not throw a sheet at someone whose
+     *   settings are fine.
+     */
+    private fun explain(reason: AppError?) {
+        val fixableInSettings =
+            reason is AppError.Invalid || reason is AppError.Unauthorized || !everReady
+        if (fixableInSettings) {
+            _state.value = _state.value.copy(showSettings = true)
+            return
+        }
+        _state.value = _state.value.copy(message = R.string.select_unavailable_offline)
+        scope.launch { segmentation.refresh() }
+    }
+
+    /**
+     * specs/selection_tool.md §9: the session is opened on the **current preview**, not the
+     * source, so the mask lines up with what the user is looking at. Re-opening the sheet in the
+     * same editor session reuses it.
+     */
+    fun open(preview: Bitmap) {
+        // `preparing` as well as `session`: an upload takes seconds, and without this a second
+        // tap in that window starts a second one.
+        if (_state.value.session != null || _state.value.preparing) return
+        abandonedOpen = false
+        _state.value = _state.value.copy(preparing = true)
+        // Deliberately not held in `job`. Cancelling an upload that is already on the wire does
+        // not un-create the session the server makes from it — it only loses the id, leaving an
+        // orphan to occupy one of the backend's four slots until its TTL expires. So the call
+        // always runs to completion, and a session nobody wants any more is released below.
+        scope.launch {
+            when (val opened = segmentation.open(preview)) {
+                is Result.Success -> if (abandonedOpen) {
+                    segmentation.close(opened.value)
+                    _state.value = _state.value.copy(preparing = false)
+                } else {
+                    _state.value = _state.value.copy(session = opened.value, preparing = false)
+                }
+                is Result.Failure -> _state.value =
+                    _state.value.copy(preparing = false, message = R.string.select_failed)
+            }
+        }
+    }
+
+    /**
+     * specs/selection_tool.md §6: the session outlives the sheet, but not the editor. Leaving
+     * without this leaks it for the backend's whole TTL.
+     */
+    suspend fun release() {
+        abandonedOpen = true
+        job?.cancel()
+        _state.value.session?.let { segmentation.close(it) }
+        _state.value = _state.value.cleared().copy(session = null, preparing = false, busy = false)
+    }
+
+    /** specs/selection_tool.md §2: tap adds a foreground point, long-press a background one. */
+    fun addPoint(x: Float, y: Float, foreground: Boolean) {
+        val current = _state.value
+        if (current.session == null) return
+        segment(current.withPoint(PointF(x, y), foreground))
+    }
+
+    /**
+     * specs/selection_tool.md §4. Inside a point run undo drops the last point and re-segments;
+     * with the run empty it takes back one whole merge. One gesture, one step back, either way.
+     */
+    fun undoPoint() {
+        val current = _state.value
+        if (current.points.isNotEmpty()) {
+            segment(current.withoutLastPoint())
+        } else {
+            current.withoutLastMerge()?.let { _state.value = it }
+        }
+    }
+
+    /**
+     * specs/selection_tool.md §4: switching the mode ends the current run, so a subtract-mode tap
+     * builds a new positive selection to take out rather than appending a background point.
+     */
+    fun setMode(mode: MergeMode) {
+        val current = _state.value
+        if (current.mode == mode) return
+        job?.cancel()
+        _state.value = current.committingRun().copy(mode = mode)
+    }
+
+    fun setPhrase(phrase: String) {
+        _state.value = _state.value.copy(phrase = phrase)
+    }
+
+    /**
+     * specs/prompt_input.md §4. A phrase segments every instance of the concept; they union into
+     * one mask, which then merges by the current mode exactly as a point run's result does.
+     */
+    fun submitPhrase(phrase: String) {
+        val current = _state.value
+        val session = current.session ?: return
+        if (phrase.isBlank()) return
+        job?.cancel()
+        _state.value = current.copy(phrase = phrase, phraseBusy = true, notFound = false)
+        job = scope.launch {
+            when (val result = segmentation.byText(session, phrase)) {
+                is Result.Success -> {
+                    val union = MaskOps.union(result.value.map { it.alpha })
+                    if (union == null) {
+                        // count == 0 is a valid answer: the concept is absent.
+                        _state.value = _state.value.copy(phraseBusy = false, notFound = true)
+                    } else {
+                        mergeIncoming(union)
+                        // The bar clears only on a successful merge (prompt_input.md §4).
+                        _state.value = _state.value.copy(phrase = "", phraseBusy = false)
+                    }
+                }
+                is Result.Failure -> _state.value = _state.value.copy(
+                    phraseBusy = false,
+                    message = R.string.select_failed,
+                )
+            }
+        }
+    }
+
+    /**
+     * specs/selection_tool.md §4: a phrase's instances union into one mask, then merge as one.
+     *
+     * It merges into what is **on screen**, not into [SelectionState.base]: a live point run is
+     * part of the selection the user can see, and a phrase ends that run rather than discarding
+     * it.
+     */
+    fun mergeIncoming(incoming: Bitmap) {
+        val current = _state.value
+        val merged = MaskOps
+            .merged(current.mask, incoming, current.mode)
+            .takeUnless(MaskOutline::isEmpty)
+        _state.value = current.copy(
+            mask = merged,
+            base = merged,
+            merges = current.merges + current.mask,
+            points = emptyList(),
+            labels = emptyList(),
+        )
+    }
+
+    /** specs/selection_tool.md §4: 반전 flips the accumulated mask, never an individual result. */
+    fun invert() {
+        val current = _state.value
+        val mask = current.mask ?: return
+        val flipped = MaskOps.inverted(mask)
+        _state.value = current.copy(
+            mask = flipped,
+            base = flipped,
+            points = emptyList(),
+            labels = emptyList(),
+            inverted = !current.inverted,
+        )
+    }
+
+    /** 지우기: the selection goes, the session stays. */
+    fun clear() {
+        job?.cancel()
+        _state.value = _state.value.cleared()
+    }
+
+    /** DESIGN.md §7: AI work always offers a way out. */
+    fun cancelWork() {
+        // A prompt creates nothing, so cancelling one is free; an `open` is not, so it is
+        // marked abandoned instead and released as soon as its id is known.
+        abandonedOpen = true
+        job?.cancel()
+        // Whatever was accumulated stays exactly as it was.
+        _state.value = _state.value.copy(preparing = false, busy = false, phraseBusy = false)
+    }
+
+    /** Cancel or Apply closed the sheet. The session survives so re-opening is instant (§6). */
+    fun closeSheet() {
+        job?.cancel()
+        _state.value = _state.value.cleared()
+            .copy(preparing = false, busy = false, phraseBusy = false, phrase = "")
+    }
+
+    fun saveSettings(baseUrl: String, token: String) {
+        settings.update(baseUrl, token)
+        _state.value = _state.value.copy(showSettings = false)
+    }
+
+    fun dismissSettings() {
+        _state.value = _state.value.copy(showSettings = false)
+    }
+
+    fun showMessage(res: Int) {
+        _state.value = _state.value.copy(message = res)
+    }
+
+    fun onMessageShown() {
+        _state.value = _state.value.copy(message = null)
+    }
+
+    /**
+     * Only the latest prompt matters: an in-flight call is cancelled rather than queued, and the
+     * previous mask stays on screen until the new one lands (specs/selection_tool.md §5).
+     */
+    private fun segment(next: SelectionState) {
+        val session = next.session ?: return
+        val prompt = next.prompt
+        job?.cancel()
+        if (prompt == null) {
+            // The run emptied out; what was accumulated before it stays.
+            _state.value = next.copy(mask = next.base, lowConfidence = false, busy = false)
+            return
+        }
+        _state.value = next.copy(busy = true)
+        job = scope.launch {
+            _state.value = when (val result = segmentation.byPoints(session, prompt)) {
+                is Result.Success -> {
+                    // The run's result merges into what was already accumulated (§4).
+                    val merged = MaskOps.merged(next.base, result.value.alpha, next.mode)
+                    next.copy(
+                        mask = merged.takeUnless(MaskOutline::isEmpty),
+                        lowConfidence = result.value.score < SelectionState.LOW_CONFIDENCE_SCORE,
+                        busy = false,
+                    )
+                }
+                // The mask the user already had survives a failed prompt.
+                is Result.Failure -> next.copy(busy = false, message = R.string.select_failed)
+            }
+        }
+    }
+}

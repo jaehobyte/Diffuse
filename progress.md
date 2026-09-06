@@ -2,10 +2,82 @@
 
 ## Current
 
-**T22-T24 complete.** `scripts/check.sh` green offline. Phase 5 (v1.1 fixes) is done;
-T25 is `[H]`, so the loop stops here until a human lands the v2 decisions and assets.
+**T22-T24 complete.** `scripts/check.sh` green offline. The v1.1 fix phase is done.
+
+**v2 was re-planned on 2026-09-06** (user decision). On-device EdgeTAM is dropped in favour of the
+server-side SAM 3 service at `~/sam3-server`, and the backlog gains a prompt bar with voice input
+and a generative eraser. `work/tasks.md` is now T26-T38 in four phases, with the human
+prerequisites listed at the top of that file rather than as a task. ADR-007 and ADR-008 are struck
+in architecture.md §10; ADR-009 and ADR-010 replace them.
+
+Specs are written and consistent: `ai_provider.md`, `segmentation.md`, `selection_tool.md`
+(rewritten), `prompt_input.md`, `generative_erase.md` (new), plus amendments to `edit_model.md`,
+`architecture.md` (§2, §6, §8, §9, §10) and `DESIGN.md` (§1 accent ruling, §4 prompt bar).
+
+**T26-T38 done — the whole v2 backlog is implemented and `scripts/check.sh` is green offline.**
+
+One prerequisite is still open: `POST /v1/edit/erase` does not exist in `~/sam3-server` yet, so
+the generative eraser has nothing real to talk to. Everything else runs against a running SAM 3
+service once `sam3.baseUrl` / `sam3.token` are set (or entered in the in-app settings sheet).
 
 ## Done
+
+- T38 Generative eraser — `Operation.GenerativeErase` carrying its own pixels, the renderer
+  blending them through the mask, `erase_<id>.png` persistence, and a sheet-less 지우기 tool.
+  `EraseController` owns the run→save→commit sequence. 12 tests + golden
+  `generative_erase_render`.
+
+- T37 `EraseProvider` — `Sam3EraseClient` posting image + mask + hint to `/v1/edit/erase` with
+  a 60s read timeout, `Sam3EraseProvider` reusing segmentation's availability, and `MaskPng`.
+  10 MockWebServer tests.
+
+- T36 Prompt or speech → mask — the selection sheet hosts `VoicePromptBar`, a phrase runs
+  `byText`, its instances union into one mask and merge by the current mode, and `count == 0`
+  is the 찾지 못했어요 hint rather than an error. 9 tests + golden `select_prompt_result`.
+
+- T35 Voice input — `SpeechInput` / `SpeechState`, `AndroidSpeechInput` over the OS recogniser
+  in `ko-KR` with partial results, `FakeSpeechInput`, and `VoicePromptBar` owning the
+  RECORD_AUDIO grant. 7 tests.
+
+- T34 `PromptBar` — 48dp / 16dp radius / `editSurfaceRaised`, mic and send at 48dp hit areas,
+  Korean placeholder, IME Done submitting the trimmed value, and the mic turning accent only
+  while listening. 8 tests + goldens `prompt_bar_empty` / `_filled` / `_listening`.
+
+- T33 Background removal — `Operation.CutOut`, `CutOutOp` doing `alpha = min(alpha, maskAlpha)`,
+  `EditDocument.hasAlpha`, 배경 지우기 writing the mask and the cut-out as one history entry, and
+  `ExportSettings.autoFormatFor` picking PNG. 13 tests + render golden `cutout_render`.
+
+- T32 Masked adjustments — `Operation.Adjust.maskId`, one live Adjust per `(kind, maskId)`,
+  `MaskBlend` doing `lerp(in, adjusted, maskAlpha)` in the renderer, the "선택 영역에만" switch on
+  all three adjust sheets, and the scrim on the canvas while it is on. 12 tests + render golden
+  `exposure_+0.5_masked`; every existing golden unchanged.
+
+- T31 Accumulated merging — `MaskOps.merged/union`, a [추가 | 빼기] chip row, and an undo that
+  drops a point inside a run and one whole merge once the run is empty. 12 tests + golden
+  `select_mask_merged`; `select_sheet_open` re-recorded for the new row.
+
+- T30 "선택" tool — `SelectionController` owns the whole tool (availability, session, points,
+  mask, settings sheet); `EditorViewModel` only commits it. Canvas `gestureMode = SelectPoint`
+  with normalized taps, `MaskOutline` tracing the scrim and the outline from one `Region` path,
+  the AI dot and greyed-tool state in the strip, and the SAM 3 settings sheet T28 deferred.
+  20 tests + goldens `select_sheet_open`, `select_mask_preview`.
+
+- T29 `Operation.Mask` — the op, `EditDocument.activeMaskId` / `withMask` / `referencesResolve`,
+  JSON, `MaskIo` (ALPHA_8 ↔ PNG), `Renderer.resolveMask` with a 2-entry cache, and
+  `ProjectRepository.saveMask` writing `mask_<id>.png`. 21 tests.
+
+- T28 `Sam3SegmentationProvider` — one live session plus the bytes that opened it, so §5's
+  expiry replay (re-upload once, repeat the prompt) never reaches the caller. `Sam3Settings`
+  on SharedPreferences with `local.properties` defaults through `:core:ai`'s own BuildConfig,
+  `Sam3ImageCodec` (2048px, JPEG 90 → 75), and `AiModule`. 19 tests.
+
+- T27 `Sam3Client` — OkHttp + kotlinx.serialization over the five SAM 3 routes, `Sam3Outcome`
+  with `SessionExpired` as its own case, and `MaskCodec`. 17 MockWebServer tests, localhost only.
+
+- T26 `core:ai` module — `SegmentationProvider` (`open`/`byPoints`/`byText`/`close`) and
+  `EraseProvider` behind `Availability`, plus the two fakes in `src/testShared/kotlin` so
+  `:feature:editor` tests can compile them. 15 tests. `settings.gradle.kts`, the dependencyGuard
+  module map and `:feature:editor` all gained the `:core:ai` edge.
 
 - T24 Live rotate / straighten preview — `OverlayTransform` in the canvas rotates the drawn
   bitmap about the image centre with no `Renderer` pass; quarter turns swap the fitted size.
@@ -33,197 +105,21 @@ T25 is `[H]`, so the loop stops here until a human lands the v2 decisions and as
   6 tests + 2 render goldens + `detail_sheet_open`. Every `AdjustKind` now has real maths.
 - T15 Crop and rotate — rotate-then-crop render, `CropGeometry` auto-shrink, overlay with
   handles and thirds grid, preset/straighten/90° sheet. 15 tests + 4 goldens.
-- T14 Color adjustments — Temperature/Tint/Saturation/Vibrance maths, `ColorSheet` on the
-  shared `AdjustSheet`, `ToolSheetHost`; 8 goldens + `color_sheet_open`.
-- T13 Light adjustments — Exposure/Contrast/Highlights/Shadows maths, the shared
-  `AdjustSheet`, the golden-image machinery, 8 render goldens + `light_sheet_open`.
-- T12 Slider component — `AdjustSlider` (4dp track, 20dp thumb, value pinned right in
-  mono, centre tick, double-tap reset); 5 tests + goldens `slider_default`/`slider_zero_centered`.
-- T11 Compare gesture — hold shows the source, release restores the preview; disabled
-  without operations. 4 tests.
-- T10 Render pipeline — `Renderer`/`CpuRenderer`, preview+base LRU caches, cancellable
-  between ops, `Ops` registry, gated benchmark behind `scripts/bench.sh`. 8 tests.
-- T09 Undo / redo history — `HistoryStack` with coalescing, 50-entry cap and
-  `StateFlow` enablement wired into the top bar. 8 + 2 tests.
-- T08 Non-destructive edit model — `EditDocument`/`Operation`/`AdjustKind`/`ImageRef`
-  with accessors enforcing the specs/edit_model.md rules, plus lenient JSON. 12 tests.
-- T07 Bottom sheet component — `EditSheet` (24dp corners, handle, 45% cap, pinned
-  [Cancel | Apply]) plus `TertiaryPill`; 3 tests + goldens `sheet_collapsed`/`sheet_expanded`.
-- T06 Editor screen shell — top bar 56dp / canvas / tool strip 72dp, edge-to-edge,
-  Korean strings in strings.xml; 6 tests + golden `editor_shell_default`.
-- T05 Canvas composable — `EditorCanvas` with fit/pinch/pan/double-tap, 8dp checkerboard,
-  `LocalCanvasTransform`; 10 tests + goldens `canvas_fit`/`canvas_zoomed`/`canvas_transparent`.
-- T04 Image loading pipeline — `ImageLoader.load(uri)` + `SourceImage`; 4096px bound,
-  two-step downsample, EXIF applied to pixels, typed failures. 8 tests.
-- T03 Screenshot test harness — `theme_swatches` golden (all 21 colors + 8 text styles,
-  both modes), shared `ScreenshotOptions`, §7 fixtures derived from `test/kodim23.png`.
-- T02 Design tokens and theme — `core/ui/theme/Tokens.kt` (21 colors, 8 text styles,
-  §6 elevation), `Theme.kt` (`AppTheme(mode)`, `AppColors`, `LocalAppColors`),
-  Pretendard + JetBrains Mono bundled.
-- T01 Project skeleton compiles — 8 modules, Gradle 8.14.5 / AGP 8.13.2 / Kotlin 2.3.21,
-  build-logic convention plugins, `dependencyGuard`, `scripts/check.sh` green offline.
 
-## Next
+_T01–T14 trimmed per CLAUDE.md (keep the last 10). Their decisions are still in ## Decisions
 
-T04 Image loading pipeline — unblocked. The loop can run **T04 through T12**;
-T13 blocks on the still-missing `specs/adjust_light.md`.
-
-## Decisions
-
-### T24
-
-- **`OverlayTransform` splits the quarter turns from the straighten**, because `CropOp`
-  does: the turns change the image's shape (so the canvas refits to the swapped size), the
-  straighten rotates inside those bounds (so its corners are clipped and the rect
-  auto-shrinks). One combined angle could not drive both.
-- **The bitmap is drawn into an axis-swapped rect and then rotated onto the image rect.**
-  Rotating the fitted rect itself would leave the drawn image at the wrong aspect.
-- **`touches` named `feature/editor/canvas` and `.../tools/crop`,** but the transform has to
-  reach the canvas through `EditorScreen` and be built in `EditorRoute`; both were edited.
-- **`recordRoborazziDebug --tests '*CropGoldenTest*'` also rewrites `crop_overlay.png`.**
-  T24 does not name that golden, so it was restored from git; `verifyRoborazziDebug` then
-  passed against the committed version, confirming the change is inside the threshold.
-
-### T23
-
-- **The root cause was the call site, not `CropGeometry`.** The task guessed "aspect
-  enforced in normalised space without multiplying by the source aspect"; the maths already
-  multiplied. `EditorRoute` passed a hardcoded `CANVAS_ASPECT = 4f / 3f`, so on a 3000x4000
-  source the red test reported `Square gave 0.5625, expected 1.0` — and 16:9 gave ~1:1,
-  exactly the reported symptom.
-- **`CropState` owns `sourceAspect`**, so `withPreset`/`straightened` can no longer be
-  handed the wrong number. The ViewModel reads it off the bare-source preview, whose shape
-  is the source's shape.
-- **`imageAspect` inverts on odd quarter turns**, because `CropOp` normalises `rect`
-  against the post-quarter-turn canvas. Without it a preset chosen after a 90° turn would
-  reintroduce the same class of bug.
-- **`touches` named only `feature/editor/tools/crop`**, but the constant lived in
-  `EditorRoute` and the aspect had to come from `EditorViewModel`; both were edited, since
-  the bug is unfixable inside the crop package alone.
-- **`rotated()` still leaves the rect and the preset chip alone** after a 90° turn
-  (specs/crop.md §Interaction asks for both). Untouched from T15 — out of T23's scope.
-
-### T22
-
-- **The reset icon sits in the centre group, right after Redo.** DESIGN.md §4 puts the
-  history controls in the centre and Compare/Export on the right; "between Redo and
-  Compare" is satisfied either way, and grouping it with undo/redo keeps the right side to
-  the two actions §4 names. `Icons.Rounded.RestartAlt` over `history`, which reads as
-  "version history" rather than "start over".
-- **Reset zeroes the viewport.** `RefitOnSizeChange` only refits a viewport the user has
-  not zoomed, so `onReset` resets `CanvasViewport()` in `EditorScreen` to guarantee the
-  refit the task asks for when a Crop is dropped.
-- **`resetToOriginal()` is an extension on `HistoryStack`**, not a private VM method, so
-  the UI test drives the same code the ViewModel does instead of restating it.
-- **CLAUDE.md forbids editing `specs/*.md`, but T22's `touches` explicitly allows
-  appending one row to the Top bar section.** Took the more specific instruction and
-  appended a single bullet to specs/editor_shell.md §Top bar behavior.
-
-### Stack (T01)
-
-- **AGP 8.13.2 / Kotlin 2.3.21 / Gradle 8.14.5 / compileSdk 36.** AGP 9 was rejected:
-  its DSL changes are what an unattended loop gets wrong, and CLAUDE.md forbids the loop
-  from editing root gradle files, so a mismatch forces a block rather than a fix.
-  `targetSdk 36` is a documented deviation from specs/architecture.md §2 "latest stable" (37),
-  which AGP 8.13.2 cannot compile against.
-- **Version ceilings this forces.** Each pin is the newest that works on this line:
-  `hilt 2.58` (2.59+ demands AGP 9.0), `composeBom 2026.06.01` (2026.08.00 ships Compose
-  1.12.0, needing AGP 9.1 + compileSdk 37), `coreKtx 1.18.0`, `lifecycle 2.10.0`,
-  `navigationCompose 2.9.8`, `hiltNavigationCompose 1.3.0`, `coil 3.4.0`.
-- **Tripwire: Kotlin 2.3.21 is exactly at Hilt 2.58's metadata ceiling.** Hilt 2.58 reads
-  Kotlin metadata only up to 2.3. coil 3.5.0+ is built with Kotlin 2.4 and breaks the
-  Hilt processor. Do not bump Kotlin to 2.4.x without also moving to AGP 9 + Hilt 2.59+.
-- **`core:common` is a pure JVM module** (specs/architecture.md §3 allows it no Android deps),
-  so its Hilt bindings must live in a `@Module` in `app`. It registers a
-  `testDebugUnitTest` alias, without which check.sh would silently skip its tests.
-- **`dependencyGuard` is a custom root task**, not the Dropbox plugin, because §4
-  describes module-graph rules while that plugin locks dependency version lists.
-
-### Test harness (T01, T03)
-
-- **Robolectric offline.** It fetches `android-all` from Maven at *test runtime*, which
-  `--offline` forbids. The artifact is pinned, resolved through a Gradle configuration,
-  synced to `build/robolectric-deps`, and reached via `robolectric.offline=true`.
-  Each Android module also pins `sdk=36` in `robolectric.properties` — Robolectric
-  otherwise falls back to `minSdk` (26) on library modules and demands an API-26 jar.
-- **`junit-platform-launcher` is mandatory** or JUnit 5 discovery dies on unaligned
-  platform jars. JUnit 5 runs with the vintage engine so Robolectric/Roborazzi JUnit 4
-  tests share one platform (specs/testing.md §3).
-- **Goldens are declared as test-task inputs.** Without that Gradle marks the test task
-  UP-TO-DATE and `verifyRoborazziDebug` passes against a deleted or edited golden — the
-  exact hole testing.md §5 forbids. Verified by injection; see ## Current.
-- **`changeThreshold` lives in build-logic, not the Roborazzi extension**, which exposes
-  no such knob in 1.73. The value is a system property set once for every Compose module
-  and `ScreenshotOptions` is its only reader, failing loudly if it is unset.
-- **Golden path is fixed in `ScreenshotOptions.goldenPath()`**, because the Roborazzi
-  Gradle plugin owns `roborazzi.output.dir` and overrode attempts to set it.
-
-### Design tokens (T02)
-
-- **Pretendard as a single variable font.** DESIGN.md §3 mandates it and testing.md §5
-  needs it bundled for deterministic goldens. Measured compressed-in-APK: variable
-  2.82 MB vs 4.06 MB for four static weights, plus JetBrains Mono Medium at 127 KB.
-  Total ≈ 2.95 MB of the 15 MB budget (specs/architecture.md §8) — re-measure at T20.
-  `FontVariation` needs `@OptIn(ExperimentalTextApi::class)`; safe because the Compose
-  version is pinned in a frozen catalog.
-- **Where DESIGN.md is silent:** `mono` line height follows `label` at 1.3; the six
-  styles with no stated tracking get an explicit `letterSpacing = 0.sp`, since unset
-  resolves to `Unspecified` (NaN) and is neither assertable nor deterministic.
-- **`AppColors` carries only mode-dependent roles**; brand and semantic colors are
-  identical in both modes so they default to `Tokens`. Edit-mode `surfaceSecondary`
-  maps to `editSurfaceRaised` per DESIGN.md §4. MaterialTheme gets a colorScheme but no
-  typography — §2 says M3 is for primitives only.
-
-### Fixtures (T03)
-
-- **All §7 fixtures are derived from `test/kodim23.png`** (user decision), generated by
-  `scripts/make_fixtures.py` so the derivation stays reviewable. `photo_512.png` is a
-  512×288 crop over a 512×96 row of reference patches, because testing.md §4 requires
-  skin tone, sky, deep shadow and neutral gray, none of which kodim23 contains.
-  `transparent_256.png` and `corrupt.jpg` cannot come from kodim23 at all and are
-  synthesised.
-
-### Phase 0 follow-up
-
-- **All specs moved to `specs/`**, and `ARCHITECTURE.md` became `specs/architecture.md`.
-  tasks.md cites `specs/...` for every task but the files lived in `docs/specs/`, and
-  CLAUDE.md forbids editing tasks.md text — so the filesystem had to move, not the task
-  list. Side effect, and a deliberate one: the specs are now covered by CLAUDE.md's
-  "never modify any `*.md` under `specs/`" hard limit.
-- **`core:common` was written as Phase 0 work.** specs/architecture.md §3 assigns it
-  `Result`, dispatchers, logging and ids, and §9 defines the `AppError` cases — but no
-  task in tasks.md lists `core/common` under `touches`, so no loop iteration may create
-  them. T04, T08, T10 and T17 all depend on those types; without this the loop blocks on
-  its first task. Contents kept to exactly the §3 list, nothing more.
-  `DispatcherProvider` deliberately has no `main`: §5.4 reserves the main thread for
-  Compose, and exposing it here would invite core modules to touch it.
-- **`core:common` exposes coroutines with `api`**, since `DispatcherProvider` returns
-  `CoroutineDispatcher`. The JVM convention now applies `java-library` for that, and
-  no longer picks dependencies for modules it does not know about.
-- **`lint { ignoreTestSources = true }`.** Lint's Kotlin analysis crashes on the
-  Hilt-generated test classes in `:app` ("this is a bug in lint or one of the libraries
-  it depends on"). Main-source detection is unaffected and was re-verified by injection.
-
-### T05
-
-- **Kotlin has no `testFixtures` compilation under AGP 8.13**: enabling `testFixtures`
-  creates only `compileDebugTestFixturesJavaWithJavac`, so Kotlin sources there are never
-  compiled and consumers see an unresolved reference. `ScreenshotOptions` therefore lives
-  in `core/ui/src/testShared/kotlin`, which `ComposeConventionPlugin` adds to every
-  Compose module's unit-test source set. Still one definition, as testing.md §5 demands.
-- **`detectTransformGestures` cannot drive a hoisted viewport.** Every pointer event reads
-  the viewport as of the last *composition*, so a burst of events within one frame all
-  scale from the same stale value and most of the gesture is lost — a pinch of 15× landed
-  as 1.04×. `detectCanvasTransformGestures` seeds a working copy once per gesture and
-  accumulates locally. Touch slop still eats the opening of a gesture, so the clamp tests
-  pinch twice.
-- **`CanvasBounds` bundles the canvas and image sizes.** It started as a detekt
-  `LongParameterList` fix but reads better: every viewport calculation needs both.
-
-
-_(none)_
+Moved to `work/decisions.md`, one entry per task, newest first.
 
 ## Open issues for a human
+
+- **The v2 tools have never run on a device.** Every test uses the fakes or MockWebServer.
+  The *server* half was verified for real on 2026-09-06: `facebook/sam3` on the T4, a click
+  returning 3 masks at 0.97, and `"parrot"` finding both birds in `photo_512.png` at 0.98. The
+  app half cannot be checked on this machine — no `/dev/kvm`, no emulator package, no attached
+  device — so it needs a phone or a workstation.
+
+- **`POST /v1/edit/erase` returns 404**: it is not implemented in `~/sam3-server`. The
+  generative eraser has nothing to talk to until it is.
 
 - **The crop tool previews the *cropped* image, not the full source.** specs/crop.md says
   opening 자르기 refits to the un-cropped source; the ViewModel just renders the current
@@ -242,34 +138,13 @@ _(none)_
   pipeline is tested through a fake; the `MediaStoreImageStore` implementation itself needs
   a device or a Robolectric shim that does not exist yet.
 
-- **The release APK is 16.06 MB, over the 15 MB budget** (specs/architecture.md §8),
-  measured for the first time at T12. `isMinifyEnabled = false`, so R8 strips nothing:
-  material-icons-extended and unused Compose are shipped whole. The Pretendard variable
-  font is 2.81 MB of it. Enabling R8 is the obvious first move and belongs to T20/T21,
-  but the budget is already breached today.
+- **The release APK is over the 15 MB budget** (16.06 MB at T12; architecture.md §8 returned to
+  15 MB when ADR-008 was struck, so this is live again). `isMinifyEnabled = false`, so R8 strips
+  nothing. Enabling R8 is the obvious first move.
 
-- **DESIGN.md contradicts itself on accent placement.** §1 says the accent appears in
-  exactly one place per screen — "the primary action or the active-tab indicator". But §4
-  requires the Export button to be a primary (accent) pill *and* the selected tool to be
-  accent with a 2dp indicator. `editor_shell_default` therefore shows two accents. Needs a
-  human ruling: either Export drops to a secondary pill in Edit mode, or §1 is relaxed.
-
-- **Seven specs are still missing**, blocking T13 onward: `adjust_light`, `adjust_color`,
-  `adjust_detail`, `crop`, `persistence`, `browse`, `export`. T04–T12 can run today.
-- **`specs/imaging.md` is a draft written by Claude, not reviewed.** It fixes
-  `MAX_LONG_EDGE_PX = 4096`, a two-step downsample, EXIF applied to pixels, and the
-  error mapping. Read it before starting the loop; it is frozen once T04 begins.
-- **specs/render.md and specs/architecture.md disagree on error style.** render.md throws
-  `RenderException.MissingSource`; §9 mandates `Result` + `AppError`. architecture.md
-  says it wins on conflict, and imaging.md follows it — render.md is left untouched.
-- **`photo_12mp.jpg` is 1.42 MB, not the "~3MB" testing.md §7 states.** It is 4000×3000
-  with EXIF orientation 6 as required; it compresses well because it is upscaled from a
-  768×512 source. Say so if the byte size itself matters to a test.
-- **`ScreenshotOptions` lives in `core:ui/src/test`.** The first feature-module golden
-  (T05) needs it too and cannot see it from there — promote it to `testFixtures` then.
-- **testing.md §4's golden-image machinery does not exist yet**: `GoldenAssert.kt`,
-  `golden_manifest.txt`, `GoldenInventoryTest`. They belong in `core:imaging`, outside
-  T03's `touches`. First needed by T13.
-- **`fixtures/`, `scripts/check.sh` and `core:common` were authored as Phase 0 human
-  deliverables**, matching tasks.md's "done by a human before the loop starts"; all sit
-  outside the `touches` lists of the tasks that specify them.
+- **specs/render.md and architecture.md disagree on error style**: render.md throws, §9 mandates
+  `Result` + `AppError`. architecture.md wins on conflict, so render.md is simply stale.
+- **`photo_12mp.jpg` is 1.42 MB, not the "~3MB" testing.md §7 states** — 4000×3000 with EXIF
+  orientation 6 as required, but upscaled from 768×512, so it compresses well.
+- **`fixtures/`, `scripts/check.sh` and `core:common` are Phase 0 human deliverables**, so they
+  sit outside the `touches` lists of the tasks that specify them.

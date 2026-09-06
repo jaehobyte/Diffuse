@@ -76,3 +76,10 @@ class ExportSettingsStore(context: Context) {
         const val KEY_SIZE = "size"
     }
 }
+
+/**
+ * specs/export.md §Sheet: "PNG auto-selected when the document `hasAlpha`". A cut-out (T33) is
+ * what creates that alpha, and JPEG would silently flatten it onto black.
+ */
+fun ExportSettings.autoFormatFor(hasAlpha: Boolean): ExportSettings =
+    if (hasAlpha) copy(format = ExportFormat.Png) else this

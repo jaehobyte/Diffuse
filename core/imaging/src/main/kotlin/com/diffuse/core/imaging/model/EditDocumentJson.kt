@@ -19,6 +19,9 @@ const val EDIT_DOCUMENT_SCHEMA_VERSION = 1
 private const val TAG = "EditDocumentJson"
 private const val TYPE_ADJUST = "adjust"
 private const val TYPE_CROP = "crop"
+private const val TYPE_MASK = "mask"
+private const val TYPE_CUTOUT = "cutout"
+private const val TYPE_GENERATIVE_ERASE = "generativeErase"
 
 /**
  * Operations are mapped by hand rather than through polymorphic serialisation, because
@@ -37,6 +40,7 @@ object EditDocumentJson {
             put("source", document.source.path)
             put("createdAt", document.createdAt)
             put("updatedAt", document.updatedAt)
+            document.activeMaskId?.let { put("activeMaskId", it) }
             put("operations", buildJsonArray { document.operations.forEach { add(it.encode()) } })
         }
         return json.encodeToString(JsonObject.serializer(), root)
@@ -50,6 +54,7 @@ object EditDocumentJson {
             id = root.getValue("id").jsonPrimitive.content,
             source = ImageRef(root.getValue("source").jsonPrimitive.content),
             operations = operations,
+            activeMaskId = root["activeMaskId"]?.jsonPrimitive?.content,
             createdAt = root.getValue("createdAt").jsonPrimitive.long,
             updatedAt = root.getValue("updatedAt").jsonPrimitive.long,
         )
@@ -61,6 +66,23 @@ object EditDocumentJson {
             put("id", id)
             put("kind", kind.name)
             put("value", value)
+            maskId?.let { put("maskId", it) }
+        }
+        is Operation.Mask -> buildJsonObject {
+            put("type", TYPE_MASK)
+            put("id", id)
+            put("maskRef", maskRef.path)
+        }
+        is Operation.CutOut -> buildJsonObject {
+            put("type", TYPE_CUTOUT)
+            put("id", id)
+            put("maskId", maskId)
+        }
+        is Operation.GenerativeErase -> buildJsonObject {
+            put("type", TYPE_GENERATIVE_ERASE)
+            put("id", id)
+            put("maskId", maskId)
+            put("resultRef", resultRef.path)
         }
         is Operation.Crop -> buildJsonObject {
             put("type", TYPE_CROP)
@@ -77,6 +99,11 @@ object EditDocumentJson {
         val id = node["id"]?.jsonPrimitive?.content ?: return warn(logger, "operation without an id")
         return when (val type = node["type"]?.jsonPrimitive?.content) {
             TYPE_ADJUST -> decodeAdjust(node, id, logger)
+            TYPE_MASK -> decodeMask(node, id, logger)
+            TYPE_GENERATIVE_ERASE -> decodeGenerativeErase(node, id, logger)
+            TYPE_CUTOUT -> node["maskId"]?.jsonPrimitive?.content
+                ?.let { Operation.CutOut(id, it) }
+                ?: warn(logger, "cutout '$id' without a maskId")
             TYPE_CROP -> Operation.Crop(
                 id = id,
                 rect = RectF(
@@ -91,11 +118,37 @@ object EditDocumentJson {
         }
     }
 
+    /**
+     * A `mask` node without a `maskRef` is dropped rather than fatal, the same way an unknown
+     * type is: one unreadable operation must not cost the user the whole document. A document
+     * whose `activeMaskId` pointed at it then fails `referencesResolve`, which is where the
+     * user is actually told (specs/edit_model.md).
+     */
+    private fun decodeMask(node: JsonObject, id: String, logger: Logger?): Operation? {
+        val ref = node["maskRef"]?.jsonPrimitive?.content
+            ?: return warn(logger, "mask '$id' without a maskRef")
+        return Operation.Mask(id, ImageRef(ref))
+    }
+
+    private fun decodeGenerativeErase(node: JsonObject, id: String, logger: Logger?): Operation? {
+        val maskId = node["maskId"]?.jsonPrimitive?.content
+        val ref = node["resultRef"]?.jsonPrimitive?.content
+        if (maskId == null || ref == null) {
+            return warn(logger, "generativeErase '$id' without a maskId or resultRef")
+        }
+        return Operation.GenerativeErase(id, maskId, ImageRef(ref))
+    }
+
     private fun decodeAdjust(node: JsonObject, id: String, logger: Logger?): Operation? {
         val rawKind = node["kind"]?.jsonPrimitive?.content
         val kind = AdjustKind.entries.firstOrNull { it.name == rawKind }
             ?: return warn(logger, "unknown AdjustKind '$rawKind'")
-        return Operation.Adjust(id, kind, node.getValue("value").jsonPrimitive.float)
+        return Operation.Adjust(
+            id = id,
+            kind = kind,
+            value = node.getValue("value").jsonPrimitive.float,
+            maskId = node["maskId"]?.jsonPrimitive?.content,
+        )
     }
 
     private fun warn(logger: Logger?, message: String): Operation? {

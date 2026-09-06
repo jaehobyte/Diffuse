@@ -8,11 +8,19 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.res.stringResource
+import com.diffuse.feature.editor.canvas.CanvasGestureMode
+import com.diffuse.feature.editor.canvas.CanvasPointTaps
 import com.diffuse.feature.editor.canvas.OverlayTransform
 import com.diffuse.feature.editor.canvas.cropOverlaySlot
+import com.diffuse.feature.editor.canvas.selectionOverlaySlot
+import com.diffuse.feature.editor.tools.MaskOption
 import com.diffuse.feature.editor.tools.ToolSheetHost
 import com.diffuse.feature.editor.tools.crop.CropSheet
 import com.diffuse.feature.editor.tools.crop.STRAIGHTEN_MAX_DEG
+import com.diffuse.feature.editor.tools.prompt.VoicePromptBar
+import com.diffuse.feature.editor.tools.select.Sam3SettingsSheet
+import com.diffuse.feature.editor.tools.select.SelectSheet
 import kotlinx.coroutines.launch
 
 /**
@@ -52,32 +60,134 @@ fun EditorRoute(
             onCompareChange = {},
             onExport = onExport,
             overlayTransform = cropTransform(state),
-            cropOverlay = if (state.selectedTool == Tool.Crop) {
-                cropOverlaySlot(
-                    rect = state.cropState.rect,
-                    onRectChange = viewModel::onCropRectChange,
-                    aspect = state.cropState.preset,
-                )
+            disabledTools = disabledTools(state),
+            gestureMode = if (state.selectedTool == Tool.Select) {
+                CanvasGestureMode.SelectPoint
             } else {
+                CanvasGestureMode.Pan
+            },
+            pointTaps = if (state.selectedTool != Tool.Select) {
                 null
+            } else {
+                CanvasPointTaps(
+                    onForeground = { viewModel.selection.addPoint(it.x, it.y, foreground = true) },
+                    onBackground = { viewModel.selection.addPoint(it.x, it.y, foreground = false) },
+                )
             },
-            sheet = document?.let { doc ->
-                {
-                    if (state.selectedTool == Tool.Crop) {
-                        CropToolSheet(state = state, viewModel = viewModel)
-                    } else {
-                        ToolSheetHost(
-                            selectedTool = state.selectedTool,
-                            document = doc,
-                            onValueChange = viewModel::onAdjust,
-                            onValueChangeFinished = viewModel::onAdjustFinished,
-                            onCancel = viewModel::cancelSheet,
-                            onApply = viewModel::applySheet,
-                        )
-                    }
-                }
+            // specs/selection_tool.md §5: while `busy` the previous mask stays; only the
+            // one-off `open` earns the overlay.
+            busy = state.selection.working || state.erase.busy,
+            busyLabelRes = busyLabel(state),
+            onCancelWork = {
+                viewModel.selection.cancelWork()
+                viewModel.erase.cancel()
             },
+            message = (state.selection.message ?: state.erase.message)
+                ?.let { stringResource(it) },
+            onMessageShown = {
+                viewModel.selection.onMessageShown()
+                viewModel.erase.onMessageShown()
+            },
+            canvasOverlay = canvasOverlay(state, viewModel),
+            sheet = sheetFor(state, document, viewModel),
         )
+    }
+}
+
+/** specs/selection_tool.md §1 and generative_erase.md §5: a tool that cannot work is greyed. */
+private fun disabledTools(state: EditorUiState): Set<Tool> = buildSet {
+    if (!state.selection.enabled) add(Tool.Select)
+    if (!state.erase.enabled || state.document?.activeMaskId == null) add(Tool.Erase)
+}
+
+/** DESIGN.md §4 State display: the overlay says what is actually happening. */
+private fun busyLabel(state: EditorUiState): Int = when {
+    state.erase.busy -> R.string.erase_working
+    state.selection.phraseBusy -> R.string.select_prompt_working
+    else -> R.string.select_preparing
+}
+
+/** specs/canvas.md: one overlay slot, claimed by whichever tool is open. */
+@Composable
+private fun canvasOverlay(
+    state: EditorUiState,
+    viewModel: EditorViewModel,
+): (@Composable androidx.compose.foundation.layout.BoxScope.() -> Unit)? = when (state.selectedTool) {
+    Tool.Crop -> cropOverlaySlot(
+        rect = state.cropState.rect,
+        onRectChange = { viewModel.onCropChange(state.cropState.copy(rect = it)) },
+        aspect = state.cropState.preset,
+    )
+    Tool.Select -> selectionOverlaySlot(
+        mask = state.selection.mask,
+        points = state.selection.points,
+        labels = state.selection.labels,
+    )
+    // specs/selection_tool.md §8.1: while a masked adjustment is being made, the scrim shows
+    // where it will land. Toggle off and it disappears.
+    null -> null
+    else -> state.activeMask
+        ?.takeIf { state.maskedAdjust }
+        ?.let { selectionOverlaySlot(mask = it, points = emptyList(), labels = emptyList()) }
+}
+
+/**
+ * The settings sheet wins over any tool sheet: it is the only way out of an unconfigured
+ * provider (specs/segmentation.md §6).
+ */
+@Composable
+private fun sheetFor(
+    state: EditorUiState,
+    document: com.diffuse.core.imaging.model.EditDocument?,
+    viewModel: EditorViewModel,
+): (@Composable () -> Unit)? {
+    if (state.selection.showSettings) {
+        return {
+            Sam3SettingsSheet(
+                config = state.selection.config,
+                onSave = viewModel.selection::saveSettings,
+                onCancel = viewModel.selection::dismissSettings,
+            )
+        }
+    }
+    return document?.let { doc ->
+        {
+            when (state.selectedTool) {
+                Tool.Crop -> CropToolSheet(state = state, viewModel = viewModel)
+                Tool.Select -> SelectSheet(
+                    state = state.selection,
+                    onModeChange = viewModel.selection::setMode,
+                    onInvert = viewModel.selection::invert,
+                    onClear = viewModel.selection::clear,
+                    onCutOut = viewModel::applyCutOut,
+                    onCancel = viewModel::cancelSheet,
+                    onApply = viewModel::applySheet,
+                    promptBar = {
+                        VoicePromptBar(
+                            value = state.selection.phrase,
+                            onValueChange = viewModel.selection::setPhrase,
+                            onSubmit = viewModel.selection::submitPhrase,
+                            speech = viewModel.speech,
+                            enabled = !state.selection.phraseBusy,
+                            onMessage = viewModel.selection::showMessage,
+                        )
+                    },
+                )
+                else -> ToolSheetHost(
+                    maskOption = MaskOption(
+                        available = doc.activeMaskId != null,
+                        maskedOnly = state.maskedAdjust,
+                        onMaskedOnlyChange = viewModel::onMaskedAdjustChange,
+                    ),
+                    selectedTool = state.selectedTool,
+                    document = doc,
+                    onValueChange = viewModel::onAdjust,
+                    onValueChangeFinished = viewModel::onAdjustFinished,
+                    onCancel = viewModel::cancelSheet,
+                    onApply = viewModel::applySheet,
+                )
+            }
+        }
     }
 }
 

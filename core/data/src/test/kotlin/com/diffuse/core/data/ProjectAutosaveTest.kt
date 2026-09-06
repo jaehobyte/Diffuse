@@ -36,6 +36,20 @@ class ProjectAutosaveTest {
             return Result.Success(Unit)
         }
 
+        override suspend fun saveMask(
+            projectId: String,
+            maskId: String,
+            alpha: android.graphics.Bitmap,
+        ): Result<com.diffuse.core.imaging.model.ImageRef> =
+            Result.Success(com.diffuse.core.imaging.model.ImageRef("/mask_$maskId.png"))
+
+        override suspend fun saveEraseResult(
+            projectId: String,
+            eraseId: String,
+            bitmap: android.graphics.Bitmap,
+        ): Result<com.diffuse.core.imaging.model.ImageRef> =
+            Result.Success(com.diffuse.core.imaging.model.ImageRef("/erase_$eraseId.png"))
+
         override suspend fun duplicate(id: String): Result<String> = Result.Success("copy")
         override suspend fun delete(id: String): Result<Unit> {
             deletes += id

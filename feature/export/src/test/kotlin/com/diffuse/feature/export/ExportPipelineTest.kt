@@ -30,6 +30,8 @@ class ExportPipelineTest {
             onProgress(1f)
             return Result.Success(Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888))
         }
+
+        override suspend fun resolveMask(document: EditDocument, maskId: String): Bitmap? = null
     }
 
     private class RecordingStore(

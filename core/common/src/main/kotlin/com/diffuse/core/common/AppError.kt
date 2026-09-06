@@ -17,4 +17,13 @@ sealed interface AppError {
 
     /** Reading or writing failed. Carries the cause so the [Logger] can record it. */
     data class Io(val cause: Throwable) : AppError
+
+    /** A configured credential was missing or rejected. */
+    data object Unauthorized : AppError
+
+    /** The request itself was malformed or rejected as such. [detail] is for logs, never for the UI. */
+    data class Invalid(val detail: String) : AppError
+
+    /** A required backend is not configured, not ready, or unreachable. */
+    data object Unavailable : AppError
 }

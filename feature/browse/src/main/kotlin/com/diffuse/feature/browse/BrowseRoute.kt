@@ -38,13 +38,19 @@ private fun rememberErrorMessages(): (AppError) -> String {
     val unsupported = stringResource(R.string.error_unsupported)
     val missingSource = stringResource(R.string.error_missing_source)
     val io = stringResource(R.string.error_io)
-    return remember(tooLarge, unsupported, missingSource, io) {
+    val unauthorized = stringResource(R.string.error_unauthorized)
+    val invalid = stringResource(R.string.error_invalid)
+    val unavailable = stringResource(R.string.error_unavailable)
+    return remember(tooLarge, unsupported, missingSource, io, unauthorized, invalid, unavailable) {
         { error ->
             when (error) {
                 AppError.TooLarge -> tooLarge
                 AppError.Unsupported -> unsupported
                 AppError.MissingSource -> missingSource
                 is AppError.Io -> io
+                AppError.Unauthorized -> unauthorized
+                is AppError.Invalid -> invalid
+                AppError.Unavailable -> unavailable
             }
         }
     }

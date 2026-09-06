@@ -80,6 +80,21 @@ data class CanvasTransform(
         y = imageRect.top + point.y * scale,
     )
 
+    /**
+     * @return [point] as a 0..1 fraction of the photo, or null when it fell outside it.
+     * specs/selection_tool.md §2 stores prompt points normalized, so they survive a zoom,
+     * a re-render at a different resolution, and the upload's own downscale.
+     */
+    fun normalizedPoint(point: Offset): Offset? =
+        if (imageRect.contains(point) && !imageRect.isEmpty) {
+            Offset(
+                (point.x - imageRect.left) / imageRect.width,
+                (point.y - imageRect.top) / imageRect.height,
+            )
+        } else {
+            null
+        }
+
     companion object {
         val Identity = CanvasTransform(Rect.Zero, 1f)
     }
