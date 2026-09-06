@@ -122,14 +122,57 @@ class SelectionController(
         _state.value = current.committingRun().copy(mode = mode)
     }
 
-    /** specs/selection_tool.md §4: a phrase's instances union into one mask, then merge as one. */
+    fun setPhrase(phrase: String) {
+        _state.value = _state.value.copy(phrase = phrase)
+    }
+
+    /**
+     * specs/prompt_input.md §4. A phrase segments every instance of the concept; they union into
+     * one mask, which then merges by the current mode exactly as a point run's result does.
+     */
+    fun submitPhrase(phrase: String) {
+        val current = _state.value
+        val session = current.session ?: return
+        if (phrase.isBlank()) return
+        job?.cancel()
+        _state.value = current.copy(phrase = phrase, phraseBusy = true, notFound = false)
+        job = scope.launch {
+            when (val result = segmentation.byText(session, phrase)) {
+                is Result.Success -> {
+                    val union = MaskOps.union(result.value.map { it.alpha })
+                    if (union == null) {
+                        // count == 0 is a valid answer: the concept is absent.
+                        _state.value = _state.value.copy(phraseBusy = false, notFound = true)
+                    } else {
+                        mergeIncoming(union)
+                        // The bar clears only on a successful merge (prompt_input.md §4).
+                        _state.value = _state.value.copy(phrase = "", phraseBusy = false)
+                    }
+                }
+                is Result.Failure -> _state.value = _state.value.copy(
+                    phraseBusy = false,
+                    message = R.string.select_failed,
+                )
+            }
+        }
+    }
+
+    /**
+     * specs/selection_tool.md §4: a phrase's instances union into one mask, then merge as one.
+     *
+     * It merges into what is **on screen**, not into [SelectionState.base]: a live point run is
+     * part of the selection the user can see, and a phrase ends that run rather than discarding
+     * it.
+     */
     fun mergeIncoming(incoming: Bitmap) {
         val current = _state.value
-        val merged = MaskOps.merged(current.base, incoming, current.mode)
+        val merged = MaskOps
+            .merged(current.mask, incoming, current.mode)
+            .takeUnless(MaskOutline::isEmpty)
         _state.value = current.copy(
-            mask = merged.takeUnless(MaskOutline::isEmpty),
-            base = merged.takeUnless(MaskOutline::isEmpty),
-            merges = current.merges + current.base,
+            mask = merged,
+            base = merged,
+            merges = current.merges + current.mask,
             points = emptyList(),
             labels = emptyList(),
         )
@@ -158,13 +201,15 @@ class SelectionController(
     /** DESIGN.md §7: AI work always offers a way out. */
     fun cancelWork() {
         job?.cancel()
-        _state.value = _state.value.copy(preparing = false, busy = false)
+        // Whatever was accumulated stays exactly as it was.
+        _state.value = _state.value.copy(preparing = false, busy = false, phraseBusy = false)
     }
 
     /** Cancel or Apply closed the sheet. The session survives so re-opening is instant (§6). */
     fun closeSheet() {
         job?.cancel()
-        _state.value = _state.value.cleared().copy(preparing = false, busy = false)
+        _state.value = _state.value.cleared()
+            .copy(preparing = false, busy = false, phraseBusy = false, phrase = "")
     }
 
     fun saveSettings(baseUrl: String, token: String) {

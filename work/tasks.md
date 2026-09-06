@@ -197,7 +197,7 @@ Only the server endpoint is still outstanding. If a task hits a missing prerequi
     - `FakeSpeechInput` drives every test; UI test covers grant, deny, partial → final, and stop
   touches: core/ai/speech, feature/editor, app/src/main/AndroidManifest.xml
 
-- [ ] T36 Prompt or speech → SAM 3 text segmentation
+- [x] T36 Prompt or speech → SAM 3 text segmentation
   spec: specs/prompt_input.md §Flow, specs/selection_tool.md §Text
   deps: T31, T34, T35, T28
   done when:

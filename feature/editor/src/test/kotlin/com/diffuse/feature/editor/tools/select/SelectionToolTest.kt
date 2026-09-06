@@ -8,6 +8,7 @@ import com.diffuse.core.ai.Availability
 import com.diffuse.core.ai.FakeSegmentationProvider
 import com.diffuse.core.ai.MaskBitmaps
 import com.diffuse.core.ai.sam3.Sam3Settings
+import com.diffuse.core.ai.speech.FakeSpeechInput
 import com.diffuse.core.common.AppError
 import com.diffuse.core.common.Result
 import com.diffuse.core.data.ProjectRepository
@@ -280,6 +281,111 @@ class SelectionToolTest {
         assertFalse(document.hasAlpha)
     }
 
+    // ---- prompt (specs/prompt_input.md 4) --------------------------------
+
+    @Test
+    fun `a phrase segments every instance and merges them as one`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onToolClick(Tool.Select)
+
+        viewModel.selection.submitPhrase("사람")
+
+        val selection = viewModel.uiState.value.selection
+        assertNotNull(selection.mask)
+        // The fake returns two circles; their union is what merged.
+        assertTrue(MaskBitmaps.coverage(selection.mask!!) > 0f)
+        assertFalse(selection.notFound)
+    }
+
+    @Test
+    fun `the bar clears only after a successful merge`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onToolClick(Tool.Select)
+        viewModel.selection.setPhrase("사람")
+
+        viewModel.selection.submitPhrase("사람")
+
+        assertEquals("", viewModel.uiState.value.selection.phrase)
+    }
+
+    @Test
+    fun `a phrase adds to what points already selected`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onToolClick(Tool.Select)
+        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
+        val afterPoint = MaskBitmaps.coverage(viewModel.uiState.value.selection.mask!!)
+
+        viewModel.selection.submitPhrase("하늘")
+
+        assertTrue(MaskBitmaps.coverage(viewModel.uiState.value.selection.mask!!) > afterPoint)
+    }
+
+    @Test
+    fun `a phrase in subtract mode takes its instances out`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onToolClick(Tool.Select)
+        viewModel.selection.submitPhrase("사람")
+        val added = MaskBitmaps.coverage(viewModel.uiState.value.selection.mask!!)
+
+        viewModel.selection.setMode(MergeMode.Subtract)
+        viewModel.selection.submitPhrase("사람")
+
+        assertNull(viewModel.uiState.value.selection.mask)
+        assertTrue(added > 0f)
+    }
+
+    @Test
+    fun `an absent concept is a hint, not a failure, and keeps the phrase`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onToolClick(Tool.Select)
+
+        viewModel.selection.submitPhrase("없음")
+
+        val selection = viewModel.uiState.value.selection
+        assertTrue(selection.notFound)
+        assertNull(selection.message)
+        assertEquals("없음", selection.phrase)
+    }
+
+    @Test
+    fun `a failed phrase keeps the text so the user can retry`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onToolClick(Tool.Select)
+        provider.failNext(AppError.Unavailable)
+
+        viewModel.selection.submitPhrase("사람")
+
+        val selection = viewModel.uiState.value.selection
+        assertEquals("사람", selection.phrase)
+        assertNotNull(selection.message)
+        assertNull(selection.mask)
+    }
+
+    @Test
+    fun `a blank phrase never reaches the provider`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onToolClick(Tool.Select)
+
+        viewModel.selection.submitPhrase("   ")
+
+        assertFalse(viewModel.uiState.value.selection.phraseBusy)
+        assertNull(viewModel.uiState.value.selection.mask)
+    }
+
+    @Test
+    fun `cancelling a phrase leaves what was already accumulated`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onToolClick(Tool.Select)
+        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
+        val before = MaskBitmaps.coverage(viewModel.uiState.value.selection.mask!!)
+
+        viewModel.selection.cancelWork()
+
+        val selection = viewModel.uiState.value.selection
+        assertEquals(before, MaskBitmaps.coverage(selection.mask!!), 0f)
+        assertFalse(selection.working)
+    }
+
     // ---- failures --------------------------------------------------------
 
     @Test
@@ -377,6 +483,7 @@ class SelectionToolTest {
         renderer = FakeRenderer(),
         segmentation = provider,
         sam3Settings = settings,
+        speech = FakeSpeechInput(),
         savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),
     )
 

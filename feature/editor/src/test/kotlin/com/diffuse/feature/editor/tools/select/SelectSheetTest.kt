@@ -83,6 +83,13 @@ class SelectSheetTest {
     }
 
     @Test
+    fun `an absent concept replaces the hint, and it is not a snackbar`() {
+        showSheet(SelectionState(notFound = true))
+
+        compose.onNodeWithText("찾지 못했어요. 다른 단어로 해보세요.").assertExists()
+    }
+
+    @Test
     fun `low confidence replaces the hint rather than raising a snackbar`() {
         showSheet(SelectionState(mask = mask(), lowConfidence = true))
 

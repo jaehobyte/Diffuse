@@ -35,6 +35,7 @@ const val SelectionCancelTestTag = "SelectionCancel"
 fun SelectionProgressOverlay(
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
+    @androidx.annotation.StringRes labelRes: Int = R.string.select_preparing,
 ) {
     Column(
         modifier = modifier
@@ -47,7 +48,7 @@ fun SelectionProgressOverlay(
         CircularProgressIndicator(color = Tokens.accent)
         Box(modifier = Modifier.height(12.dp))
         Text(
-            text = stringResource(R.string.select_preparing),
+            text = stringResource(labelRes),
             style = Typography.bodyMd,
             color = Tokens.editInk,
         )

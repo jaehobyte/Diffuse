@@ -18,6 +18,7 @@ import com.diffuse.feature.editor.tools.MaskOption
 import com.diffuse.feature.editor.tools.ToolSheetHost
 import com.diffuse.feature.editor.tools.crop.CropSheet
 import com.diffuse.feature.editor.tools.crop.STRAIGHTEN_MAX_DEG
+import com.diffuse.feature.editor.tools.prompt.VoicePromptBar
 import com.diffuse.feature.editor.tools.select.Sam3SettingsSheet
 import com.diffuse.feature.editor.tools.select.SelectSheet
 import kotlinx.coroutines.launch
@@ -75,7 +76,12 @@ fun EditorRoute(
             },
             // specs/selection_tool.md §5: while `busy` the previous mask stays; only the
             // one-off `open` earns the overlay.
-            busy = state.selection.preparing,
+            busy = state.selection.working,
+            busyLabelRes = if (state.selection.phraseBusy) {
+                R.string.select_prompt_working
+            } else {
+                R.string.select_preparing
+            },
             onCancelWork = viewModel.selection::cancelWork,
             message = state.selection.message?.let { stringResource(it) },
             onMessageShown = viewModel.selection::onMessageShown,
@@ -140,6 +146,16 @@ private fun sheetFor(
                     onCutOut = viewModel::applyCutOut,
                     onCancel = viewModel::cancelSheet,
                     onApply = viewModel::applySheet,
+                    promptBar = {
+                        VoicePromptBar(
+                            value = state.selection.phrase,
+                            onValueChange = viewModel.selection::setPhrase,
+                            onSubmit = viewModel.selection::submitPhrase,
+                            speech = viewModel.speech,
+                            enabled = !state.selection.phraseBusy,
+                            onMessage = viewModel.selection::showMessage,
+                        )
+                    },
                 )
                 else -> ToolSheetHost(
                     maskOption = MaskOption(

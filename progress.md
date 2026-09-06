@@ -14,10 +14,14 @@ Specs are written and consistent: `ai_provider.md`, `segmentation.md`, `selectio
 (rewritten), `prompt_input.md`, `generative_erase.md` (new), plus amendments to `edit_model.md`,
 `architecture.md` (§2, §6, §8, §9, §10) and `DESIGN.md` (§1 accent ruling, §4 prompt bar).
 
-**T26-T35 done.** Next is T36, which joins the prompt bar to SAM 3's text endpoint — the
-end-to-end behaviour the whole phase exists for.
+**T26-T36 done.** Typing or speaking a phrase now selects every instance of it. Next is
+Phase 8: T37 `EraseProvider`, then T38 the generative eraser.
 
 ## Done
+
+- T36 Prompt or speech → mask — the selection sheet hosts `VoicePromptBar`, a phrase runs
+  `byText`, its instances union into one mask and merge by the current mode, and `count == 0`
+  is the 찾지 못했어요 hint rather than an error. 9 tests + golden `select_prompt_result`.
 
 - T35 Voice input — `SpeechInput` / `SpeechState`, `AndroidSpeechInput` over the OS recogniser
   in `ko-KR` with partial results, `FakeSpeechInput`, and `VoicePromptBar` owning the
@@ -94,9 +98,22 @@ _T01–T14 trimmed per CLAUDE.md (keep the last 10). Their decisions are still i
 
 ## Next
 
-T36 prompt or speech → SAM 3 text segmentation, then Phase 8 (T37, T38).
+T37 `EraseProvider` and the proxy client, then T38 the generative eraser tool. T37 is the
+first task that needs the server's `/v1/edit/erase`, which is still the one open prerequisite.
 
 ## Decisions
+
+### T36
+
+- **A phrase merges into what is on screen, not into the committed base.** The first version
+  merged into `SelectionState.base`, which silently discarded a live point run — the user would
+  tap an object, type a word, and watch the tap disappear. A phrase *ends* the run; it does not
+  ignore it. Caught by "a phrase adds to what points already selected".
+- **A text prompt gets the progress overlay; a point prompt does not.** prompt_input.md §4 asks
+  for progress and a cancel while a phrase is in flight, while selection_tool.md §5 says a point
+  prompt keeps the previous mask visible with no spinner. `phraseBusy` is what tells them apart.
+- **The bar clears only on a successful merge.** A failure keeps the text so the user can retry
+  without retyping, and 찾지 못했어요 keeps it so they can edit the word.
 
 ### T35
 

@@ -46,6 +46,8 @@ fun SelectSheet(
     onCancel: () -> Unit,
     onApply: () -> Unit,
     modifier: Modifier = Modifier,
+    /** specs/prompt_input.md §4: the sheet hosts the prompt bar, below the buttons. */
+    promptBar: (@Composable () -> Unit)? = null,
 ) {
     val colors = LocalAppColors.current
     EditSheet(
@@ -92,16 +94,22 @@ fun SelectSheet(
                 onClick = onCutOut,
             )
         }
+        promptBar?.invoke()
         // specs/selection_tool.md §7: hints are text under the buttons, never a snackbar.
         Text(
-            text = stringResource(
-                if (state.lowConfidence) R.string.select_low_confidence else R.string.select_hint,
-            ),
+            text = stringResource(hintFor(state)),
             style = Typography.bodySm,
             color = colors.inkSecondary,
             modifier = Modifier.testTag(SelectHintTestTag),
         )
     }
+}
+
+/** specs/selection_tool.md §7: one line, and never blocking. */
+private fun hintFor(state: SelectionState) = when {
+    state.notFound -> R.string.select_not_found
+    state.lowConfidence -> R.string.select_low_confidence
+    else -> R.string.select_hint
 }
 
 /** DESIGN.md §4: the selected mode is the accent-filled chip, matching the crop presets. */

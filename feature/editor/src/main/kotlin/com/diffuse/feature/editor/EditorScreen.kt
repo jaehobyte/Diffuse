@@ -72,6 +72,7 @@ fun EditorScreen(
     pointTaps: CanvasPointTaps? = null,
     /** DESIGN.md §7: AI work always shows progress and a way out. */
     busy: Boolean = false,
+    @androidx.annotation.StringRes busyLabelRes: Int = R.string.select_preparing,
     onCancelWork: () -> Unit = {},
     /** One-shot snackbar text; DESIGN.md §4 forbids toasts. */
     message: String? = null,
@@ -128,7 +129,7 @@ fun EditorScreen(
                 canvasOverlay = canvasOverlay,
                 onToolStripHeight = { toolStripHeightPx = it },
             )
-            if (busy) SelectionProgressOverlay(onCancel = onCancelWork)
+            if (busy) SelectionProgressOverlay(onCancel = onCancelWork, labelRes = busyLabelRes)
             if (sheet != null) SheetOverlay(sheet) { sheetHeightPx = it }
             SnackbarHost(
                 hostState = snackbarHost,

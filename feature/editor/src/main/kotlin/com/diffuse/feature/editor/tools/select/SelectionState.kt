@@ -31,6 +31,12 @@ data class SelectionState(
     val lowConfidence: Boolean = false,
     val preparing: Boolean = false,
     val busy: Boolean = false,
+    /** specs/prompt_input.md §4: what is typed or dictated, until it is submitted. */
+    val phrase: String = "",
+    /** A text prompt is in flight; unlike a point prompt it earns the progress overlay. */
+    val phraseBusy: Boolean = false,
+    /** The last phrase matched nothing. An answer, not an error (selection_tool.md §7). */
+    val notFound: Boolean = false,
     val availability: Availability = Availability.Unavailable(AppError.Unavailable),
     /** specs/segmentation.md §6: the only way out of an unconfigured provider. */
     val showSettings: Boolean = false,
@@ -42,6 +48,9 @@ data class SelectionState(
     val hasMask: Boolean get() = mask != null
 
     val enabled: Boolean get() = availability is Availability.Ready
+
+    /** DESIGN.md §7: AI work always shows progress and a cancel button. */
+    val working: Boolean get() = preparing || phraseBusy
 
     val prompt: PointPrompt? get() = if (points.isEmpty()) null else PointPrompt(points, labels)
 
@@ -85,6 +94,7 @@ data class SelectionState(
         labels = emptyList(),
         inverted = false,
         lowConfidence = false,
+        notFound = false,
     )
 
     companion object {

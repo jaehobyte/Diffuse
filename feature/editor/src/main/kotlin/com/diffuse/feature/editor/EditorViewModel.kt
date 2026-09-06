@@ -10,6 +10,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.diffuse.core.ai.SegmentationProvider
 import com.diffuse.core.ai.sam3.Sam3Settings
+import com.diffuse.core.ai.speech.SpeechInput
 import com.diffuse.core.common.Result
 import com.diffuse.core.common.newId
 import com.diffuse.core.data.ProjectAutosave
@@ -56,6 +57,8 @@ class EditorViewModel @Inject constructor(
     private val renderer: Renderer,
     segmentation: SegmentationProvider,
     sam3Settings: Sam3Settings,
+    /** specs/prompt_input.md §3: handed straight to the prompt bar; the VM never drives it. */
+    val speech: SpeechInput,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
