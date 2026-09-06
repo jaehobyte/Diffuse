@@ -20,6 +20,10 @@ a ~24MB binary out of the repository:
   a phone against the real model. Ships **no** server address and **no** token: a published APK
   must not carry either, and an empty address is what makes the app open its 서버 설정 sheet on
   the first tap of 선택.
+- [v0.4.0](https://github.com/jaehobyte/Diffuse/releases/tag/v0.4.0) — the generative eraser calls
+  `gemini-2.5-flash-image` from the device (ADR-011) instead of proxying through `~/sam3-server`.
+  Ships **no** Gemini key either: the 서버 설정 sheet now has three fields, and 지우기 opens it
+  when the key is blank.
 
 v0.3.0 and v0.3.1 default to `http://10.0.2.2:8080`, the emulator's alias for its host, so the
 선택 tool cannot work on a physical device. Use v0.3.6.
@@ -35,7 +39,9 @@ Sizes, against the APK budget in specs/architecture.md §8 (**< 15MB**; ADR-008 
 | debug at v0.3.0 | 23.96 MB |
 | debug at v0.3.1 | 23.96 MB |
 | debug at v0.3.6 | 23.96 MB |
+| debug at v0.4.0 | 23.99 MB |
 | release at v0.3.0 (unsigned, `isMinifyEnabled = false`) | 17.40 MB |
+| release at v0.4.0 (unsigned, `isMinifyEnabled = false`) | 17.42 MB |
 
 **The release build is 2.4 MB over budget.** R8 is still off, so that is the unshrunk size:
 material-icons-extended and unused Compose ship whole, and the Pretendard variable font is
