@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.PointF
 import com.diffuse.core.ai.Availability
 import com.diffuse.core.ai.SegmentationProvider
+import com.diffuse.core.ai.gemini.GeminiSettings
 import com.diffuse.core.ai.sam3.Sam3Settings
 import com.diffuse.core.common.AppError
 import com.diffuse.core.common.Result
@@ -27,6 +28,11 @@ import kotlinx.coroutines.launch
 class SelectionController(
     private val segmentation: SegmentationProvider,
     private val settings: Sam3Settings,
+    /**
+     * specs/generative_erase.md §8: the 서버 설정 sheet is one sheet for two providers, and
+     * this controller already owns its lifecycle. The 지우기 tool opens the same one.
+     */
+    private val geminiSettings: GeminiSettings,
     private val scope: CoroutineScope,
 ) {
 
@@ -53,6 +59,11 @@ class SelectionController(
             settings.config.collect { config ->
                 _state.value = _state.value.copy(config = config)
                 segmentation.refresh()
+            }
+        }
+        scope.launch {
+            geminiSettings.config.collect { config ->
+                _state.value = _state.value.copy(geminiApiKey = config.apiKey)
             }
         }
     }
@@ -86,7 +97,7 @@ class SelectionController(
         val fixableInSettings =
             reason is AppError.Invalid || reason is AppError.Unauthorized || !everReady
         if (fixableInSettings) {
-            _state.value = _state.value.copy(showSettings = true)
+            setSettingsVisible(true)
             return
         }
         _state.value = _state.value.copy(message = R.string.select_unavailable_offline)
@@ -257,13 +268,18 @@ class SelectionController(
             .copy(preparing = false, busy = false, phraseBusy = false, phrase = "")
     }
 
-    fun saveSettings(baseUrl: String, token: String) {
+    fun saveSettings(baseUrl: String, token: String, geminiApiKey: String) {
         settings.update(baseUrl, token)
+        geminiSettings.update(geminiApiKey)
         _state.value = _state.value.copy(showSettings = false)
     }
 
-    fun dismissSettings() {
-        _state.value = _state.value.copy(showSettings = false)
+    /**
+     * specs/generative_erase.md §9: the 지우기 tool opens the same 서버 설정 sheet when its key is
+     * missing. One sheet, one owner — this controller — so one function opens and closes it.
+     */
+    fun setSettingsVisible(visible: Boolean) {
+        _state.value = _state.value.copy(showSettings = visible)
     }
 
     fun showMessage(res: Int) {

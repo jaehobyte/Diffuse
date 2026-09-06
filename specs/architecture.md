@@ -162,6 +162,7 @@ The last three were added in T25 for the HTTP clients. `detail` is for logs, nev
 | ~~007~~ | ~~On-device segmentation with EdgeTAM via ExecuTorch~~ | **Retired by ADR-009.** Never implemented. Kept as tasks.md D09 in case offline selection becomes a requirement |
 | ~~008~~ | ~~Bundle model files in the APK~~ | **Retired with ADR-007.** The APK budget returns to 15MB |
 | 009 | Server-side SAM 3 over HTTP (`~/sam3-server`) | Text-prompt segmentation, which EdgeTAM cannot do at all, is the feature v2 is actually for; no 32MB of models in the APK, no ExecuTorch dependency, and the model improves without an app release. Costs offline support — accepted, see D09 |
-| 010 | Generative editing through a sam3-server proxy, never a direct Gemini call | An API key in an APK is extractable by anyone who downloads it. The app already authenticates against this server, so the proxy adds one endpoint and zero new trust relationships |
+| ~~010~~ | ~~Generative editing through a sam3-server proxy, never a direct Gemini call~~ | **Retired by ADR-011.** The endpoint was never implemented, and the proxy did not actually remove the key — it only moved it |
+| 011 | The device calls `gemini-2.5-flash-image` directly; the key is entered at runtime and never shipped | ADR-010's real goal was "no credential in a published APK", and this achieves it more completely: there is no build-time key at all, so decompiling the APK yields nothing. It also keeps `~/sam3-server` doing one job. Costs: the key sits in `SharedPreferences` (the exposure the SAM 3 token already had), and each user brings their own quota. See generative_erase.md §2 |
 
 New ADRs go in `docs/decisions/NNN-title.md` and get a row here.

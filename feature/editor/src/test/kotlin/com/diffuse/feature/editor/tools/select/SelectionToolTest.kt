@@ -8,6 +8,7 @@ import com.diffuse.core.ai.Availability
 import com.diffuse.core.ai.FakeEraseProvider
 import com.diffuse.core.ai.FakeSegmentationProvider
 import com.diffuse.core.ai.MaskBitmaps
+import com.diffuse.core.ai.gemini.GeminiSettings
 import com.diffuse.core.ai.sam3.Sam3Settings
 import com.diffuse.core.ai.speech.FakeSpeechInput
 import com.diffuse.core.common.AppError
@@ -55,6 +56,7 @@ class SelectionToolTest {
     private val eraseProvider = FakeEraseProvider()
     private lateinit var repository: RecordingRepository
     private lateinit var settings: Sam3Settings
+    private lateinit var geminiSettings: GeminiSettings
 
     @Before
     fun setUp() {
@@ -62,6 +64,8 @@ class SelectionToolTest {
         repository = RecordingRepository()
         settings = Sam3Settings(ApplicationProvider.getApplicationContext())
         settings.update("http://localhost:8080", "token")
+        geminiSettings = GeminiSettings(ApplicationProvider.getApplicationContext())
+        geminiSettings.update("test-key")
     }
 
     @After
@@ -596,10 +600,11 @@ class SelectionToolTest {
         val viewModel = viewModel()
         viewModel.onToolClick(Tool.Select)
 
-        viewModel.selection.saveSettings("http://10.0.2.2:8080", "tok")
+        viewModel.selection.saveSettings("http://10.0.2.2:8080", "tok", "AIza-key")
 
         assertFalse(viewModel.uiState.value.selection.showSettings)
         assertEquals("http://10.0.2.2:8080", settings.current().baseUrl)
+        assertEquals("AIza-key", geminiSettings.config.value.apiKey)
         assertTrue(provider.refreshCount > 0)
     }
 
@@ -610,7 +615,7 @@ class SelectionToolTest {
     ) = EditorViewModel(
         repository = repository,
         renderer = FakeRenderer(),
-        ai = EditorAi(segmentation, eraseProvider, FakeSpeechInput(), settings),
+        ai = EditorAi(segmentation, eraseProvider, FakeSpeechInput(), settings, geminiSettings),
         savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),
     )
 

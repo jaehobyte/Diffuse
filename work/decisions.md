@@ -20,6 +20,139 @@ Nothing in `work/tasks.md` is left. What a human still owes:
 
 ## Decisions
 
+### T43 — `EraseTap` is returned, not acted on
+
+§9 wants a missing key to open the 서버 설정 sheet, and that sheet is `SelectionController`'s:
+`showSettings` lives in `SelectionState`, and `EditorRoute` renders it from there. Giving
+`EraseController` its own copy would mean two owners of one sheet and two things to clear on
+cancel. So `onToolTapped` returns `EraseTap.Run` / `OpenSettings` / `Refused` and
+`EditorViewModel` — the one object holding both controllers — does the routing.
+
+`SelectionController.setSettingsVisible(visible)` replaced `dismissSettings()` rather than sitting
+beside a new `requestSettings()`: adding a function put the class at 21 and detekt's
+`TooManyFunctions` threshold is 20. One function that opens and closes reads better than two
+anyway, and `explain()` now goes through it too.
+
+`onToolClick` hit `CyclomaticComplexMethod` at the same time, so the erase branch moved into a
+private `onEraseTapped`.
+
+### T43 — the no-selection row is reported before the no-key row
+
+§9's table lists `activeMaskId == null` first, and it is the only ordering signal the spec gives.
+It means someone with neither a selection nor a key is told to select first and only then to paste
+a key — two steps. The alternative (key first) reads as more helpful but is invented, and the tool
+is greyed for both reasons either way, so the table order stands.
+
+### T43 — `"blocked:"` is duplicated rather than imported
+
+`GeminiEraseClient` is `internal` to `core:ai`, so `feature:editor` cannot see its
+`BLOCKED_PREFIX`. That is the module boundary working: §6 makes the prefix part of the
+`AppError.Invalid` contract, and a feature reading the contract is right where a feature reaching
+into the HTTP client would be wrong. The constant is `private` in `EraseController` with the spec
+reference next to it.
+
+
+### T42 — the provider takes `DispatcherProvider`, which §7's snippet does not show
+
+§7 sketches `GeminiEraseProvider(client, settings)` but then requires "all of it on
+`DispatcherProvider.io`, with `ensureActive()` before the network call". The bitmap work —
+downscale, `WhiteFill`, JPEG compress — happens in the provider, not the client, so the provider
+needs the dispatcher itself. Three constructor parameters, not two.
+
+It also uses `dispatchers.default` for the scope `availability`'s `stateIn` runs in, which is what
+lets a test make that mapping settle synchronously by handing back `Dispatchers.Unconfined`.
+
+### T42 — `availability` is a mapped `StateFlow`, and the scope is never cancelled
+
+`GeminiEraseProvider` is a `@Singleton` with no lifecycle, so the `CoroutineScope` backing
+`stateIn` lives as long as the process — the same lifetime the flow it exposes has. `Eagerly` so
+`availability.value` is correct before anyone collects, which is what `EraseController` reads on
+its first frame.
+
+### T42 — the "whitened bytes on the wire" test asserts near-white, not `0xFFFFFFFF`
+
+The image is sent as JPEG q90, so the decoded bytes are white to within a quantization step and
+the boundary column is visibly off (0xFFF5FFFF in the first run). Asserting exact white would
+have been asserting the absence of lossy compression, which is not what this test is for. It
+checks every channel is ≥ 235 inside the mask, and that the unmasked half is still recognizably
+the original blue — which is what actually proves `WhiteFill` sits in the path.
+
+### T42 — `MaskPng.kt` went with the other three
+
+§13 makes it conditional on nothing referencing it afterwards. After `Sam3EraseClient` and
+`Sam3EraseProvider` were removed, a repo-wide grep found its own declaration and nothing else, so
+it was deleted rather than moved to `gemini/`. The Gemini path sends no mask over the wire at all.
+
+
+### T41 — a pixel loop, not a `SRC_IN` composite
+
+§4 offers either. The loop wins on readability: the composite needs a scratch bitmap, a `Paint`
+with a `PorterDuffXfermode`, and a `Canvas`, and the reader then has to reason about what
+`SRC_IN` does to a `ALPHA_8` source. The loop says "if the mask is set, write white". It runs
+once per erase on a bitmap of at most 1024px, so the cost is irrelevant.
+
+The image is read once with `getPixels` and written once with `setPixels`; only the *mask* is
+read per pixel, because `ALPHA_8` does not survive `getPixels` usefully.
+
+### T41 — the size mismatch throws rather than returning null
+
+§7 step 1 already turns a mismatched mask into `Invalid` at the provider, so by the time
+`WhiteFill` is called the sizes agree. The `require` is therefore a programming-error guard, not
+an error path, and `IllegalArgumentException` says that where a nullable return would not.
+
+
+### T40 — one `Part` shape for both directions, and `explicitNulls = false`
+
+A request part carries `inlineData` **or** `text`; a response part carries the same two. Two
+classes would have identical fields, so there is one `Part` with both nullable. That only works
+because the `Json` sets `explicitNulls = false`: otherwise the request body would carry
+`"text": null` alongside the image, which the API rejects as an empty part. A test asserts the
+unused field is absent rather than null, because nothing else would catch that setting being lost.
+
+### T40 — `GeminiConfigSource` rather than injecting `GeminiSettings` into the client
+
+`GeminiSettings` hard-codes `DEFAULT_BASE_URL`, which is the point (§8: no user-editable host).
+The test still has to reach `MockWebServer`, so the client takes a `fun interface
+GeminiConfigSource` and the test hands it `{ GeminiConfig(key, server.url) }`. Exactly the seam
+`Sam3ConfigSource` already is, for exactly the same reason.
+
+### T40 — the client rejects a blank key before the wire, though availability already does
+
+§7 makes `availability` blank-key-aware, so in the app this branch is unreachable. It is here
+anyway because `Sam3Client` has the same guard for the base URL, and because a client that
+silently sends `x-goog-api-key: ` would fail as a 401 — an error that reads like a *wrong* key
+rather than a missing one.
+
+
+### T39 — the Gemini key rides in `SelectionController`, and two tests took a constructor arg
+
+`work/tasks.md` lists T39's `touches` as `core/ai/gemini`, `Sam3SettingsSheet.kt`,
+`EditorRoute.kt` and `strings.xml`. Wiring the key from the sheet to `GeminiSettings` cannot fit
+inside that list: `EditorRoute` reads the sheet's values out of `EditorUiState` and has no way to
+reach a `@Singleton` itself. Three files outside the list changed, each minimally:
+
+- `EditorAi` gains `geminiSettings`. It is already "the editor's whole AI surface in one
+  injectable", so a second credential belongs there rather than in a new one.
+- `SelectionController` takes it and `saveSettings` becomes three-arg. The controller already
+  owns the 서버 설정 sheet's lifecycle (`showSettings`, `dismissSettings`), and generative_erase.md
+  §8 makes that one sheet serve both providers — so the alternative was a second owner for the
+  same sheet. `SelectionState.geminiApiKey` exists for the same reason: it is the state the sheet
+  renders from.
+- `SelectionToolTest` and `GenerativeEraseToolTest` construct `EditorAi` directly, so they take
+  the new argument. Mechanical only; no assertion was changed except the one in
+  `saveSettings closes the sheet and re-probes`, which now also asserts the key was stored.
+
+The name `Sam3SettingsSheet` is now wrong — it is the 서버 설정 sheet for two providers. Renaming
+it would touch `EditorRoute`, the test tags and `SelectSheetTest`, for no behaviour, so it stays.
+
+### T39 — the key field is masked but its value is still readable to a test
+
+`PasswordVisualTransformation` changes `EditableText` to bullets and sets the `Password`
+semantics flag, but leaves `InputText` as the real value — so `onNodeWithText("AIza-old")` still
+matches. The test asserts on `Password` and on `EditableText` instead of on the absence of a text
+node, because the absence is not true and asserting it would only be true by accident.
+
+
 ### T30/T41 — the third device run: it works
 
 Verified on an SM-S948N against the real model, over the public endpoint: a tap on the dog's coat

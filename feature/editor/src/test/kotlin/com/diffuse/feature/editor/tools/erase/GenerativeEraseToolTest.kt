@@ -7,6 +7,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.diffuse.core.ai.Availability
 import com.diffuse.core.ai.FakeEraseProvider
 import com.diffuse.core.ai.FakeSegmentationProvider
+import com.diffuse.core.ai.gemini.GeminiSettings
 import com.diffuse.core.ai.sam3.Sam3Settings
 import com.diffuse.core.ai.speech.FakeSpeechInput
 import com.diffuse.core.common.AppError
@@ -20,6 +21,7 @@ import com.diffuse.core.imaging.model.Operation
 import com.diffuse.core.imaging.render.Renderer
 import com.diffuse.feature.editor.EditorAi
 import com.diffuse.feature.editor.EditorViewModel
+import com.diffuse.feature.editor.R
 import com.diffuse.feature.editor.Tool
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -38,7 +40,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.GraphicsMode
 
-/** specs/generative_erase.md §5, §8. */
+/** specs/generative_erase.md §5, §8, §9. */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class GenerativeEraseToolTest {
@@ -47,6 +49,7 @@ class GenerativeEraseToolTest {
     private val eraser = FakeEraseProvider()
     private lateinit var repository: RecordingRepository
     private lateinit var settings: Sam3Settings
+    private lateinit var geminiSettings: GeminiSettings
 
     @Before
     fun setUp() {
@@ -54,10 +57,14 @@ class GenerativeEraseToolTest {
         repository = RecordingRepository()
         settings = Sam3Settings(ApplicationProvider.getApplicationContext())
         settings.update("http://localhost:8080", "token")
+        geminiSettings = GeminiSettings(ApplicationProvider.getApplicationContext())
+        geminiSettings.update("test-key")
     }
 
     @After
     fun tearDown() = Dispatchers.resetMain()
+
+    // ---- §9, one per row -------------------------------------------------
 
     @Test
     fun `the tool refuses without a selection and says so`() = runTest {
@@ -65,9 +72,77 @@ class GenerativeEraseToolTest {
 
         viewModel.onToolClick(Tool.Erase)
 
-        assertNotNull(viewModel.uiState.value.erase.message)
+        assertEquals(R.string.erase_needs_selection, viewModel.uiState.value.erase.message)
         assertEquals(0, eraser.eraseCount)
         assertEquals(emptyList<Operation>(), viewModel.uiState.value.document?.operations)
+        assertFalse(viewModel.uiState.value.selection.showSettings)
+    }
+
+    @Test
+    fun `a missing key opens the settings sheet rather than only a snackbar`() = runTest {
+        eraser.setAvailability(Availability.Unavailable(AppError.Invalid("no api key")))
+        val viewModel = withSelection()
+
+        viewModel.onToolClick(Tool.Erase)
+
+        assertEquals(R.string.erase_needs_key, viewModel.uiState.value.erase.message)
+        assertTrue(viewModel.uiState.value.selection.showSettings)
+        assertEquals(0, eraser.eraseCount)
+    }
+
+    @Test
+    fun `a blocked generation says the image cannot be edited`() = runTest {
+        val viewModel = withSelection()
+        eraser.failNext(AppError.Invalid("blocked:IMAGE_SAFETY"))
+
+        viewModel.onToolClick(Tool.Erase)
+
+        assertEquals(R.string.erase_blocked, viewModel.uiState.value.erase.message)
+        assertTrue(viewModel.uiState.value.document!!.generativeErases().isEmpty())
+    }
+
+    @Test
+    fun `any other failure says it could not erase`() = runTest {
+        val viewModel = withSelection()
+        eraser.failNext(AppError.Unavailable)
+
+        viewModel.onToolClick(Tool.Erase)
+
+        assertEquals(R.string.erase_failed, viewModel.uiState.value.erase.message)
+    }
+
+    @Test
+    fun `an Invalid that is not a block is still the generic failure`() = runTest {
+        val viewModel = withSelection()
+        eraser.failNext(AppError.Invalid("mask must be the image's size"))
+
+        viewModel.onToolClick(Tool.Erase)
+
+        assertEquals(R.string.erase_failed, viewModel.uiState.value.erase.message)
+    }
+
+    @Test
+    fun `an outage that is not a missing key does not throw a sheet at the user`() = runTest {
+        eraser.setAvailability(Availability.Unavailable(AppError.Unavailable))
+        val viewModel = withSelection()
+
+        viewModel.onToolClick(Tool.Erase)
+
+        assertEquals(R.string.erase_failed, viewModel.uiState.value.erase.message)
+        assertFalse(viewModel.uiState.value.selection.showSettings)
+    }
+
+    @Test
+    fun `the selection survives a failure, so a retry costs no re-selection`() = runTest {
+        val viewModel = withSelection()
+        val maskId = viewModel.uiState.value.document!!.activeMaskId
+        eraser.failNext(AppError.Invalid("blocked:SAFETY"))
+
+        viewModel.onToolClick(Tool.Erase)
+        viewModel.onToolClick(Tool.Erase)
+
+        assertEquals(maskId, viewModel.uiState.value.document!!.activeMaskId)
+        assertEquals(1, viewModel.uiState.value.document!!.generativeErases().size)
     }
 
     @Test
@@ -147,7 +222,7 @@ class GenerativeEraseToolTest {
     private fun viewModel() = EditorViewModel(
         repository = repository,
         renderer = FakeRenderer(),
-        ai = EditorAi(segmentation, eraser, FakeSpeechInput(), settings),
+        ai = EditorAi(segmentation, eraser, FakeSpeechInput(), settings, geminiSettings),
         savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),
     )
 
