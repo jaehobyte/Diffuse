@@ -1,6 +1,6 @@
-# tasks.md — Ralph loop task queue (v1.1 fixes + v2 on-device selection)
+# tasks.md — Ralph loop task queue (v2: server-side selection, prompts, generative erase)
 
-Completed v1 tasks (T01–T21) live in `tasks/v1_done.md`. Read it once per iteration to know what already exists; never re-implement anything listed there.
+T01–T24 are done; their notes live in `progress.md`. Never re-implement anything recorded there.
 
 Rules for the agent: unchanged — see CLAUDE.md "Ralph loop rules". One task per iteration, `scripts/check.sh` is the only verdict, only edit checkboxes in this file.
 
@@ -8,130 +8,242 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `[H]` human-only, loop must
 
 ---
 
-## Phase 5 — v1.1 fixes (start immediately)
+## Prerequisites (human work, not a task — the loop must never pick this up)
 
-- [x] T22 Reset to original
-  spec: specs/editor_shell.md §Top bar (amend), history.md
-  deps: —
-  done when:
-    - top bar gains a reset icon button between Redo and Compare (Material Symbols `history` or `restart_alt`)
-    - tap → `history.push(doc.copy(operations = emptyList()))` with no coalesce key, so it is a single undoable step; **no confirmation dialog** (undo covers it)
-    - disabled when `operations.isEmpty()`
-    - after reset the canvas refits (dimensions may change if a Crop was removed)
-    - UI test: reset then undo restores every operation; golden `editor_shell_default` updated (it is named here, so re-recording is allowed)
-  touches: feature/editor, specs/editor_shell.md (append the one new row to the Top bar table only)
+Design is settled: ADR-009 (server-side SAM 3 at `~/sam3-server`) and ADR-010 (generative editing
+through that server's proxy) are in architecture.md §10, and every spec below exists. What is **not**
+done, and what blocks which task:
 
-- [x] T23 Crop preset aspect is wrong (16:9 renders as ~1:1)
-  spec: specs/crop.md §Interaction, §Model
-  deps: —
-  done when:
-    - **first** a failing test reproduces it: `CropGeometryTest.presetAspectMatchesInPixels` builds the preset rect on a 4000×3000 source and asserts `(rect.width × srcW) / (rect.height × srcH)` equals the preset within 0.5%, for all five presets and for both orientations
-    - root cause fixed (likely: aspect enforced in normalized 0…1 space without multiplying by the source aspect; verify before assuming)
-    - existing goldens `crop_1x1`, `crop_straighten_15`, `crop_overlay` still pass unchanged; if `crop_overlay` was recorded with the bug, it is named here and may be re-recorded once
-  touches: feature/editor/tools/crop, core/imaging/ops (only if the render side is also wrong)
+| Missing | Blocks |
+|---|---|
+| ~~`okhttp` and `okhttp-mockwebserver` in `libs.versions.toml`~~ done | — |
+| ~~CLAUDE.md hard limit amended~~ done | — |
+| ~~`AppError` gains `Unauthorized`, `Invalid(detail)`, `Unavailable`~~ done | — |
+| ~~`sam3.baseUrl` / `sam3.token` keys in `local.properties`~~ done | — |
+| `POST /v1/edit/erase` implemented in `~/sam3-server` | T37 |
+| ~~the EdgeTAM `.pte` files deleted~~ done (32 MB) | — |
 
-- [x] T24 Live rotate / straighten preview in the crop tool
-  spec: specs/crop.md §Interaction (amend), canvas.md
-  deps: T23
-  done when:
-    - while the crop sheet is open, moving the straighten slider or tapping 90° rotates the image **immediately on the canvas** — no Apply needed
-    - implementation: the canvas applies a rotation transform to the drawn bitmap about the image center (`overlayTransform` in `CanvasViewport`); **no re-render** through `Renderer` during the drag — this is a canvas-level transform for performance
-    - the crop rect stays screen-fixed and auto-shrinks per crop.md while the image rotates under it
-    - Apply commits `Crop(rect, angleDeg)` exactly as before; Cancel removes the transform
-    - `CanvasTransformTest` gains a case for the rotation transform; goldens `crop_live_rotate_15`, `crop_live_rotate_90`
-  touches: feature/editor/canvas, feature/editor/tools/crop, specs/crop.md (append to §Interaction only)
+Only the server endpoint is still outstanding. If a task hits a missing prerequisite, mark it
+`[!]` and write the reason in `blocked.md` — do not add the dependency yourself.
 
-## Phase 6 — v2 prerequisites
+---
 
-- [H] T25 Human decisions and assets (loop must skip this task)
-  - ADR-007: on-device segmentation with EdgeTAM via ExecuTorch (XNNPACK); Apache-2.0; add to architecture.md §10
-  - ADR-008: model delivery — choose one: (a) bundle both `.pte` in `assets/` and raise the APK budget to 50MB, or (b) download on first use into `filesDir/models/` with a progress UI. Write the choice into specs/segmentation.md §Delivery
-  - add `org.pytorch:executorch-android` to `libs.versions.toml`
-  - place `edgetam_encoder_xnnpack_fp32.pte` and `edgetam_decoder_xnnpack_fp16.pte` under `fixtures/models/` for tests (git-lfs) and, if (a), under `app/src/main/assets/models/`
-  - write `specs/ai_provider.md`, `specs/segmentation.md`, `specs/selection_tool.md`; extend `specs/edit_model.md` with `Operation.Mask` and `Operation.CutOut`
-  - run the loop again only after these exist
+## Phase 5 — Network and model layer
 
-## Phase 7 — Model layer
-
-- [ ] T26 `core:ai` module and `SegmentationProvider` interface
+- [x] T26 `core:ai` module and `SegmentationProvider` interface
   spec: specs/ai_provider.md, architecture.md §6
-  deps: T25
+  deps: —
   done when:
-    - new module `core:ai` (depends on `core:common`, `core:imaging` for `ImageRef` only); `feature:editor` depends on it; dependency-guard updated
-    - `interface SegmentationProvider { suspend fun prepare(image: Bitmap): Result<ImageEmbedding>; suspend fun segment(emb: ImageEmbedding, prompt: PointPrompt): Result<SegMask> }`
-    - `PointPrompt(points: List<Point>, labels: List<Boolean>)` in normalized image coords; `SegMask(bitmap: Bitmap /* ALPHA_8, image size */, score: Float)`
-    - `FakeSegmentationProvider`: returns a circle of radius 0.2 around the first point, deterministic
-    - tests for the fake; Hilt binding chooses fake in tests, real in app
+    - new module `core:ai` (depends on `core:common`, and on `core:imaging` for `ImageRef` only);
+      `feature:editor` depends on it; dependency-guard updated
+    - `interface SegmentationProvider` with `availability: StateFlow<Availability>`,
+      `suspend fun open(image: Bitmap): Result<SegSession>`,
+      `suspend fun byPoints(s: SegSession, p: PointPrompt): Result<SegMask>`,
+      `suspend fun byText(s: SegSession, phrase: String): Result<List<SegMask>>`,
+      `suspend fun close(s: SegSession)`
+    - `SegSession(imageId, imageWidth, imageHeight, expiresAtEpochMs: Long)` — a `Long`, because
+      the catalog has no kotlinx-datetime and nothing adds one;
+      `PointPrompt(points: List<PointF> /* normalized 0..1 */, labels: List<Boolean>)`;
+      `SegMask(alpha: Bitmap /* ALPHA_8, image size, strictly binary */, score: Float)`
+    - `FakeSegmentationProvider`: `byPoints` returns a circle of radius `0.2 × shortEdge` around the
+      first foreground point minus `0.1 × shortEdge` circles at each background point; `byText`
+      returns two deterministic circles keyed off the phrase hash; `failNext(error)` for error paths
+    - `EraseProvider` (ai_provider.md §3) is declared in the same file; T37 implements it
+    - tests for the fake; Hilt binding picks the fake in tests, the real provider in the app
   touches: core/ai, settings.gradle.kts (only to add the module — this one exception is pre-approved), feature/editor build file
 
-- [ ] T27 EdgeTAM runtime via ExecuTorch
-  spec: specs/segmentation.md
+- [ ] T27 `Sam3Client` — the HTTP layer
+  spec: specs/segmentation.md, ~/sam3-server specs/api.md
   deps: T26
   done when:
-    - `EdgeTamProvider : SegmentationProvider` loads the two `.pte` modules lazily on first `prepare`
-    - `prepare`: letterbox-resize to 1024×1024, RGB/255 + ImageNet mean/std normalize, run encoder, keep the three feature tensors in `ImageEmbedding` (≈ 30MB; only one embedding cached at a time)
-    - `segment`: map points to 1024-space pixel coords, run decoder, pick the mask with the highest IoU score, sigmoid > 0.5 → ALPHA_8, un-letterbox back to image size with bilinear upsample
-    - both run on `Dispatchers.Default`; cancellable between encoder and decoder
-    - `EdgeTamProviderTest` on Robolectric with the fixture models: a click on the red patch of `photo_512.png` yields a mask whose bounding box covers ≥ 80% of the patch and ≤ 5% of the gray patch
-    - `scripts/bench.sh` gains: encoder time and decoder time on the 12MP fixture (informational)
-  touches: core/ai/edgetam, scripts/bench.sh
+    - `Sam3Client` (OkHttp + kotlinx.serialization) covers `POST /v1/images` (multipart),
+      `POST /v1/images/{id}/segment/points`, `.../segment/text`, `DELETE /v1/images/{id}`, `GET /healthz`
+    - every request uses `format = "png"`, so the response carries a base64 8-bit alpha PNG at
+      original resolution. **No COCO RLE decoder is written** — the server already offers the
+      format we need, and RLE would be dead code
+    - bearer token on every `/v1/` call; requests are cancellable and run on `DispatcherProvider.io`
+    - error mapping onto the `AppError` cases in architecture.md §9: 400 → `Invalid`, 401 → `Unauthorized`,
+      410 → session expiry (handled below, never surfaced as-is), 413 → `TooLarge`,
+      415 → `Unsupported`, 503 → `Unavailable`, transport failure → `Io`
+    - `410 session_expired` is absorbed here: re-upload the image **once**, replay the prompt, and
+      only then surface a failure. api.md states a client must be ready for 410 at any time
+    - images are downscaled before upload so the body stays under 20 MB
+    - `Sam3ClientTest` with `MockWebServer`: each route, each error code, the 410 replay path,
+      base64 alpha decoding, and normalized-coordinate encoding. No external host is contacted
+  touches: core/ai/sam3
 
-- [ ] T28 Model delivery (per ADR-008)
-  spec: specs/segmentation.md §Delivery
+- [ ] T28 `Sam3SegmentationProvider` and server settings
+  spec: specs/segmentation.md §Availability, §Settings
   deps: T27
   done when:
-    - (a) assets: models resolved from `assets/models/`; APK size check in `check.sh` updated to the new budget
-    - or (b) download: `ModelStore.ensure(): Flow<DownloadState>`; sheet shows progress and size before starting; verified by SHA-256 listed in the spec; failure → snackbar, tool stays disabled
-    - either way, `SegmentationProvider` is unavailable (tool greyed with a reason) until models are present
-  touches: core/ai, feature/editor/tools/select (availability state only)
+    - `Sam3SegmentationProvider : SegmentationProvider` implemented over `Sam3Client`;
+      at most one live `SegSession`, and opening a second closes the first with `DELETE`
+    - `Sam3Settings` holds base URL and token: `local.properties` supplies the build-time default
+      via a `BuildConfig` field (enable `buildConfig` for `:app` in build-logic; it is off globally
+      in gradle.properties), overridable at runtime from a settings sheet, persisted in
+      `SharedPreferences` (the same choice `ExportSettingsStore` already made)
+    - `availability` is `Unavailable(AppError.Invalid)` when no base URL is configured and
+      `Unavailable(AppError.Unavailable)` when `GET /healthz` fails; it re-checks when settings change
+    - masks come back at the uploaded image's size and are scaled to the working image size
+    - tests with `MockWebServer`: availability transitions, session replacement, settings round-trip
+  touches: core/ai/sam3, build-logic, app (settings sheet entry point only)
 
-## Phase 8 — Selection tool
+## Phase 6 — Selection tool
 
 - [ ] T29 `Operation.Mask` in the model and renderer
-  spec: specs/edit_model.md (amended in T25), render.md
-  deps: T25
+  spec: specs/edit_model.md, render.md
+  deps: —
   done when:
-    - `Operation.Mask(id, maskRef: ImageRef /* ALPHA_8 PNG in project folder */, points: PointPrompt /* for re-editing */)`
-    - a `Mask` op alone changes no pixels; the renderer exposes `resolveMask(doc, maskId): Bitmap?` for consumers
+    - `Operation.Mask(id, maskRef: ImageRef /* ALPHA_8 PNG in the project folder */)` — it stores
+      the alpha only, **not** the prompts, since a merged selection has no single reproducing prompt
+    - a `Mask` op alone changes no pixels; the renderer exposes `resolveMask(doc, maskId): Bitmap?`
     - masks are saved by persistence as `mask_<id>.png`; round-trip test
     - at most one **active** mask per document (`EditDocument.activeMaskId`); older masks stay for undo
   touches: core/imaging/model, core/imaging/render, core/data
 
-- [ ] T30 "선택" tool: tap-to-segment with darkened preview
+- [ ] T30 "선택" tool: tap-to-segment with a darkened preview
   spec: specs/selection_tool.md, DESIGN.md §4
-  deps: T26, T29, T24
+  deps: T26, T29
   done when:
-    - tool strip gains "선택" (icon `lasso_select` or similar) with the 6dp accent AI dot; opens a sheet with: [반전] [지우기] and Cancel/Apply
-    - on opening: `prepare()` runs once with the progress overlay ("이미지를 분석하는 중"); canvas one-finger tap becomes a **foreground point**, long-press becomes a **background point** (`gestureMode = SelectPoint`)
-    - every point → `segment()` → preview: outside the mask darkened (`#000000` 60% scrim), 1dp `accent` outline along the mask edge; points drawn as 8dp dots (accent fg, white bg)
-    - each point push is a history entry; undo removes the last point and re-segments
-    - Apply → writes `Operation.Mask` and sets `activeMaskId`; Cancel discards
-    - works fully with `FakeSegmentationProvider` in tests; UI test covers add fg, add bg, undo, invert, apply
+    - tool strip gains "선택" with the 6dp accent AI dot; greyed when `availability` is
+      `Unavailable`, and tapping it then shows a snackbar with the reason
+    - opening the sheet runs `open()` once behind the progress overlay "이미지를 분석하는 중"
+      (DESIGN.md §4 State display); the sheet holds [반전] [지우기] and Cancel / Apply
+    - canvas `gestureMode = SelectPoint`: tap → foreground point, long-press → background point,
+      one-finger drag → pan, two fingers → zoom/pan (all per selection_tool.md §2)
+    - every point change → `byPoints()` with the full prompt; preview shows the area outside the
+      mask at `#000000` 60%, a 1dp `accent` outline on the mask edge, 8dp dots at each point
+    - a segment in flight conflates: only the latest prompt is queued
+    - Undo/Redo while the sheet is open drive the tool's own point deque, not the document
+    - Apply writes `Operation.Mask` and sets `activeMaskId`; Cancel discards; Apply disabled with no mask
+    - fully driven by `FakeSegmentationProvider` in tests; UI test covers add fg, add bg, undo, apply, cancel
     - goldens: `select_sheet_open`, `select_mask_preview`
+  note: the canvas gesture-mode field and `overlayTransform` already exist from T24 (see progress.md)
   touches: feature/editor/tools/select, feature/editor/canvas (gesture mode + mask overlay draw only)
 
-- [ ] T31 Adjustments limited to the selection
+- [ ] T31 Accumulated mask merging with add / subtract
+  spec: specs/selection_tool.md §Merge
+  deps: T30
+  done when:
+    - the tool owns one `accumulated: Bitmap (ALPHA_8)`; the sheet gains an [추가] / [빼기] segmented
+      toggle, default 추가
+    - a prompt result merges as `add → max(acc, new)` and `subtract → min(acc, 255 - new)`
+    - point taps stay a single server-refined prompt: they accumulate into one `PointPrompt` sent to
+      `byPoints`, and that result is what merges. Switching to [빼기] starts a fresh point prompt
+      rather than adding background points, so the two mechanisms never fight
+    - 반전 flips the accumulated mask only; 지우기 clears it and the point prompt, keeping the session
+    - each merge is one entry on the tool's deque, so Undo removes exactly one merge
+    - `MaskMergeTest` (pure): add then subtract on overlapping circles gives the expected coverage;
+      invert is its own inverse; the alpha stays strictly binary
+    - golden `select_mask_merged`
+  touches: feature/editor/tools/select
+
+- [ ] T32 Adjustments limited to the selection
   spec: specs/adjust_light.md / adjust_color.md / adjust_detail.md (amend: masked mode), render.md
   deps: T30
   done when:
-    - when `activeMaskId != null`, every `AdjustSheet` shows a toggle "선택 영역에만" (default on); `Operation.Adjust` gains `maskId: String?`
+    - when `activeMaskId != null`, every `AdjustSheet` shows a toggle "선택 영역에만" (default on);
+      `Operation.Adjust` gains `maskId: String?`
     - renderer blends `out = lerp(in, adjusted, mask)`
-    - goldens: `exposure_+0.5_masked` using a fixture mask covering the left half — right half must equal the input
+    - golden `exposure_+0.5_masked` using a fixture mask covering the left half — the right half must
+      equal the input exactly
     - existing unmasked goldens unchanged
   touches: core/imaging/ops, core/imaging/render, feature/editor/tools/*
 
-- [ ] T32 Background removal from the selection
+- [ ] T33 Background removal from the selection
   spec: specs/selection_tool.md §CutOut
   deps: T30
   done when:
-    - selection sheet gains a primary action "배경 지우기" (visible only when a mask exists)
+    - the selection sheet gains a primary pill "배경 지우기", visible only once a mask exists
     - `Operation.CutOut(maskId)`: alpha outside the mask → 0; `hasAlpha` becomes true; checkerboard shows
-    - export auto-selects PNG (export.md rule already exists)
+    - export auto-selects PNG (the export.md rule already exists)
     - golden `cutout_render`; UI test: cutout → undo restores alpha
   touches: core/imaging/ops, feature/editor/tools/select, feature/export (only if the auto-PNG rule needs the new flag)
+
+## Phase 7 — Prompt input
+
+- [ ] T34 `PromptBar` component
+  spec: specs/prompt_input.md, DESIGN.md §4 (prompt bar)
+  deps: —
+  done when:
+    - `PromptBar(value, onValueChange, onSubmit, onMicClick, listening, enabled)` in `core:ui`,
+      styled strictly from `Tokens.kt`: 48dp tall, 16dp radius, `editSurfaceRaised` fill,
+      24dp mic icon left, 24dp send icon right, `bodyMd` text, 48dp hit areas
+    - placeholder and every label come from `strings.xml` in Korean; nothing hardcoded
+    - send is enabled only for a non-blank, trimmed value; IME action Done submits
+    - the send icon is **never** `accent`; the sheet's one accent stays on its Apply pill (DESIGN.md §1)
+    - `listening = true` renders the mic in `accent` — a fill change only, no glow or pulse (DESIGN.md §7)
+    - `mic` is hidden entirely when the host passes `onMicClick = null`
+    - goldens: `prompt_bar_empty`, `prompt_bar_filled`, `prompt_bar_listening`; 3 behavior tests
+  touches: core/ui/components, core/ui/src/main/res (strings)
+
+- [ ] T35 Voice input behind a `SpeechInput` interface
+  spec: specs/prompt_input.md §Voice
+  deps: T34
+  done when:
+    - `interface SpeechInput { val state: StateFlow<SpeechState>; fun start(localeTag: String); fun stop() }`
+      with `SpeechState` = `Idle | Listening(partial: String) | Final(text: String) | Failed(AppError)`
+    - `AndroidSpeechInput` wraps `android.speech.SpeechRecognizer` with `ko-KR`; no network code in the app
+    - `RECORD_AUDIO` declared and requested at first mic tap; denial → Korean snackbar, mic stays usable
+      for a retry; permanent denial → mic hidden for the session
+    - `SpeechRecognizer.isRecognitionAvailable(context) == false` → `PromptBar` is hosted without a mic
+    - partial results stream into the `PromptBar` text as the user speaks
+    - `FakeSpeechInput` drives every test; UI test covers grant, deny, partial → final, and stop
+  touches: core/ai/speech, feature/editor, app/src/main/AndroidManifest.xml
+
+- [ ] T36 Prompt or speech → SAM 3 text segmentation
+  spec: specs/prompt_input.md §Flow, specs/selection_tool.md §Text
+  deps: T31, T34, T35, T28
+  done when:
+    - the selection sheet hosts the `PromptBar`; submitting a phrase calls `byText()` on the open session
+    - the returned instances are unioned into one mask, then merged into the accumulated selection with
+      the current [추가] / [빼기] mode — the same merge path T31 already tests
+    - a `Final` speech result auto-submits; while `Listening`, the send button is replaced by a stop button
+    - `count == 0` → `bodySm` hint "찾지 못했어요. 다른 단어로 해보세요." Not an error, not a snackbar
+    - while a text prompt is in flight the bar is disabled and the progress overlay shows with a cancel
+      button (DESIGN.md §7 "always show progress and a cancel button during AI work")
+    - UI test with the fakes: type → merged mask; speak → merged mask; empty result → hint;
+      cancel mid-flight leaves the accumulated mask untouched
+    - golden `select_prompt_result`
+  touches: feature/editor/tools/select
+
+## Phase 8 — Generative eraser
+
+- [ ] T37 `EraseProvider` and the proxy client
+  spec: specs/generative_erase.md, ~/sam3-server specs/api.md (`POST /v1/edit/erase`)
+  deps: T27
+  done when:
+    - `interface EraseProvider { val availability: StateFlow<Availability>; suspend fun erase(image: Bitmap, mask: Bitmap, hint: String?): Result<Bitmap> }`
+      in `core:ai`; the app never sees a Gemini key or a Google endpoint
+    - `Sam3EraseClient` posts the original and the ALPHA_8 mask as multipart to `/v1/edit/erase` and
+      decodes the returned PNG; 60s read timeout; cancellable; errors map as in T27
+    - `FakeEraseProvider` fills the mask region with the mean color of the pixels just outside it —
+      deterministic, so goldens are stable
+    - `MockWebServer` tests: success, timeout, 503, cancellation
+  touches: core/ai/erase
+
+- [ ] T38 "지우기" generative eraser tool
+  spec: specs/generative_erase.md §Tool, specs/edit_model.md (GenerativeErase)
+  deps: T31, T37
+  done when:
+    - tool strip gains "지우기" with the accent AI dot; disabled with a reason when `activeMaskId == null`
+      or `availability` is `Unavailable`
+    - running it shows the progress overlay "지우는 중" with a cancel button; cancelling leaves the
+      document untouched
+    - the result is stored as `erase_<id>.png` and committed as
+      `Operation.GenerativeErase(maskId, resultRef: ImageRef)` in **one** history entry
+    - renderer: `out = lerp(in, result, maskAlpha)`, so pixels outside the mask keep their original
+      values and the document stays non-destructive — undo is a single op removal
+    - persistence round-trips the op and its image; autosave and export need no special case
+    - golden `generative_erase_render`; UI tests: run → undo restores, run → cancel is a no-op
+  touches: core/imaging/model, core/imaging/render, core/data, feature/editor/tools/erase
 
 ---
 
 ## Deferred
 - D01 Layers · D02 Text · D03 GPU render (AGSL) · D04 Tablet · D05 Onboarding
-- D06 Box prompt for selection (drag a rectangle) · D07 Inpaint with a generative model · D08 Video (EdgeTAM tracking)
+- D06 Box prompt for selection (`/segment/box` already exists server-side, so this is UI only)
+- D08 Video (SAM 3 tracking)
+- D09 On-device segmentation fallback — the retired EdgeTAM / ExecuTorch plan (ADR-007, ADR-008).
+  Revisit only if offline selection becomes a requirement.
+- D10 Generative fill / replace, reusing the T37 proxy boundary

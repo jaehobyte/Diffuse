@@ -2,10 +2,26 @@
 
 ## Current
 
-**T22-T24 complete.** `scripts/check.sh` green offline. Phase 5 (v1.1 fixes) is done;
-T25 is `[H]`, so the loop stops here until a human lands the v2 decisions and assets.
+**T22-T24 complete.** `scripts/check.sh` green offline. The v1.1 fix phase is done.
+
+**v2 was re-planned on 2026-09-06** (user decision). On-device EdgeTAM is dropped in favour of the
+server-side SAM 3 service at `~/sam3-server`, and the backlog gains a prompt bar with voice input
+and a generative eraser. `work/tasks.md` is now T26-T38 in four phases, with the human
+prerequisites listed at the top of that file rather than as a task. ADR-007 and ADR-008 are struck
+in architecture.md §10; ADR-009 and ADR-010 replace them.
+
+Specs are written and consistent: `ai_provider.md`, `segmentation.md`, `selection_tool.md`
+(rewritten), `prompt_input.md`, `generative_erase.md` (new), plus amendments to `edit_model.md`,
+`architecture.md` (§2, §6, §8, §9, §10) and `DESIGN.md` (§1 accent ruling, §4 prompt bar).
+
+**T26 is done and every prerequisite except the server endpoint is landed.** Next is T27.
 
 ## Done
+
+- T26 `core:ai` module — `SegmentationProvider` (`open`/`byPoints`/`byText`/`close`) and
+  `EraseProvider` behind `Availability`, plus the two fakes in `src/testShared/kotlin` so
+  `:feature:editor` tests can compile them. 15 tests. `settings.gradle.kts`, the dependencyGuard
+  module map and `:feature:editor` all gained the `:core:ai` edge.
 
 - T24 Live rotate / straighten preview — `OverlayTransform` in the canvas rotates the drawn
   bitmap about the image centre with no `Renderer` pass; quarter turns swap the fitted size.
@@ -33,40 +49,13 @@ T25 is `[H]`, so the loop stops here until a human lands the v2 decisions and as
   6 tests + 2 render goldens + `detail_sheet_open`. Every `AdjustKind` now has real maths.
 - T15 Crop and rotate — rotate-then-crop render, `CropGeometry` auto-shrink, overlay with
   handles and thirds grid, preset/straighten/90° sheet. 15 tests + 4 goldens.
-- T14 Color adjustments — Temperature/Tint/Saturation/Vibrance maths, `ColorSheet` on the
-  shared `AdjustSheet`, `ToolSheetHost`; 8 goldens + `color_sheet_open`.
-- T13 Light adjustments — Exposure/Contrast/Highlights/Shadows maths, the shared
-  `AdjustSheet`, the golden-image machinery, 8 render goldens + `light_sheet_open`.
-- T12 Slider component — `AdjustSlider` (4dp track, 20dp thumb, value pinned right in
-  mono, centre tick, double-tap reset); 5 tests + goldens `slider_default`/`slider_zero_centered`.
-- T11 Compare gesture — hold shows the source, release restores the preview; disabled
-  without operations. 4 tests.
-- T10 Render pipeline — `Renderer`/`CpuRenderer`, preview+base LRU caches, cancellable
-  between ops, `Ops` registry, gated benchmark behind `scripts/bench.sh`. 8 tests.
-- T09 Undo / redo history — `HistoryStack` with coalescing, 50-entry cap and
-  `StateFlow` enablement wired into the top bar. 8 + 2 tests.
-- T08 Non-destructive edit model — `EditDocument`/`Operation`/`AdjustKind`/`ImageRef`
-  with accessors enforcing the specs/edit_model.md rules, plus lenient JSON. 12 tests.
-- T07 Bottom sheet component — `EditSheet` (24dp corners, handle, 45% cap, pinned
-  [Cancel | Apply]) plus `TertiaryPill`; 3 tests + goldens `sheet_collapsed`/`sheet_expanded`.
-- T06 Editor screen shell — top bar 56dp / canvas / tool strip 72dp, edge-to-edge,
-  Korean strings in strings.xml; 6 tests + golden `editor_shell_default`.
-- T05 Canvas composable — `EditorCanvas` with fit/pinch/pan/double-tap, 8dp checkerboard,
-  `LocalCanvasTransform`; 10 tests + goldens `canvas_fit`/`canvas_zoomed`/`canvas_transparent`.
-- T04 Image loading pipeline — `ImageLoader.load(uri)` + `SourceImage`; 4096px bound,
-  two-step downsample, EXIF applied to pixels, typed failures. 8 tests.
-- T03 Screenshot test harness — `theme_swatches` golden (all 21 colors + 8 text styles,
-  both modes), shared `ScreenshotOptions`, §7 fixtures derived from `test/kodim23.png`.
-- T02 Design tokens and theme — `core/ui/theme/Tokens.kt` (21 colors, 8 text styles,
-  §6 elevation), `Theme.kt` (`AppTheme(mode)`, `AppColors`, `LocalAppColors`),
-  Pretendard + JetBrains Mono bundled.
-- T01 Project skeleton compiles — 8 modules, Gradle 8.14.5 / AGP 8.13.2 / Kotlin 2.3.21,
-  build-logic convention plugins, `dependencyGuard`, `scripts/check.sh` green offline.
+
+_T01–T14 trimmed per CLAUDE.md (keep the last 10). Their decisions are still in ## Decisions below, and the full text is in git history._
 
 ## Next
 
-T04 Image loading pipeline — unblocked. The loop can run **T04 through T12**;
-T13 blocks on the still-missing `specs/adjust_light.md`.
+T27 `Sam3Client` — the HTTP layer, with `MockWebServer`. Then T28 completes the network line.
+T29 and T34 have no deps and can go at any time.
 
 ## Decisions
 
@@ -242,20 +231,20 @@ _(none)_
   pipeline is tested through a fake; the `MediaStoreImageStore` implementation itself needs
   a device or a Robolectric shim that does not exist yet.
 
-- **The release APK is 16.06 MB, over the 15 MB budget** (specs/architecture.md §8),
+- **The release APK is 16.06 MB, over the 15 MB budget** (specs/architecture.md §8 — the budget
+  returned to 15 MB when ADR-008 was struck, so this is live again),
   measured for the first time at T12. `isMinifyEnabled = false`, so R8 strips nothing:
   material-icons-extended and unused Compose are shipped whole. The Pretendard variable
   font is 2.81 MB of it. Enabling R8 is the obvious first move and belongs to T20/T21,
   but the budget is already breached today.
 
-- **DESIGN.md contradicts itself on accent placement.** §1 says the accent appears in
-  exactly one place per screen — "the primary action or the active-tab indicator". But §4
-  requires the Export button to be a primary (accent) pill *and* the selected tool to be
-  accent with a 2dp indicator. `editor_shell_default` therefore shows two accents. Needs a
-  human ruling: either Export drops to a secondary pill in Edit mode, or §1 is relaxed.
+- ~~DESIGN.md contradicts itself on accent placement.~~ **Resolved 2026-09-06.** §1 now reads
+  "at most once per surface at rest" — top bar, tool strip and frontmost sheet each get one —
+  "plus one transient active state" (the progress spinner, the mic while listening). This is what
+  §4 and `editor_shell_default` were already doing. Consequence for v2: a prompt bar's send icon
+  is never accent; the sheet's accent stays on its Apply pill.
 
-- **Seven specs are still missing**, blocking T13 onward: `adjust_light`, `adjust_color`,
-  `adjust_detail`, `crop`, `persistence`, `browse`, `export`. T04–T12 can run today.
+- ~~Seven specs are still missing.~~ Stale — all of them landed with T13–T21.
 - **`specs/imaging.md` is a draft written by Claude, not reviewed.** It fixes
   `MAX_LONG_EDGE_PX = 4096`, a two-step downsample, EXIF applied to pixels, and the
   error mapping. Read it before starting the loop; it is frozen once T04 begins.

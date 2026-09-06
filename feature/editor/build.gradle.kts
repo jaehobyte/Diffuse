@@ -13,6 +13,7 @@ dependencies {
     implementation(projects.core.ui)
     implementation(projects.core.imaging)
     implementation(projects.core.data)
+    implementation(projects.core.ai)
 
     // DESIGN.md §7 mandates one rounded icon set; the core Compose set has no
     // Crop/Palette/Tune/Compare. R8 strips the unused vectors — re-check at T20 against
