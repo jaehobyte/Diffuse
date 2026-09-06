@@ -169,6 +169,12 @@
     <string name="style_none">원본</string>
     <string name="style_intensity">강도</string>
     <string name="style_variants">세부</string>
+    <string name="style_from_photo">사진에서 가져오기</string>
+    <string name="style_reference">참조</string>
+    <string name="style_reference_near">참조와 비슷한 스타일</string>
+    <string name="style_matching">참조 스타일을 읽는 중</string>
+    <string name="style_needs_key">설정에서 Gemini API 키를 입력해주세요</string>
+    <string name="style_failed">참조 스타일을 읽지 못했어요</string>
 
     <!-- specs/style_match.md §3: styles.json is the source of the numbers, this file of the
          names. The id is the join. -->

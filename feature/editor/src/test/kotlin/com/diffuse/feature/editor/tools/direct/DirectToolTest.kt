@@ -10,6 +10,7 @@ import com.diffuse.core.ai.CropRatio
 import com.diffuse.core.ai.EditPlan
 import com.diffuse.core.ai.FakeEraseProvider
 import com.diffuse.core.ai.FakeFillProvider
+import com.diffuse.core.ai.FakeMatchStyleProvider
 import com.diffuse.core.ai.FakeOutpaintProvider
 import com.diffuse.core.ai.FakePlanProvider
 import com.diffuse.core.ai.FakeSegmentationProvider
@@ -429,6 +430,7 @@ class DirectToolTest {
             settings,
             geminiSettings,
             FakeAutoEnhanceProvider(),
+            FakeMatchStyleProvider(),
         ),
         dispatchers = TestDispatchers,
         savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),

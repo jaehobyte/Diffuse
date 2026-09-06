@@ -69,6 +69,7 @@ class StyleGoldenTest {
                             onSelect = {},
                             onVariantSelect = {},
                             onIntensityChange = {},
+                            onPickReference = {},
                             onCancel = {},
                             onApply = {},
                         )

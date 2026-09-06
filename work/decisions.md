@@ -8,6 +8,71 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T75
+
+- **§5's named source was never imported, so the maths is ours.** §5 says the local matcher "is
+  `PhotoTune_v1/reference_style.py`'s `match_style_map`, and it is the same maths". That file is not
+  in the repo — only `styles.json` was handed over — so `StyleMatch.measure` is derived instead from
+  the ops themselves: every formula is the algebraic inverse of what `LightOps` and `ColorOps` do,
+  measured against a neutral photograph. Swapping the original in later changes `measure` and
+  nothing else; §9's property test is what would say whether it still holds.
+
+- **The preset side is measured, not read.** The first attempt scored `measure(reference)` against
+  `preset.params` directly and ranked 클린 브라이트's own output as 비비드 팝. A preset carries
+  parameters `measure` does not estimate — `shadows`, `vibrance`, `fade`, the HSL bands — and every
+  one of them still moves the five statistics that *are* estimated. Measuring each preset's own
+  output puts both sides in the same space, so a parameter with no estimator still counts through
+  the effect it has.
+
+- **Two per-band saturations were added because five global statistics cannot tell 시네마틱 틸 from
+  어반 힙.** What separates them is a teal-and-orange split — §5's own words, "per-colour treatment"
+  — which is invisible to a whole-frame mean. `HslOrangeSaturation` and `HslBlueSaturation`, at
+  weight 0.75, are the axis that split runs along, and adding them is what made **all twelve**
+  presets rank themselves first.
+
+- **The neutral frame's hue sweep is zero-mean in luma, not in RGB.** An offset that averages to
+  zero across the channels does not average to zero in luma, because luma weights green ten times
+  blue — and the leftover showed up as +0.06 of contrast on the frame that is supposed to measure as
+  nothing at all. Subtracting each hue's own luma fixes it exactly.
+
+- **`referenceFrame(preset)` is public.** `feature:editor` cannot reach `Ops` or the neutral frame,
+  both internal to `core:imaging`, so its test could not build a reference that is *near* a preset.
+  Rather than widen `Ops`, the matcher exposes the frame a signature is measured from — which is
+  what a match means ("this reference looks like this") and is the only thing a caller outside the
+  module cannot otherwise reproduce.
+
+- **`STYLE_MATCH_THRESHOLD = 0.2` is a first calibration.** It is a weighted RMS in the −1..1
+  parameter space — "about a fifth of a slider out, on average". Every preset's own output lands
+  inside it and a hard magenta frame lands outside; §5 expects it tuned against real references on
+  a device, and nothing here can do that.
+
+- **The matcher measures a look, and a photograph's own character is part of that look.** It cannot
+  tell a dark *grade* from a dark *scene*, and a colourless reference matches 클래식 모노 whatever
+  was applied to it. That is stated as a test rather than hidden, and it is precisely the case §5
+  step 2 earns its round trip on.
+
+- **`match_style` asks for eight kinds, not `plannableKinds`.** Reusing the planner's list would
+  have added `sharpen` and `vignette`, and §5's instruction asks for a *grade* — a grade has no
+  vignette.
+
+- **A prose answer and an all-zero answer are both failures.** §5 says a model answering in
+  sentences "has answered wrongly, and the client drops it"; an answer that changes nothing is the
+  same thing arriving as numbers. Both return `Invalid`, so the sheet can say 참조 스타일을 읽지
+  못했어요 rather than applying an empty style.
+
+- **The picker's `Uri` is decoded in the route.** It is one `ContentResolver` read of a `Uri` the
+  system picker just handed that composable, and routing it through the graph would add a
+  dependency for a bitmap that lives for one call. §10's "never stored" falls out of using the
+  system picker at all.
+
+- **`matchReference` is called from the route, not through a ViewModel function.** `EditorViewModel`
+  is at detekt's 20-function ceiling (T65, T78 both note it), and the route already holds the two
+  pieces the call needs.
+
+- **`Stats` carries `warmth` and `greenness`, not three channel means.** Seven constructor
+  parameters is detekt's ceiling, and the two differences are what the measurement actually uses —
+  the three means were only ever raw material for them.
+
 ### T74
 
 - **`touches` could not reach the catalog, so two files outside it moved.** T74 lists

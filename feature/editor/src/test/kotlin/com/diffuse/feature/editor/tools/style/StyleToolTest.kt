@@ -3,14 +3,17 @@ package com.diffuse.feature.editor.tools.style
 import android.graphics.Bitmap
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.diffuse.core.ai.FakeMatchStyleProvider
 import com.diffuse.core.common.AppError
 import com.diffuse.core.common.Result
 import com.diffuse.core.imaging.model.AdjustKind
 import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.core.imaging.model.ImageRef
 import com.diffuse.core.imaging.model.Operation
+import com.diffuse.feature.editor.R
 import com.diffuse.core.imaging.render.Renderer
 import com.diffuse.core.imaging.style.StyleCatalog
+import com.diffuse.core.imaging.style.StyleMatch
 import com.diffuse.core.imaging.style.StylePreset
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -54,9 +57,12 @@ class StyleToolTest {
      * running it. The controller's real scope is `viewModelScope` on Main, so an unconfined one is
      * the faithful stand-in.
      */
+    private val matcher = FakeMatchStyleProvider()
+
     private fun controller(renderer: Renderer = FakeRenderer()) = StyleController(
         catalog = { presets },
         renderer = renderer,
+        matchStyle = matcher,
         scope = CoroutineScope(UnconfinedTestDispatcher()),
     )
 
@@ -186,6 +192,101 @@ class StyleToolTest {
         assertEquals(document, style.state.value.appliedTo(document))
         assertEquals(presets.size + 1, style.state.value.tiles.size)
     }
+
+    // ---- specs/style_match.md §5, 컬러 매칭 ---------------------------------
+
+    /** §5 step 1: a reference near a preset is offered locally, and **no model is asked**. */
+    @Test
+    fun `a reference near a preset costs no model call`() = runTest {
+        val style = controller()
+        style.open(document)
+        val preset = presets.first { it.id == "film-warm" }
+
+        style.matchReference(StyleMatch.referenceFrame(preset), image = bitmap(), document = document)
+
+        assertEquals(0, matcher.matchCount)
+        assertEquals(preset.id, style.state.value.selected)
+        assertEquals(R.string.style_reference_near, style.state.value.message)
+    }
+
+    /** §5 step 2: past the threshold the model is asked, and its answer is the 13th tile. */
+    @Test
+    fun `a reference unlike every preset becomes the 참조 tile`() = runTest {
+        val style = controller()
+        style.open(document)
+
+        style.matchReference(magenta(), image = bitmap(), document = document)
+
+        assertEquals(1, matcher.matchCount)
+        assertEquals(STYLE_REFERENCE_ID, style.state.value.selected)
+        assertEquals(FakeMatchStyleProvider.ADJUSTMENTS, style.state.value.reference)
+    }
+
+    /** §5: never applied silently — the tile is selected, and 적용 is still the user's. */
+    @Test
+    fun `the 참조 tile commits the model's numbers only on 적용`() = runTest {
+        val style = controller()
+        style.open(document)
+        style.matchReference(magenta(), image = bitmap(), document = document)
+
+        assertTrue(document.operations.isEmpty())
+
+        val applied = requireNotNull(style.apply(document))
+        val kinds = applied.operations.filterIsInstance<Operation.Adjust>().map { it.kind }
+        assertEquals(FakeMatchStyleProvider.ADJUSTMENTS.keys, kinds.toSet())
+    }
+
+    /** §5: 강도 scales the reference exactly as it scales a preset. */
+    @Test
+    fun `강도 scales the 참조 tile too`() = runTest {
+        val style = controller()
+        style.open(document)
+        style.matchReference(magenta(), image = bitmap(), document = document)
+        style.setIntensity(HALF)
+
+        val applied = requireNotNull(style.apply(document))
+        FakeMatchStyleProvider.ADJUSTMENTS.forEach { (kind, value) ->
+            val committed = applied.operations.filterIsInstance<Operation.Adjust>()
+                .last { it.kind == kind }
+            assertEquals(value / 2f, committed.value, TOLERANCE)
+        }
+    }
+
+    /** §10: the reference is never stored, and it does not outlive the sheet. */
+    @Test
+    fun `closing the sheet drops the reference and its tile`() = runTest {
+        val style = controller()
+        style.open(document)
+        style.matchReference(magenta(), image = bitmap(), document = document)
+
+        style.close()
+
+        assertNull(style.state.value.reference)
+        assertNull(style.state.value.tiles[STYLE_REFERENCE_ID])
+    }
+
+    /** §5: a failure names itself, and a missing key is the one the user can fix. */
+    @Test
+    fun `a refused key says so, and an outage says something else`() = runTest {
+        val style = controller()
+        style.open(document)
+
+        matcher.failNext(AppError.Unauthorized)
+        style.matchReference(magenta(), image = bitmap(), document = document)
+        assertEquals(R.string.style_needs_key, style.state.value.message)
+
+        matcher.failNext(AppError.Unavailable)
+        style.matchReference(magenta(), image = bitmap(), document = document)
+        assertEquals(R.string.style_failed, style.state.value.message)
+        assertNull(style.state.value.reference)
+    }
+
+    private fun magenta(): Bitmap =
+        Bitmap.createBitmap(TILE_PX, TILE_PX, Bitmap.Config.ARGB_8888)
+            .apply { eraseColor(android.graphics.Color.rgb(255, 0, 255)) }
+
+    private fun bitmap(): Bitmap =
+        Bitmap.createBitmap(TILE_PX, TILE_PX, Bitmap.Config.ARGB_8888)
 
     private open class FakeRenderer : Renderer {
         override suspend fun preview(

@@ -22,6 +22,11 @@ import com.diffuse.feature.editor.canvas.selectionOverlaySlot
 import com.diffuse.feature.editor.tools.MaskOption
 import com.diffuse.feature.editor.tools.ToolSheetHost
 import com.diffuse.feature.editor.tools.auto.AutoSheet
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.platform.LocalContext
 import com.diffuse.feature.editor.tools.style.StyleSheet
 import com.diffuse.feature.editor.tools.crop.CropSheet
 import com.diffuse.feature.editor.tools.crop.STRAIGHTEN_MAX_DEG
@@ -131,13 +136,14 @@ private fun clearMessages(viewModel: EditorViewModel) {
     viewModel.fill.onMessageShown()
     viewModel.expand.onMessageShown()
     viewModel.auto.onMessageShown()
+    viewModel.style.onMessageShown()
     viewModel.direct.onMessageShown()
 }
 
 /** DESIGN.md §7: every AI call shows progress and a way out, so they share one flag. */
 private fun isBusy(state: EditorUiState): Boolean =
     state.selection.working || state.erase.busy || state.fill.busy || state.expand.busy ||
-        state.auto.busy || state.direct.working
+        state.auto.busy || state.style.matching || state.direct.working
 
 /** specs/selection_tool.md §1 and generative_erase.md §5: a tool that cannot work is greyed. */
 private fun disabledTools(state: EditorUiState): Set<Tool> = buildSet {
@@ -161,6 +167,7 @@ private fun busyLabel(state: EditorUiState): Int = when {
     state.expand.busy -> R.string.expand_working
     state.fill.busy -> R.string.fill_working
     state.auto.busy -> R.string.auto_working
+    state.style.matching -> R.string.style_matching
     state.selection.phraseBusy -> R.string.select_prompt_working
     else -> R.string.select_preparing
 }
@@ -177,7 +184,7 @@ private fun message(state: EditorUiState): String? {
         direct != null -> stringResource(direct.res)
         else -> (
             state.selection.message ?: state.erase.message ?: state.fill.message
-                ?: state.expand.message ?: state.auto.message
+                ?: state.expand.message ?: state.auto.message ?: state.style.message
             )?.let { stringResource(it) }
     }
 }
@@ -336,18 +343,55 @@ private fun ExpandToolSheet(state: EditorUiState, viewModel: EditorViewModel) {
     )
 }
 
-/** specs/style_match.md §4: tiles of the user's own photograph, and one 강도 slider. */
+/**
+ * specs/style_match.md §4, §5: tiles of the user's own photograph, one 강도 slider, and the pill
+ * that hands a reference photograph in. The picker is the system one, so nothing is granted and
+ * nothing is stored — §10's rule falls out of using it.
+ */
 @Composable
 private fun StyleToolSheet(state: EditorUiState, viewModel: EditorViewModel) {
+    val context = LocalContext.current
+    val picker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        uri?.let { chosen ->
+            // The controller is called straight from here: `EditorViewModel` is at detekt's
+            // function ceiling (T65, T78), and this reads the same state the route already holds.
+            decodeReference(context, chosen)?.let { reference ->
+                viewModel.style.matchReference(
+                    reference = reference,
+                    image = state.preview?.asAndroidBitmap(),
+                    document = state.document,
+                )
+            } ?: viewModel.style.showFailure()
+        }
+    }
     StyleSheet(
         state = state.style,
         onSelect = viewModel.style::select,
         onVariantSelect = viewModel.style::selectVariant,
         onIntensityChange = viewModel.style::setIntensity,
+        onPickReference = {
+            picker.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+            )
+        },
         onCancel = viewModel::cancelSheet,
         onApply = viewModel::applySheet,
     )
 }
+
+/**
+ * Decoded here rather than in the ViewModel: it is one `ContentResolver` read of a `Uri` the
+ * picker just handed this composable, and routing it through the graph would add a dependency for
+ * a bitmap that lives for one call (§10).
+ */
+private fun decodeReference(context: android.content.Context, uri: android.net.Uri) =
+    runCatching {
+        context.contentResolver.openInputStream(uri).use {
+            android.graphics.BitmapFactory.decodeStream(it)
+        }
+    }.getOrNull()
 
 /**
  * specs/auto_enhance.md §6: the sheet arrives **after** the call, holding the result. Changing a

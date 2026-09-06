@@ -36,6 +36,7 @@ import java.util.Locale
 const val StyleSheetTestTag = "StyleSheet"
 const val StyleTileRowTestTag = "StyleTiles"
 const val StyleVariantRowTestTag = "StyleVariants"
+const val StyleFromPhotoTestTag = "StyleFromPhoto"
 
 fun styleTileTag(id: String): String = "StyleTile-$id"
 
@@ -52,6 +53,7 @@ fun StyleSheet(
     onSelect: (String?) -> Unit,
     onVariantSelect: (String?) -> Unit,
     onIntensityChange: (Int) -> Unit,
+    onPickReference: () -> Unit,
     onCancel: () -> Unit,
     onApply: () -> Unit,
     modifier: Modifier = Modifier,
@@ -63,6 +65,13 @@ fun StyleSheet(
         applyEnabled = state.canApply,
         modifier = modifier.testTag(StyleSheetTestTag),
     ) {
+        // §5: the pill sits above the tiles, and the reference it produces becomes one of them.
+        SecondaryPill(
+            label = stringResource(R.string.style_from_photo),
+            enabled = !state.matching,
+            onClick = onPickReference,
+            modifier = Modifier.testTag(StyleFromPhotoTestTag),
+        )
         TileRow(state = state, onSelect = onSelect)
         // §3: a variant is a second decision — film grain versus film colour — so it is offered
         // only after the first one is made.
@@ -96,7 +105,37 @@ private fun TileRow(state: StyleState, onSelect: (String?) -> Unit) {
                 onClick = { onSelect(preset.id) },
             )
         }
+        // §5: the 13th tile, and only once a reference has produced one.
+        if (state.reference != null) {
+            StyleTile(
+                id = STYLE_REFERENCE_ID,
+                label = stringResource(R.string.style_reference),
+                image = state.tiles[STYLE_REFERENCE_ID],
+                selected = state.selected == STYLE_REFERENCE_ID,
+                onClick = { onSelect(STYLE_REFERENCE_ID) },
+            )
+        }
     }
+}
+
+/** DESIGN.md §4: a `secondary` pill — `editSurfaceRaised` fill, ink text, 40dp, radius 16dp. */
+@Composable
+private fun SecondaryPill(
+    label: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = LocalAppColors.current
+    Text(
+        text = label,
+        style = Typography.bodyStrong,
+        color = colors.ink.copy(alpha = if (enabled) 1f else DISABLED_ALPHA),
+        modifier = modifier
+            .background(color = colors.surfaceRaised, shape = RoundedCornerShape(CHIP_RADIUS))
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+    )
 }
 
 @Composable
@@ -228,3 +267,6 @@ private val TILE_SIZE = 96.dp
 private val TILE_RADIUS = 16.dp
 private val TILE_RING = 2.dp
 private val CHIP_RADIUS = 16.dp
+
+/** DESIGN.md §4: disabled is 38% alpha, and the colour does not change. */
+private const val DISABLED_ALPHA = 0.38f

@@ -13,7 +13,7 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `[H]` human-only, loop must
 
 ## Queue
 
-**Phase 14, T71–T78.** T75 is the last one open, and its deps are met. T57 and T66 are `[!]`;
+**Phase 14 is done: T71–T78 are all `[x]`.** Nothing is open. T57 and T66 are `[!]`;
 T66 has one prerequisite left, not two — the bench number is in `work/decisions.md` and it says the
 budget is missed. Pick the first `[ ]` whose deps are all `[x]`, as always.
 
@@ -577,7 +577,7 @@ have, and all twelve styles use at least one of them. Nothing in T72–T77 can b
   core/ai/EditPlanProvider.kt, core/ai tests, feature/editor/tools/direct,
   feature/editor strings.xml, feature/editor tests
 
-- [ ] T75 컬러 매칭 — a reference photograph becomes a style
+- [x] T75 컬러 매칭 — a reference photograph becomes a style
   spec: specs/style_match.md §5, §9; specs/ai_provider.md §3; specs/generative_erase.md §5, §6
   deps: T72, T73
   done when:

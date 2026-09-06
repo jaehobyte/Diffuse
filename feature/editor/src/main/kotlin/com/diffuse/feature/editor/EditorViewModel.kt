@@ -160,6 +160,7 @@ class EditorViewModel @Inject constructor(
     val style = StyleController(
         catalog = { withContext(dispatchers.io) { StyleCatalog.load(context.assets) } },
         renderer = renderer,
+        matchStyle = ai.matchStyle,
         scope = viewModelScope,
     )
 
