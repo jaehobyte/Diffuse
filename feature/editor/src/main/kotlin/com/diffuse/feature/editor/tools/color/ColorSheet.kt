@@ -7,6 +7,7 @@ import com.diffuse.core.imaging.model.AdjustKind
 import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.feature.editor.R
 import com.diffuse.feature.editor.tools.AdjustSheet
+import com.diffuse.feature.editor.tools.MaskOption
 
 /** specs/adjust_color.md: 온도 / 색조 / 채도 / 생동감. */
 val ColorKinds = listOf(
@@ -24,6 +25,7 @@ fun ColorSheet(
     onCancel: () -> Unit,
     onApply: () -> Unit,
     modifier: Modifier = Modifier,
+    maskOption: MaskOption = MaskOption.None,
 ) {
     AdjustSheet(
         title = stringResource(R.string.color_title),
@@ -34,5 +36,6 @@ fun ColorSheet(
         onCancel = onCancel,
         onApply = onApply,
         modifier = modifier,
+        maskOption = maskOption,
     )
 }

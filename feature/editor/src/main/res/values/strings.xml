@@ -15,6 +15,7 @@
     <string name="editor_tool_crop">자르기</string>
     <string name="editor_tool_detail">디테일</string>
     <string name="editor_tool_select">선택</string>
+    <string name="adjust_masked_only">선택 영역에만</string>
 
     <!-- specs/selection_tool.md -->
     <string name="select_title">선택</string>

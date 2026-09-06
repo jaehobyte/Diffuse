@@ -14,10 +14,15 @@ Specs are written and consistent: `ai_provider.md`, `segmentation.md`, `selectio
 (rewritten), `prompt_input.md`, `generative_erase.md` (new), plus amendments to `edit_model.md`,
 `architecture.md` (§2, §6, §8, §9, §10) and `DESIGN.md` (§1 accent ruling, §4 prompt bar).
 
-**T26-T31 done.** The selection tool works end to end against the SAM 3 service, including
-add/subtract merging. Next is T32, masked adjustments.
+**T26-T32 done.** Selection works end to end, and adjustments can be limited to it.
+Next is T33, background removal.
 
 ## Done
+
+- T32 Masked adjustments — `Operation.Adjust.maskId`, one live Adjust per `(kind, maskId)`,
+  `MaskBlend` doing `lerp(in, adjusted, maskAlpha)` in the renderer, the "선택 영역에만" switch on
+  all three adjust sheets, and the scrim on the canvas while it is on. 12 tests + render golden
+  `exposure_+0.5_masked`; every existing golden unchanged.
 
 - T31 Accumulated merging — `MaskOps.merged/union`, a [추가 | 빼기] chip row, and an undo that
   drops a point inside a run and one whole merge once the run is empty. 12 tests + golden
@@ -77,9 +82,19 @@ _T01–T14 trimmed per CLAUDE.md (keep the last 10). Their decisions are still i
 
 ## Next
 
-T32 adjustments limited to the selection. T34 (`PromptBar`) is still free-standing.
+T33 background removal from the selection. T34 (`PromptBar`) is still free-standing.
 
 ## Decisions
+
+### T32
+
+- **A masked adjustment is computed whole, then blended back.** The op never learns that masks
+  exist, so `Ops.kt` stays the single place the maths lives and the GPU port (D03) is unaffected.
+- **`MaskBlend` is written as a lerp even though v2 masks are binary**, because that is the
+  contract selection_tool.md §8.1 states and feathering then costs nothing here.
+- **A dangling mask reference makes the adjustment whole-frame rather than dropping it.** Losing
+  the adjustment entirely would be the more surprising of the two, and `referencesResolve` already
+  refuses to load a document whose *active* mask is missing.
 
 ### T31
 

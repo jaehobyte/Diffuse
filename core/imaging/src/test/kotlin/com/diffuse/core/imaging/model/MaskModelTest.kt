@@ -93,6 +93,48 @@ class MaskModelTest {
     }
 
     @Test
+    fun `a masked and an unmasked adjustment of the same kind coexist`() {
+        val updated = document
+            .withMask(ImageRef("/mask_a.png"), id = "a")
+            .withAdjust(AdjustKind.Exposure, 0.5f)
+            .withAdjust(AdjustKind.Exposure, -0.25f, maskId = "a")
+
+        assertEquals(0.5f, updated.adjustValue(AdjustKind.Exposure), 0f)
+        assertEquals(-0.25f, updated.adjustValue(AdjustKind.Exposure, maskId = "a"), 0f)
+        assertEquals(2, updated.operations.filterIsInstance<Operation.Adjust>().size)
+    }
+
+    @Test
+    fun `a masked adjustment updates in place rather than stacking`() {
+        val updated = document
+            .withMask(ImageRef("/mask_a.png"), id = "a")
+            .withAdjust(AdjustKind.Exposure, 0.5f, maskId = "a")
+            .withAdjust(AdjustKind.Exposure, 0.25f, maskId = "a")
+
+        assertEquals(1, updated.operations.filterIsInstance<Operation.Adjust>().size)
+        assertEquals(0.25f, updated.adjustValue(AdjustKind.Exposure, maskId = "a"), 0f)
+    }
+
+    @Test
+    fun `a masked adjustment round-trips through JSON`() {
+        val original = document
+            .withMask(ImageRef("/mask_a.png"), id = "a")
+            .withAdjust(AdjustKind.Exposure, 0.5f, maskId = "a")
+
+        val decoded = EditDocumentJson.decode(EditDocumentJson.encode(original))
+
+        assertEquals(original, decoded)
+        assertEquals("a", decoded.operations.filterIsInstance<Operation.Adjust>().single().maskId)
+    }
+
+    @Test
+    fun `an unmasked adjustment writes no maskId at all`() {
+        val encoded = EditDocumentJson.encode(document.withAdjust(AdjustKind.Exposure, 0.5f))
+
+        assertFalse(encoded.contains("maskId"))
+    }
+
+    @Test
     fun `masks survive alongside adjustments and a crop`() {
         val original = document
             .withAdjust(AdjustKind.Exposure, 0.5f)

@@ -130,7 +130,7 @@ class CpuRenderer(
 
         adjustments.forEach { adjust ->
             coroutineContext.ensureActive()
-            output = ops.adjust(adjust.kind)(output, adjust.value)
+            output = applyAdjust(document, output, adjust)
             completed++
             onProgress(completed.toFloat() / total)
         }
@@ -142,6 +142,21 @@ class CpuRenderer(
         }
         if (total == 0) onProgress(1f)
         return output
+    }
+
+    /**
+     * specs/selection_tool.md §8.1: a masked adjustment is computed over the whole frame and
+     * then blended back through the mask. Computing it whole keeps every op's maths unchanged —
+     * an op never learns that masks exist.
+     */
+    private suspend fun applyAdjust(
+        document: EditDocument,
+        input: Bitmap,
+        adjust: Operation.Adjust,
+    ): Bitmap {
+        val adjusted = ops.adjust(adjust.kind)(input, adjust.value)
+        val mask = adjust.maskId?.let { resolveMask(document, it) }
+        return if (mask == null) adjusted else MaskBlend.blend(input, adjusted, mask)
     }
 
     private suspend fun decodeBase(source: ImageRef, targetLongEdgePx: Int): Result<Bitmap> {

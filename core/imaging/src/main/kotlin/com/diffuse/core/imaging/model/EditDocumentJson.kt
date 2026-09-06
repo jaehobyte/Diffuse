@@ -64,6 +64,7 @@ object EditDocumentJson {
             put("id", id)
             put("kind", kind.name)
             put("value", value)
+            maskId?.let { put("maskId", it) }
         }
         is Operation.Mask -> buildJsonObject {
             put("type", TYPE_MASK)
@@ -116,7 +117,12 @@ object EditDocumentJson {
         val rawKind = node["kind"]?.jsonPrimitive?.content
         val kind = AdjustKind.entries.firstOrNull { it.name == rawKind }
             ?: return warn(logger, "unknown AdjustKind '$rawKind'")
-        return Operation.Adjust(id, kind, node.getValue("value").jsonPrimitive.float)
+        return Operation.Adjust(
+            id = id,
+            kind = kind,
+            value = node.getValue("value").jsonPrimitive.float,
+            maskId = node["maskId"]?.jsonPrimitive?.content,
+        )
     }
 
     private fun warn(logger: Logger?, message: String): Operation? {

@@ -22,16 +22,17 @@ fun ToolSheetHost(
     onCancel: () -> Unit,
     onApply: () -> Unit,
     modifier: Modifier = Modifier,
+    maskOption: MaskOption = MaskOption.None,
 ) {
     when (selectedTool) {
         Tool.Light -> LightSheet(
-            document, onValueChange, onValueChangeFinished, onCancel, onApply, modifier,
+            document, onValueChange, onValueChangeFinished, onCancel, onApply, modifier, maskOption,
         )
         Tool.Color -> ColorSheet(
-            document, onValueChange, onValueChangeFinished, onCancel, onApply, modifier,
+            document, onValueChange, onValueChangeFinished, onCancel, onApply, modifier, maskOption,
         )
         Tool.Detail -> DetailSheet(
-            document, onValueChange, onValueChangeFinished, onCancel, onApply, modifier,
+            document, onValueChange, onValueChangeFinished, onCancel, onApply, modifier, maskOption,
         )
         // Crop and Select carry their own state, so the route hosts them alongside the editor's.
         Tool.Crop, Tool.Select, null -> Unit

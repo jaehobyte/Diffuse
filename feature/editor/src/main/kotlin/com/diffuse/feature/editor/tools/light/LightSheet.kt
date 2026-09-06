@@ -7,6 +7,7 @@ import com.diffuse.core.imaging.model.AdjustKind
 import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.feature.editor.R
 import com.diffuse.feature.editor.tools.AdjustSheet
+import com.diffuse.feature.editor.tools.MaskOption
 
 /** specs/adjust_light.md: 노출 / 대비 / 하이라이트 / 그림자, in that order. */
 val LightKinds = listOf(
@@ -24,6 +25,7 @@ fun LightSheet(
     onCancel: () -> Unit,
     onApply: () -> Unit,
     modifier: Modifier = Modifier,
+    maskOption: MaskOption = MaskOption.None,
 ) {
     AdjustSheet(
         title = stringResource(R.string.light_title),
@@ -34,5 +36,6 @@ fun LightSheet(
         onCancel = onCancel,
         onApply = onApply,
         modifier = modifier,
+        maskOption = maskOption,
     )
 }

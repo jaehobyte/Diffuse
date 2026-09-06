@@ -45,6 +45,11 @@ sealed interface Operation {
         override val id: String,
         val kind: AdjustKind,
         val value: Float,
+        /**
+         * specs/selection_tool.md §8.1: when set, the renderer blends this adjustment through
+         * the named [Mask] instead of applying it to the whole frame.
+         */
+        val maskId: String? = null,
     ) : Operation
 
     /**

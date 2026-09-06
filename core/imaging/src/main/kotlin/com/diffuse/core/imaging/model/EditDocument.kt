@@ -20,9 +20,9 @@ data class EditDocument(
     val updatedAt: Long,
 ) {
 
-    fun adjustValue(kind: AdjustKind): Float =
+    fun adjustValue(kind: AdjustKind, maskId: String? = null): Float =
         operations.filterIsInstance<Operation.Adjust>()
-            .firstOrNull { it.kind == kind }
+            .firstOrNull { it.kind == kind && it.maskId == maskId }
             ?.value
             ?: 0f
 
@@ -47,20 +47,23 @@ data class EditDocument(
     fun referencesResolve(): Boolean = activeMaskId == null || mask(activeMaskId) != null
 
     /**
-     * One live [Operation.Adjust] per kind: setting a kind that already exists updates it
-     * in place, keeping its list position. A neutral value removes the entry rather than
-     * storing a no-op.
+     * One live [Operation.Adjust] per `(kind, maskId)` pair: setting one that already exists
+     * updates it in place, keeping its list position. A neutral value removes the entry rather
+     * than storing a no-op. A masked Exposure and an unmasked Exposure may coexist
+     * (specs/edit_model.md).
      */
-    fun withAdjust(kind: AdjustKind, value: Float): EditDocument {
+    fun withAdjust(kind: AdjustKind, value: Float, maskId: String? = null): EditDocument {
         val coerced = kind.coerce(value)
-        val index = operations.indexOfFirst { it is Operation.Adjust && it.kind == kind }
+        val index = operations.indexOfFirst {
+            it is Operation.Adjust && it.kind == kind && it.maskId == maskId
+        }
         val updated = when {
             kind.isNeutral(coerced) && index >= 0 -> operations - operations[index]
             kind.isNeutral(coerced) -> operations
             index >= 0 -> operations.toMutableList().also {
                 it[index] = (it[index] as Operation.Adjust).copy(value = coerced)
             }
-            else -> operations + Operation.Adjust(newId(), kind, coerced)
+            else -> operations + Operation.Adjust(newId(), kind, coerced, maskId)
         }
         return copy(operations = updated)
     }

@@ -14,6 +14,7 @@ import com.diffuse.feature.editor.canvas.CanvasPointTaps
 import com.diffuse.feature.editor.canvas.OverlayTransform
 import com.diffuse.feature.editor.canvas.cropOverlaySlot
 import com.diffuse.feature.editor.canvas.selectionOverlaySlot
+import com.diffuse.feature.editor.tools.MaskOption
 import com.diffuse.feature.editor.tools.ToolSheetHost
 import com.diffuse.feature.editor.tools.crop.CropSheet
 import com.diffuse.feature.editor.tools.crop.STRAIGHTEN_MAX_DEG
@@ -100,7 +101,12 @@ private fun canvasOverlay(
         points = state.selection.points,
         labels = state.selection.labels,
     )
-    else -> null
+    // specs/selection_tool.md §8.1: while a masked adjustment is being made, the scrim shows
+    // where it will land. Toggle off and it disappears.
+    null -> null
+    else -> state.activeMask
+        ?.takeIf { state.maskedAdjust }
+        ?.let { selectionOverlaySlot(mask = it, points = emptyList(), labels = emptyList()) }
 }
 
 /**
@@ -135,6 +141,11 @@ private fun sheetFor(
                     onApply = viewModel::applySheet,
                 )
                 else -> ToolSheetHost(
+                    maskOption = MaskOption(
+                        available = doc.activeMaskId != null,
+                        maskedOnly = state.maskedAdjust,
+                        onMaskedOnlyChange = viewModel::onMaskedAdjustChange,
+                    ),
                     selectedTool = state.selectedTool,
                     document = doc,
                     onValueChange = viewModel::onAdjust,

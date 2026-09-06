@@ -143,7 +143,7 @@ Only the server endpoint is still outstanding. If a task hits a missing prerequi
       and may be re-recorded once
   touches: feature/editor/tools/select
 
-- [ ] T32 Adjustments limited to the selection
+- [x] T32 Adjustments limited to the selection
   spec: specs/adjust_light.md / adjust_color.md / adjust_detail.md (amend: masked mode), render.md
   deps: T30
   done when:

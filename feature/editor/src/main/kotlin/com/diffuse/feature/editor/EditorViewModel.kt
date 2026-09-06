@@ -1,5 +1,6 @@
 package com.diffuse.feature.editor
 
+import android.graphics.Bitmap
 import android.graphics.RectF
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -42,6 +43,10 @@ data class EditorUiState(
     val document: EditDocument? = null,
     /** specs/selection_tool.md §3: sheet state; nothing here is in the document until Apply. */
     val selection: SelectionState = SelectionState(),
+    /** specs/selection_tool.md §8.1: default on, so an adjustment lands where the user looked. */
+    val maskedAdjust: Boolean = true,
+    /** The applied mask, resolved for the scrim the adjust sheets show. */
+    val activeMask: Bitmap? = null,
 )
 
 /** specs/editor_shell.md: one ViewModel per screen, UI sends intents, VM reduces to state. */
@@ -116,9 +121,14 @@ class EditorViewModel @Inject constructor(
         previewJob?.cancel()
         previewJob = viewModelScope.launch {
             val rendered = renderer.preview(document, PREVIEW_LONG_EDGE_PX)
-            if (rendered is Result.Success) {
-                _uiState.value = _uiState.value.copy(preview = rendered.value.asImageBitmap())
-            }
+            // Resolved here rather than in its own pass: it is cached, and this is the one
+            // place that already knows the document changed.
+            val mask = document.activeMaskId?.let { renderer.resolveMask(document, it) }
+            _uiState.value = _uiState.value.copy(
+                preview = (rendered as? Result.Success)?.value?.asImageBitmap()
+                    ?: _uiState.value.preview,
+                activeMask = mask,
+            )
         }
     }
 
@@ -159,7 +169,17 @@ class EditorViewModel @Inject constructor(
 
     fun onAdjust(kind: AdjustKind, value: Float) {
         val stack = history ?: return
-        stack.push(stack.current.value.withAdjust(kind, value), coalesceKey = "adjust:$kind")
+        val state = _uiState.value
+        // specs/selection_tool.md §8.1: the toggle only means anything with a mask applied.
+        val maskId = state.document?.activeMaskId?.takeIf { state.maskedAdjust }
+        stack.push(
+            stack.current.value.withAdjust(kind, value, maskId),
+            coalesceKey = "adjust:$kind:$maskId",
+        )
+    }
+
+    fun onMaskedAdjustChange(maskedOnly: Boolean) {
+        _uiState.value = _uiState.value.copy(maskedAdjust = maskedOnly)
     }
 
     fun onAdjustFinished() {

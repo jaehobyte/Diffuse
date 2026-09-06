@@ -29,3 +29,6 @@ crop_straighten_15.png
 # T16 (specs/adjust_detail.md)
 sharpen_0.5.png
 vignette_0.5.png
+
+# T32 (specs/selection_tool.md 8.1)
+exposure_+0.5_masked.png

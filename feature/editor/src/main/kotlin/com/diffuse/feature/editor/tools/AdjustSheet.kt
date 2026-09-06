@@ -2,7 +2,11 @@ package com.diffuse.feature.editor.tools
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -15,6 +19,13 @@ import com.diffuse.core.ui.components.EditSheet
 import com.diffuse.core.ui.components.percentFormat
 import com.diffuse.core.ui.theme.LocalAppColors
 import com.diffuse.core.ui.theme.Typography
+import com.diffuse.feature.editor.R
+
+const val MaskedOnlyToggleTestTag = "MaskedOnly"
+
+/** The sliders show the masked value when the toggle is on, so the sheet never lies. */
+private fun activeMaskId(document: EditDocument, option: MaskOption): String? =
+    if (option.available && option.maskedOnly) document.activeMaskId else null
 
 /** Test tag per slider row, so a tool sheet can be driven by the kind it adjusts. */
 fun adjustSliderTag(kind: AdjustKind): String = "AdjustSlider:${kind.name}"
@@ -36,6 +47,7 @@ fun AdjustSheet(
     onCancel: () -> Unit,
     onApply: () -> Unit,
     modifier: Modifier = Modifier,
+    maskOption: MaskOption = MaskOption.None,
 ) {
     val colors = LocalAppColors.current
     EditSheet(
@@ -44,6 +56,24 @@ fun AdjustSheet(
         onApply = onApply,
         modifier = modifier,
     ) {
+        if (maskOption.available) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(R.string.adjust_masked_only),
+                    style = Typography.bodyMd,
+                    color = colors.ink,
+                    modifier = Modifier.weight(1f),
+                )
+                Switch(
+                    checked = maskOption.maskedOnly,
+                    onCheckedChange = maskOption.onMaskedOnlyChange,
+                    modifier = Modifier.testTag(MaskedOnlyToggleTestTag),
+                )
+            }
+        }
         kinds.forEach { kind ->
             Column(
                 modifier = Modifier.testTag(adjustSliderTag(kind)),
@@ -55,7 +85,7 @@ fun AdjustSheet(
                     color = colors.inkSecondary,
                 )
                 AdjustSlider(
-                    value = document.adjustValue(kind),
+                    value = document.adjustValue(kind, activeMaskId(document, maskOption)),
                     range = kind.range,
                     zeroCentered = kind.isZeroCentered(),
                     onChange = { onValueChange(kind, it) },
