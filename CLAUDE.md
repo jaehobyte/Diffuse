@@ -100,11 +100,13 @@ You are running unattended in a loop. No one will answer questions. Follow these
 - Never work on two tasks in one iteration, even if the second looks trivial.
 
 ### When the spec is silent
-- Choose the simplest option consistent with the spec and DESIGN.md, implement it, and record the decision in `progress.md` under `## Decisions` with the task id. Do not ask.
+- Choose the simplest option consistent with the spec and DESIGN.md, implement it, and record the decision in `work/decisions.md` under a `### T<NN>` heading, newest first. Do not ask.
 - If the choice would change a public interface another task depends on, do not choose — block the task instead.
 
 ### progress.md format
-Keep `progress.md` under 150 lines; trim `## Done` entries older than 10 tasks.
+Keep `progress.md` under 150 lines; trim `## Done` entries older than 10 tasks. Decisions live in
+`work/decisions.md`, not here — that file has no line limit, because it is read when touching a
+task's code rather than on every iteration.
 
 ### Definition of green
 `scripts/check.sh` exits 0: lint, detekt, unit tests, Roborazzi verify. Nothing else counts.

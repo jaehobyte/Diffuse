@@ -1,0 +1,306 @@
+# work/decisions.md — why the code is the way it is
+
+Split out of `progress.md`, which CLAUDE.md keeps under 150 lines. Newest task first.
+
+Every entry records a choice that the specs did not make for us, or one where the code and a
+spec disagreed and the code won. Read the entry for a task before changing that task's code:
+most of these are the second attempt, not the first.
+
+## Decisions below, and the full text is in git history._
+
+## Next
+
+Nothing in `work/tasks.md` is left. What a human still owes:
+
+1. `POST /v1/edit/erase` in `~/sam3-server` (the last prerequisite; T37/T38 are written against
+   the contract and tested with MockWebServer).
+2. Point `sam3.baseUrl` / `sam3.token` at a running service and try the tools on a device — none
+   of this has been exercised against the real model, only against the fakes.
+3. The APK is still over the 15MB budget; see "Open issues for a human".
+
+## Decisions
+
+### T38
+
+- **`EraseController` owns run → save → commit, not `EditorViewModel`.** detekt flagged the
+  ViewModel at 20 functions, a 7-argument constructor and a complex condition, all from this one
+  task. The tool is one object now, the way the selection tool is; the ViewModel hands it the two
+  things it cannot reach (the repository and the history stack) as lambdas.
+- **`EditorAi` bundles the four AI dependencies.** The ViewModel's constructor is about the
+  screen, not about the model boundary.
+- **The result is stored, and export composites it.** generative_erase.md §7: re-running the
+  model at export resolution would produce different pixels than the user approved, so the stored
+  result is scaled instead.
+- **Nothing touches the document until the bitmap is on disk.** A failed write leaves the sheet
+  and the selection exactly as they were, rather than a document pointing at a file that is not
+  there.
+
+### T36
+
+- **A phrase merges into what is on screen, not into the committed base.** The first version
+  merged into `SelectionState.base`, which silently discarded a live point run — the user would
+  tap an object, type a word, and watch the tap disappear. A phrase *ends* the run; it does not
+  ignore it. Caught by "a phrase adds to what points already selected".
+- **A text prompt gets the progress overlay; a point prompt does not.** prompt_input.md §4 asks
+  for progress and a cancel while a phrase is in flight, while selection_tool.md §5 says a point
+  prompt keeps the previous mask visible with no spinner. `phraseBusy` is what tells them apart.
+- **The bar clears only on a successful merge.** A failure keeps the text so the user can retry
+  without retyping, and 찾지 못했어요 keeps it so they can edit the word.
+
+### T35
+
+- **`SpeechInput` is not an `ai_provider.md` provider.** It has no `Availability` flow and no
+  suspend entry point, because it is a streaming device service rather than a request/response
+  model. Forcing it into that shape would have meant a fake `Availability` and a `suspend fun`
+  that never returns.
+- **Permission lives in the composable, not the ViewModel.** The launcher needs a composition,
+  and the ViewModel has no business knowing about Android grants.
+- **A second denial hides the mic for the session.** Asking again on every tap is the nagging
+  DESIGN.md §7 rules out, and there is nothing else the app can do about it.
+
+### T34
+
+- **Neither icon is accent.** DESIGN.md §1 allows a sheet one accent at rest and that is its
+  Apply pill; a prompt bar taking it would make one sheet commit differently from every other.
+  Send earns its weight from the enabled state and the IME Done key.
+- **`core:ui` gained material-icons-extended.** DESIGN.md §7 mandates one rounded icon set and
+  the core set has no Mic. The library is already in the APK through `:feature:editor`, so this
+  costs nothing.
+- **`BasicTextField` with a hand-rolled placeholder**, not `OutlinedTextField`: Material's field
+  brings its own container, label and indicator, none of which DESIGN.md §4 wants.
+
+### T33
+
+- **배경 지우기 is a secondary action, not a primary pill.** selection_tool.md §8.2 asks for a
+  primary pill, but DESIGN.md §1 allows the sheet one accent at rest and that is its Apply. Two
+  accent pills would also make two different commits look equally primary.
+- **`EditDocument.hasAlpha` reads the source's file extension.** The document holds an `ImageRef`
+  and no `SourceImage`, but `DefaultProjectRepository` writes the source as `.png` exactly when it
+  had alpha, so the extension *is* that flag. Recorded here because it is a real coupling.
+- **Cut-outs render before the crop.** A cut-out is about pixels, like the adjustments; the crop
+  is geometry and stays last (render.md).
+- **`select_sheet_open` was re-recorded again**, for the same reason as T31: the task adds a row
+  to that sheet. Named in the task.
+
+### T32
+
+- **A masked adjustment is computed whole, then blended back.** The op never learns that masks
+  exist, so `Ops.kt` stays the single place the maths lives and the GPU port (D03) is unaffected.
+- **`MaskBlend` is written as a lerp even though v2 masks are binary**, because that is the
+  contract selection_tool.md §8.1 states and feathering then costs nothing here.
+- **A dangling mask reference makes the adjustment whole-frame rather than dropping it.** Losing
+  the adjustment entirely would be the more surprising of the two, and `referencesResolve` already
+  refuses to load a document whose *active* mask is missing.
+
+### T31
+
+- **Undo means one step back, whichever kind.** Inside a point run it drops the last point and
+  re-segments; with the run empty it takes back one whole merge. selection_tool.md §4 and §10 each
+  describe one of the two, and the user should not have to know which mode they are in.
+- **Switching the mode commits the run.** Otherwise a subtract-mode tap would have to choose
+  between appending a background point to the existing prompt and starting a new one, and the two
+  mechanisms would fight over the same gesture.
+- **`select_sheet_open` was re-recorded.** T31 adds the mode row to that sheet, so the golden
+  could not stay as it was; the task now names it, per the T22/T23 precedent.
+
+### T30
+
+- **The tool is a `SelectionController`, not more `EditorViewModel`.** detekt caught the ViewModel
+  at 29 functions and `EditorScreen` at 69 lines, which was the right signal: the selection tool
+  has its own lifecycle (the session outlives the sheet) and its own undo stack, and mixing them
+  made both harder to read. Raising the thresholds would have hidden a real design problem.
+- **The scrim and the outline are one path.** `MaskOutline` unions the mask's row runs into a
+  `Region` and takes its boundary; the scrim is that path clipped out of the image rect, the
+  outline is the same path stroked. They cannot drift apart, and stroking after the screen
+  transform keeps the outline 1dp at any zoom.
+- **Prompt points are stored normalized.** They then survive a zoom, a re-render at a different
+  resolution, and the upload's own downscale, so nothing has to be re-mapped.
+- **`Sam3Client` is `@Provides`-d, not `@Inject`-constructed.** Keeping it out of the graph's
+  public surface means no feature can reach past `SegmentationProvider` to the wire.
+- **An unconfigured provider opens the settings sheet, not a snackbar.** A snackbar saying "set
+  the server address" with no way to set it is a dead end.
+
+### T29
+
+- **A `mask` node without a `maskRef` is dropped, not fatal.** `EditDocumentJsonTest` already used
+  `{"type":"mask","id":"m","brush":"soft"}` as its *unknown type* fixture, written before the op
+  existed. Making the decoder lenient keeps that test honest and matches edit_model.md's rule that
+  one unreadable operation must not cost the whole document. The user is told instead by
+  `referencesResolve()` failing, which turns into `Unsupported` on load.
+- **`MaskIo` writes an ARGB_8888 PNG whose alpha carries the mask**, not an ALPHA_8 one.
+  `Bitmap.compress` does not write ALPHA_8 usefully; ARGB round-trips losslessly everywhere.
+- **`Operation.Mask` stores no prompts.** A merged selection has no single reproducing prompt
+  (selection_tool.md §4), so storing one would be a lie that re-editing would have to honour.
+
+### T28
+
+- **`refresh()` was added to `SegmentationProvider`.** specs/segmentation.md §7 wants availability
+  probed when the tool opens and when settings change, never polled. Without an entry point that
+  means either a background scope in a `@Singleton` (a leak, and untestable) or a health check
+  bolted onto `open()` (a wasted round trip on the critical path). One suspend method is the
+  smaller change; ai_provider.md §3 and §4 record it.
+- **`SegSession` carries the *caller's* image size, not the uploaded one.** Prompts are normalized,
+  so nothing needs the upload's resolution but the mask rescale, and that is the provider's own
+  business. Keeping the upload size private is what lets §3's downscale change without any caller
+  noticing.
+- **A rejected prompt does not flip `availability`; an unreachable or unauthenticated backend
+  does.** §7 says one bad request is not a dead server. `AppError.Invalid` therefore leaves the
+  tool enabled, while `Unavailable` and `Unauthorized` grey it.
+- **`BuildConfig` lives on `:core:ai`, not `:app`.** `:app` depends on `:core:ai`, so the reverse
+  read is impossible, and BuildConfig fields are per-module. `gradle.properties` disables the
+  feature globally; this module turns it back on for itself.
+- **The settings sheet moved to T30.** T28's `touches` named `app`, but a sheet with no screen to
+  open it from is dead code, and the first screen that needs it is the selection tool.
+
+### T24
+
+- **`OverlayTransform` splits the quarter turns from the straighten**, because `CropOp`
+  does: the turns change the image's shape (so the canvas refits to the swapped size), the
+  straighten rotates inside those bounds (so its corners are clipped and the rect
+  auto-shrinks). One combined angle could not drive both.
+- **The bitmap is drawn into an axis-swapped rect and then rotated onto the image rect.**
+  Rotating the fitted rect itself would leave the drawn image at the wrong aspect.
+- **`touches` named `feature/editor/canvas` and `.../tools/crop`,** but the transform has to
+  reach the canvas through `EditorScreen` and be built in `EditorRoute`; both were edited.
+- **`recordRoborazziDebug --tests '*CropGoldenTest*'` also rewrites `crop_overlay.png`.**
+  T24 does not name that golden, so it was restored from git; `verifyRoborazziDebug` then
+  passed against the committed version, confirming the change is inside the threshold.
+
+### T23
+
+- **The root cause was the call site, not `CropGeometry`.** The task guessed "aspect
+  enforced in normalised space without multiplying by the source aspect"; the maths already
+  multiplied. `EditorRoute` passed a hardcoded `CANVAS_ASPECT = 4f / 3f`, so on a 3000x4000
+  source the red test reported `Square gave 0.5625, expected 1.0` — and 16:9 gave ~1:1,
+  exactly the reported symptom.
+- **`CropState` owns `sourceAspect`**, so `withPreset`/`straightened` can no longer be
+  handed the wrong number. The ViewModel reads it off the bare-source preview, whose shape
+  is the source's shape.
+- **`imageAspect` inverts on odd quarter turns**, because `CropOp` normalises `rect`
+  against the post-quarter-turn canvas. Without it a preset chosen after a 90° turn would
+  reintroduce the same class of bug.
+- **`touches` named only `feature/editor/tools/crop`**, but the constant lived in
+  `EditorRoute` and the aspect had to come from `EditorViewModel`; both were edited, since
+  the bug is unfixable inside the crop package alone.
+- **`rotated()` still leaves the rect and the preset chip alone** after a 90° turn
+  (specs/crop.md §Interaction asks for both). Untouched from T15 — out of T23's scope.
+
+### T22
+
+- **The reset icon sits in the centre group, right after Redo.** DESIGN.md §4 puts the
+  history controls in the centre and Compare/Export on the right; "between Redo and
+  Compare" is satisfied either way, and grouping it with undo/redo keeps the right side to
+  the two actions §4 names. `Icons.Rounded.RestartAlt` over `history`, which reads as
+  "version history" rather than "start over".
+- **Reset zeroes the viewport.** `RefitOnSizeChange` only refits a viewport the user has
+  not zoomed, so `onReset` resets `CanvasViewport()` in `EditorScreen` to guarantee the
+  refit the task asks for when a Crop is dropped.
+- **`resetToOriginal()` is an extension on `HistoryStack`**, not a private VM method, so
+  the UI test drives the same code the ViewModel does instead of restating it.
+- **CLAUDE.md forbids editing `specs/*.md`, but T22's `touches` explicitly allows
+  appending one row to the Top bar section.** Took the more specific instruction and
+  appended a single bullet to specs/editor_shell.md §Top bar behavior.
+
+### Stack (T01)
+
+- **AGP 8.13.2 / Kotlin 2.3.21 / Gradle 8.14.5 / compileSdk 36.** AGP 9 was rejected:
+  its DSL changes are what an unattended loop gets wrong, and CLAUDE.md forbids the loop
+  from editing root gradle files, so a mismatch forces a block rather than a fix.
+  `targetSdk 36` is a documented deviation from specs/architecture.md §2 "latest stable" (37),
+  which AGP 8.13.2 cannot compile against.
+- **Version ceilings this forces.** Each pin is the newest that works on this line:
+  `hilt 2.58` (2.59+ demands AGP 9.0), `composeBom 2026.06.01` (2026.08.00 ships Compose
+  1.12.0, needing AGP 9.1 + compileSdk 37), `coreKtx 1.18.0`, `lifecycle 2.10.0`,
+  `navigationCompose 2.9.8`, `hiltNavigationCompose 1.3.0`, `coil 3.4.0`.
+- **Tripwire: Kotlin 2.3.21 is exactly at Hilt 2.58's metadata ceiling.** Hilt 2.58 reads
+  Kotlin metadata only up to 2.3. coil 3.5.0+ is built with Kotlin 2.4 and breaks the
+  Hilt processor. Do not bump Kotlin to 2.4.x without also moving to AGP 9 + Hilt 2.59+.
+- **`core:common` is a pure JVM module** (specs/architecture.md §3 allows it no Android deps),
+  so its Hilt bindings must live in a `@Module` in `app`. It registers a
+  `testDebugUnitTest` alias, without which check.sh would silently skip its tests.
+- **`dependencyGuard` is a custom root task**, not the Dropbox plugin, because §4
+  describes module-graph rules while that plugin locks dependency version lists.
+
+### Test harness (T01, T03)
+
+- **Robolectric offline.** It fetches `android-all` from Maven at *test runtime*, which
+  `--offline` forbids. The artifact is pinned, resolved through a Gradle configuration,
+  synced to `build/robolectric-deps`, and reached via `robolectric.offline=true`.
+  Each Android module also pins `sdk=36` in `robolectric.properties` — Robolectric
+  otherwise falls back to `minSdk` (26) on library modules and demands an API-26 jar.
+- **`junit-platform-launcher` is mandatory** or JUnit 5 discovery dies on unaligned
+  platform jars. JUnit 5 runs with the vintage engine so Robolectric/Roborazzi JUnit 4
+  tests share one platform (specs/testing.md §3).
+- **Goldens are declared as test-task inputs.** Without that Gradle marks the test task
+  UP-TO-DATE and `verifyRoborazziDebug` passes against a deleted or edited golden — the
+  exact hole testing.md §5 forbids. Verified by injection; see ## Current.
+- **`changeThreshold` lives in build-logic, not the Roborazzi extension**, which exposes
+  no such knob in 1.73. The value is a system property set once for every Compose module
+  and `ScreenshotOptions` is its only reader, failing loudly if it is unset.
+- **Golden path is fixed in `ScreenshotOptions.goldenPath()`**, because the Roborazzi
+  Gradle plugin owns `roborazzi.output.dir` and overrode attempts to set it.
+
+### Design tokens (T02)
+
+- **Pretendard as a single variable font.** DESIGN.md §3 mandates it and testing.md §5
+  needs it bundled for deterministic goldens. Measured compressed-in-APK: variable
+  2.82 MB vs 4.06 MB for four static weights, plus JetBrains Mono Medium at 127 KB.
+  Total ≈ 2.95 MB of the 15 MB budget (specs/architecture.md §8) — re-measure at T20.
+  `FontVariation` needs `@OptIn(ExperimentalTextApi::class)`; safe because the Compose
+  version is pinned in a frozen catalog.
+- **Where DESIGN.md is silent:** `mono` line height follows `label` at 1.3; the six
+  styles with no stated tracking get an explicit `letterSpacing = 0.sp`, since unset
+  resolves to `Unspecified` (NaN) and is neither assertable nor deterministic.
+- **`AppColors` carries only mode-dependent roles**; brand and semantic colors are
+  identical in both modes so they default to `Tokens`. Edit-mode `surfaceSecondary`
+  maps to `editSurfaceRaised` per DESIGN.md §4. MaterialTheme gets a colorScheme but no
+  typography — §2 says M3 is for primitives only.
+
+### Fixtures (T03)
+
+- **All §7 fixtures are derived from `test/kodim23.png`** (user decision), generated by
+  `scripts/make_fixtures.py` so the derivation stays reviewable. `photo_512.png` is a
+  512×288 crop over a 512×96 row of reference patches, because testing.md §4 requires
+  skin tone, sky, deep shadow and neutral gray, none of which kodim23 contains.
+  `transparent_256.png` and `corrupt.jpg` cannot come from kodim23 at all and are
+  synthesised.
+
+### Phase 0 follow-up
+
+- **All specs moved to `specs/`**, and `ARCHITECTURE.md` became `specs/architecture.md`.
+  tasks.md cites `specs/...` for every task but the files lived in `docs/specs/`, and
+  CLAUDE.md forbids editing tasks.md text — so the filesystem had to move, not the task
+  list. Side effect, and a deliberate one: the specs are now covered by CLAUDE.md's
+  "never modify any `*.md` under `specs/`" hard limit.
+- **`core:common` was written as Phase 0 work.** specs/architecture.md §3 assigns it
+  `Result`, dispatchers, logging and ids, and §9 defines the `AppError` cases — but no
+  task in tasks.md lists `core/common` under `touches`, so no loop iteration may create
+  them. T04, T08, T10 and T17 all depend on those types; without this the loop blocks on
+  its first task. Contents kept to exactly the §3 list, nothing more.
+  `DispatcherProvider` deliberately has no `main`: §5.4 reserves the main thread for
+  Compose, and exposing it here would invite core modules to touch it.
+- **`core:common` exposes coroutines with `api`**, since `DispatcherProvider` returns
+  `CoroutineDispatcher`. The JVM convention now applies `java-library` for that, and
+  no longer picks dependencies for modules it does not know about.
+- **`lint { ignoreTestSources = true }`.** Lint's Kotlin analysis crashes on the
+  Hilt-generated test classes in `:app` ("this is a bug in lint or one of the libraries
+  it depends on"). Main-source detection is unaffected and was re-verified by injection.
+
+### T05
+
+- **Kotlin has no `testFixtures` compilation under AGP 8.13**: enabling `testFixtures`
+  creates only `compileDebugTestFixturesJavaWithJavac`, so Kotlin sources there are never
+  compiled and consumers see an unresolved reference. `ScreenshotOptions` therefore lives
+  in `core/ui/src/testShared/kotlin`, which `ComposeConventionPlugin` adds to every
+  Compose module's unit-test source set. Still one definition, as testing.md §5 demands.
+- **`detectTransformGestures` cannot drive a hoisted viewport.** Every pointer event reads
+  the viewport as of the last *composition*, so a burst of events within one frame all
+  scale from the same stale value and most of the gesture is lost — a pinch of 15× landed
+  as 1.04×. `detectCanvasTransformGestures` seeds a working copy once per gesture and
+  accumulates locally. Touch slop still eats the opening of a gesture, so the clamp tests
+  pinch twice.
+- **`CanvasBounds` bundles the canvas and image sizes.** It started as a detekt
+  `LongParameterList` fix but reads better: every viewport calculation needs both.
+
+
+_(none)_

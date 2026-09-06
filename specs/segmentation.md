@@ -20,7 +20,12 @@ exist server-side (`points`, `box`, `text`); v2 uses **points** and **text**. `b
 | Geometry received | original-image pixels |
 | Mask encoding | always `format = "png"` — base64 8-bit **grayscale** PNG at original resolution, 0 or 255 |
 | Upload limit | 20 MB, JPEG or PNG |
-| Session TTL | 600 s server-side, refreshed on each use, LRU-evicted above 8 |
+| Session TTL | **120 s** server-side, refreshed on each use, LRU-evicted above **4** |
+
+Measured against a running service on 2026-09-06 (`GET /v1/meta`), not read off api.md, which
+still documents the old 600 s / 8. A two-minute TTL is short enough that §5's replay is a normal
+occurrence rather than an edge case — a user who opens the selection tool, thinks for a while and
+then taps will hit it.
 
 **No COCO RLE decoder is written.** The server offers a PNG encoding of the same mask, so RLE would
 be dead code. If a future need appears, add it then.
