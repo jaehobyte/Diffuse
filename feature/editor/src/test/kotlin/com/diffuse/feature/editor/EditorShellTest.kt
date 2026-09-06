@@ -77,14 +77,42 @@ class EditorShellTest {
     }
 
     @Test
-    fun `the shell shows the top bar, canvas and all four tools`() {
+    fun `the shell shows the top bar, canvas and the root tools`() {
         showShell()
 
         compose.onNodeWithTag(TopBarTestTag).assertExists()
+        assertToolsReachable(ToolGroup.Root)
+    }
+
+    /** specs/tool_groups.md §2: the strip has two levels, and a tool is reachable at exactly one. */
+    @Test
+    fun `the AI level shows the AI tools`() {
+        compose.setContent {
+            EditorScreen(
+                preview = testImage(),
+                selectedTool = null,
+                onToolClick = { toolClicks += it },
+                canUndo = false,
+                canRedo = false,
+                canCompare = false,
+                onBack = {},
+                onUndo = {},
+                onRedo = {},
+                onCompareChange = {},
+                onExport = {},
+                toolLevel = ToolLevelState(ToolGroup.Ai),
+            )
+        }
+        compose.waitForIdle()
+
+        assertToolsReachable(ToolGroup.Ai)
+    }
+
+    private fun assertToolsReachable(level: ToolGroup) {
         compose.onNodeWithTag(ToolStripTestTag).assertExists()
-        Tool.entries.forEach { tool ->
-            // The strip is a LazyRow (DESIGN.md §4: horizontally scrollable), so the tools past
-            // the viewport are only composed once scrolled to.
+        Tool.entries.filter { it.group == level }.forEach { tool ->
+            // The strip is a LazyRow (DESIGN.md §4: horizontally scrollable), so a tool past the
+            // viewport is only composed once scrolled to.
             compose.onNodeWithTag(ToolStripTestTag)
                 .performScrollToNode(hasTestTag(labelOf(tool)))
             compose.onNodeWithTag(labelOf(tool)).assertExists()

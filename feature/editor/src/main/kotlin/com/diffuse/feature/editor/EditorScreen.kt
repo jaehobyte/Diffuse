@@ -67,6 +67,7 @@ fun EditorScreen(
     overlayTransform: OverlayTransform = OverlayTransform.None,
     /** specs/selection_tool.md §1: a tool with no working provider is greyed but still tappable. */
     disabledTools: Set<Tool> = emptySet(),
+    toolLevel: ToolLevelState = ToolLevelState(),
     /** specs/selection_tool.md §2: the select sheet claims the single finger while it is open. */
     gestureMode: CanvasGestureMode = CanvasGestureMode.Pan,
     pointTaps: CanvasPointTaps? = null,
@@ -119,6 +120,7 @@ fun EditorScreen(
                 selectedTool = selectedTool,
                 onToolClick = onToolClick,
                 disabledTools = disabledTools,
+                toolLevel = toolLevel,
                 topBar = topBar,
                 viewport = viewport,
                 onViewportChange = { viewport = it },
@@ -148,6 +150,7 @@ private fun EditorBody(
     selectedTool: Tool?,
     onToolClick: (Tool) -> Unit,
     disabledTools: Set<Tool>,
+    toolLevel: ToolLevelState,
     topBar: @Composable () -> Unit,
     viewport: CanvasViewport,
     onViewportChange: (CanvasViewport) -> Unit,
@@ -177,6 +180,8 @@ private fun EditorBody(
             selectedTool = selectedTool,
             onToolClick = onToolClick,
             disabledTools = disabledTools,
+            level = toolLevel.level,
+            onLevelChange = toolLevel.onChange,
             modifier = Modifier.navigationBarsPadding().onSizeChanged { onToolStripHeight(it.height) },
         )
     }

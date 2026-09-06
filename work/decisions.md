@@ -8,6 +8,38 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T78
+
+- **The level lives in `EditorRoute`, not in `EditorViewModel`.** tool_groups.md §3 called it
+  `EditorUiState.toolLevel`; the class is at detekt's function ceiling (T65) and a state field
+  needs a setter. `rememberSaveable` in the route satisfies everything §3 actually asked for — UI
+  state, never the document, resets on entry — and needs no VM function.
+
+- **Closing is keyed on the sheet closing, not on a tool being tapped.** `LaunchedEffect` on
+  `selectedTool == null`. That gives §4's three rules for free: committing and cancelling both
+  return to the root, opening a sheet does not, and a **disabled** child — which opens nothing —
+  leaves the level alone without a special case. 지우기 has no sheet, so it also leaves the level
+  open, which is right: the next thing after an erase is often another one.
+
+- **`StripItem` is a sealed interface, not a nullable `Tool`.** The AI parent and ← are not tools
+  and must not be selectable, disable-able, or reachable by `onToolClick`. Modelling them as
+  `Tool` entries would have put two non-tools into `Tool.entries`, which every `when` over it
+  would then have to ignore.
+
+- **`stripItems(level)` is a pure function.** §7's load-bearing test — "every `Tool` appears at
+  exactly one level" — is then arithmetic rather than a screenshot, and it is what fails the day
+  a tool is added to the enum and forgotten here.
+
+- **`ToolLevelState` bundles the level and its callback into one parameter.** Two parameters put
+  `EditorScreen` at exactly detekt's 60-line `LongMethod` limit, which counts the signature. The
+  holder is the shape `MaskOption` and `CanvasPointTaps` already use. The limit is a real
+  constraint on that function now, not a stylistic note.
+
+- **`ToolStripLevelTest` needed `@Config(Pixel6a)`.** The strip is a `LazyRow`, so an item past the
+  viewport is not composed at all — on Robolectric's default narrow screen the AI item did not
+  exist to click. A wider device is the honest fix; scrolling to it in the test would have hidden
+  that six items fit a real phone, which is the point of the task.
+
 ### T68
 
 - **Option 1: `portrait_3_4` and `landscape_4_3` were added to the closed set.** The human chose it

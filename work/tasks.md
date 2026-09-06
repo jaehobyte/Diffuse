@@ -645,7 +645,7 @@ have, and all twelve styles use at least one of them. Nothing in T72–T77 can b
   feature/editor/EditorRoute.kt, feature/editor strings.xml, feature/editor tests,
   feature/editor screenshot goldens
 
-- [ ] T78 The tool strip gets a second level
+- [x] T78 The tool strip gets a second level
   spec: specs/tool_groups.md; specs/editor_shell.md; DESIGN.md §1, §4, §5, §7, §8
   deps: —
   note: **do this before T73 and T77 if the strip is what you are looking at.** It has no code

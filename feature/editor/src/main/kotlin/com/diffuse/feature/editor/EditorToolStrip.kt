@@ -27,6 +27,7 @@ import com.diffuse.core.ui.theme.LocalAppColors
 import com.diffuse.core.ui.theme.Tokens
 import com.diffuse.core.ui.theme.Typography
 
+/** specs/tool_groups.md §2: the strip's geometry is the same at both levels. */
 /** DESIGN.md §4: 72dp strip, 64dp items, 24dp icon, 2dp accent indicator when selected. */
 private val StripHeight = 72.dp
 private val ItemWidth = 64.dp
@@ -40,6 +41,11 @@ private const val DISABLED_ALPHA = 0.38f
 
 const val ToolStripTestTag = "EditorToolStrip"
 
+/**
+ * specs/tool_groups.md §2. One strip, two levels: [level] decides which list is bound to it.
+ * Height, item size and scrolling are the same at both — no second row appears, so the strip is
+ * still one surface with one accent (DESIGN.md §1).
+ */
 @Composable
 fun EditorToolStrip(
     selectedTool: Tool?,
@@ -50,6 +56,8 @@ fun EditorToolStrip(
      * tappable so it can explain itself in a snackbar.
      */
     disabledTools: Set<Tool> = emptySet(),
+    level: ToolGroup = ToolGroup.Root,
+    onLevelChange: (ToolGroup) -> Unit = {},
 ) {
     val colors = LocalAppColors.current
     LazyRow(
@@ -61,23 +69,41 @@ fun EditorToolStrip(
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        items(Tool.entries) { tool ->
-            ToolItem(
-                tool = tool,
-                selected = tool == selectedTool,
-                enabled = tool !in disabledTools,
-                onClick = { onToolClick(tool) },
+        items(stripItems(level)) { item ->
+            StripItemView(
+                item = item,
+                selected = item is StripItem.OfTool && item.tool == selectedTool,
+                // §4: the AI parent is never itself disabled, even when every child is — a parent
+                // that cannot be tapped hides the reason its children cannot be.
+                enabled = item !is StripItem.OfTool || item.tool !in disabledTools,
+                onClick = {
+                    when (item) {
+                        is StripItem.OfTool -> onToolClick(item.tool)
+                        StripItem.OpenAi -> onLevelChange(ToolGroup.Ai)
+                        StripItem.Back -> onLevelChange(ToolGroup.Root)
+                    }
+                },
             )
         }
     }
 }
 
 @Composable
-private fun ToolItem(tool: Tool, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
+private fun StripItemView(
+    item: StripItem,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
     val colors = LocalAppColors.current
-    val base = if (selected) Tokens.accent else colors.inkSecondary
+    // §2: ← is `editInk`, not accent, and is a tool-shaped item so the row stays one rhythm.
+    val base = when {
+        selected -> Tokens.accent
+        item is StripItem.Back -> colors.ink
+        else -> colors.inkSecondary
+    }
     val tint = if (enabled) base else base.copy(alpha = DISABLED_ALPHA)
-    val label = stringResource(tool.labelRes)
+    val label = stringResource(item.labelRes())
 
     Column(
         modifier = Modifier
@@ -90,12 +116,13 @@ private fun ToolItem(tool: Tool, selected: Boolean, enabled: Boolean, onClick: (
     ) {
         Box {
             Icon(
-                imageVector = tool.icon,
+                imageVector = item.icon(),
                 contentDescription = label,
                 tint = tint,
                 modifier = Modifier.size(IconSize),
             )
-            if (tool.isAi) {
+            // §2: the dot marks the parent, and no child — inside the AI level it marks nothing.
+            if (item is StripItem.OpenAi) {
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)

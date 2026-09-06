@@ -1,10 +1,15 @@
 package com.diffuse.feature.editor
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -42,6 +47,21 @@ fun EditorRoute(
     val scope = rememberCoroutineScope()
     val document = state.document
 
+    // specs/tool_groups.md §3: the open level is UI state, not document state, and it resets to
+    // `Root` on every entry to the screen — a user coming back to a photo sees the whole app.
+    var toolLevel by rememberSaveable { mutableStateOf(ToolGroup.Root) }
+
+    // §4: committing or cancelling a sheet returns to the root, because the next thing a user does
+    // is usually not another AI call. Keyed on the sheet **closing**, so opening one does not, and
+    // so a disabled child — which opens nothing — leaves the level alone.
+    val selectedTool = state.selectedTool
+    LaunchedEffect(selectedTool) {
+        if (selectedTool == null) toolLevel = ToolGroup.Root
+    }
+
+    // §4: system back closes the level before it leaves the screen.
+    BackHandler(enabled = toolLevel != ToolGroup.Root) { toolLevel = ToolGroup.Root }
+
     Box(modifier = modifier.fillMaxSize()) {
         EditorScreen(
             preview = state.preview,
@@ -65,6 +85,7 @@ fun EditorRoute(
             onExport = onExport,
             overlayTransform = overlayTransform(state),
             disabledTools = disabledTools(state),
+            toolLevel = ToolLevelState(toolLevel) { toolLevel = it },
             gestureMode = if (state.selectedTool == Tool.Select) {
                 CanvasGestureMode.SelectPoint
             } else {
