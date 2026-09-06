@@ -2,14 +2,13 @@
 
 ## Current
 
-**T40 — `GeminiEraseClient`, the HTTP layer.**
-1. `GeminiDto.kt`: camelCase request/response shapes, `explicitNulls = false` so a null part is
-   simply absent → verify: the body-shape test.
-2. `GeminiEraseClient`: POST `{baseUrl}/v1beta/models/gemini-2.5-flash-image:generateContent`,
-   key in `x-goog-api-key`, connect 10s / read 60s, cancellable, on `dispatchers.io`.
-3. The instruction is an `internal` English constant; the hint sentence appends only when set.
-4. §6's table verbatim, existing `AppError` cases only; a block is `Invalid("blocked:<reason>")`.
-5. Verify: `GeminiEraseClientTest` on `MockWebServer`, then `scripts/check.sh` green.
+**T41 — `WhiteFill`, painting the hole.**
+1. `internal object WhiteFill.apply(image, mask): Bitmap` in `core/ai/gemini`.
+2. Masked alpha non-zero → opaque `#FFFFFFFF`; everything else copied verbatim; `ARGB_8888` out
+   at the input size; the input is never mutated → verify: a pixel-level test.
+3. Binary in, binary out: no feathering, no partial blend (§4).
+4. A mask whose size differs from the image's fails loudly.
+5. Verify: `WhiteFillTest`, then `scripts/check.sh` green.
 
 ## Done
 

@@ -85,7 +85,7 @@ generative_erase.md §13 lists the three files that come out, and nothing else m
       being skipped to reach the image part; each §6 row; cancellation mid-flight closing the call
   touches: core/ai/gemini
 
-- [ ] T41 `WhiteFill` — painting the hole
+- [x] T41 `WhiteFill` — painting the hole
   spec: specs/generative_erase.md §4
   deps: —
   done when:

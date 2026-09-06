@@ -20,6 +20,23 @@ Nothing in `work/tasks.md` is left. What a human still owes:
 
 ## Decisions
 
+### T41 — a pixel loop, not a `SRC_IN` composite
+
+§4 offers either. The loop wins on readability: the composite needs a scratch bitmap, a `Paint`
+with a `PorterDuffXfermode`, and a `Canvas`, and the reader then has to reason about what
+`SRC_IN` does to a `ALPHA_8` source. The loop says "if the mask is set, write white". It runs
+once per erase on a bitmap of at most 1024px, so the cost is irrelevant.
+
+The image is read once with `getPixels` and written once with `setPixels`; only the *mask* is
+read per pixel, because `ALPHA_8` does not survive `getPixels` usefully.
+
+### T41 — the size mismatch throws rather than returning null
+
+§7 step 1 already turns a mismatched mask into `Invalid` at the provider, so by the time
+`WhiteFill` is called the sizes agree. The `require` is therefore a programming-error guard, not
+an error path, and `IllegalArgumentException` says that where a nullable return would not.
+
+
 ### T40 — one `Part` shape for both directions, and `explicitNulls = false`
 
 A request part carries `inlineData` **or** `text`; a response part carries the same two. Two
