@@ -14,10 +14,13 @@ Specs are written and consistent: `ai_provider.md`, `segmentation.md`, `selectio
 (rewritten), `prompt_input.md`, `generative_erase.md` (new), plus amendments to `edit_model.md`,
 `architecture.md` (§2, §6, §8, §9, §10) and `DESIGN.md` (§1 accent ruling, §4 prompt bar).
 
-**T26-T28 done**; the network line is complete. Every prerequisite except the server's
-`/v1/edit/erase` is landed. Next is T29.
+**T26-T29 done.** The network line and the mask model are in. Next is T30, the selection tool.
 
 ## Done
+
+- T29 `Operation.Mask` — the op, `EditDocument.activeMaskId` / `withMask` / `referencesResolve`,
+  JSON, `MaskIo` (ALPHA_8 ↔ PNG), `Renderer.resolveMask` with a 2-entry cache, and
+  `ProjectRepository.saveMask` writing `mask_<id>.png`. 21 tests.
 
 - T28 `Sam3SegmentationProvider` — one live session plus the bytes that opened it, so §5's
   expiry replay (re-upload once, repeat the prompt) never reaches the caller. `Sam3Settings`
@@ -63,10 +66,22 @@ _T01–T14 trimmed per CLAUDE.md (keep the last 10). Their decisions are still i
 
 ## Next
 
-T29 `Operation.Mask` in the model and renderer — no deps. T34 (`PromptBar`) is also free-standing.
-T30 needs both T29 and the `:core:ai` testShared srcDir wired into `:feature:editor`.
+T30 "선택" tool. It needs the `:core:ai` testShared srcDir wired into `:feature:editor`, and it
+carries the SAM 3 settings sheet that T28 deferred. T34 (`PromptBar`) is still free-standing.
 
 ## Decisions
+
+### T29
+
+- **A `mask` node without a `maskRef` is dropped, not fatal.** `EditDocumentJsonTest` already used
+  `{"type":"mask","id":"m","brush":"soft"}` as its *unknown type* fixture, written before the op
+  existed. Making the decoder lenient keeps that test honest and matches edit_model.md's rule that
+  one unreadable operation must not cost the whole document. The user is told instead by
+  `referencesResolve()` failing, which turns into `Unsupported` on load.
+- **`MaskIo` writes an ARGB_8888 PNG whose alpha carries the mask**, not an ALPHA_8 one.
+  `Bitmap.compress` does not write ALPHA_8 usefully; ARGB round-trips losslessly everywhere.
+- **`Operation.Mask` stores no prompts.** A merged selection has no single reproducing prompt
+  (selection_tool.md §4), so storing one would be a lie that re-editing would have to honour.
 
 ### T28
 

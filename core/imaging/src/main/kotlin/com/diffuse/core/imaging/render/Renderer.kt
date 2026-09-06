@@ -5,6 +5,7 @@ import com.diffuse.core.common.DispatcherProvider
 import com.diffuse.core.common.Result
 import com.diffuse.core.imaging.load.ImageLoader
 import com.diffuse.core.imaging.load.MAX_LONG_EDGE_PX
+import com.diffuse.core.imaging.load.MaskIo
 import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.core.imaging.model.ImageRef
 import com.diffuse.core.imaging.model.Operation
@@ -12,11 +13,15 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.io.File
 import kotlin.coroutines.coroutineContext
 
 /** specs/render.md sizes both caches in entries. */
 const val PREVIEW_CACHE_ENTRIES = 3
 const val BASE_CACHE_ENTRIES = 2
+
+/** One active mask, plus room for the previous one while undo is in flight. */
+const val MASK_CACHE_ENTRIES = 2
 
 /**
  * specs/render.md. Returns [Result] rather than throwing: specs/architecture.md §9 rules
@@ -33,6 +38,12 @@ interface Renderer {
         document: EditDocument,
         onProgress: (Float) -> Unit = {},
     ): Result<Bitmap>
+
+    /**
+     * specs/edit_model.md: a `Mask` op changes no pixels, so consumers read it through here.
+     * @return null when [maskId] names no `Mask` op, or its file is gone.
+     */
+    suspend fun resolveMask(document: EditDocument, maskId: String): Bitmap?
 }
 
 /**
@@ -54,6 +65,7 @@ class CpuRenderer(
     private data class BaseKey(val source: ImageRef, val targetLongEdgePx: Int)
 
     private val previewCache = LruCache<PreviewKey, Bitmap>(PREVIEW_CACHE_ENTRIES)
+    private val maskCache = LruCache<ImageRef, Bitmap>(MASK_CACHE_ENTRIES)
     private val baseCache = LruCache<BaseKey, Bitmap>(BASE_CACHE_ENTRIES)
     private val lock = Mutex()
 
@@ -78,6 +90,13 @@ class CpuRenderer(
         onProgress: (Float) -> Unit,
     ): Result<Bitmap> = lock.withLock {
         render(document, MAX_LONG_EDGE_PX, onProgress)
+    }
+
+    override suspend fun resolveMask(document: EditDocument, maskId: String): Bitmap? {
+        val ref = document.mask(maskId)?.maskRef ?: return null
+        return maskCache[ref] ?: withContext(dispatchers.io) {
+            MaskIo.read(File(ref.path))?.also { maskCache.put(ref, it) }
+        }
     }
 
     private suspend fun render(

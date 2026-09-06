@@ -19,6 +19,7 @@ const val EDIT_DOCUMENT_SCHEMA_VERSION = 1
 private const val TAG = "EditDocumentJson"
 private const val TYPE_ADJUST = "adjust"
 private const val TYPE_CROP = "crop"
+private const val TYPE_MASK = "mask"
 
 /**
  * Operations are mapped by hand rather than through polymorphic serialisation, because
@@ -37,6 +38,7 @@ object EditDocumentJson {
             put("source", document.source.path)
             put("createdAt", document.createdAt)
             put("updatedAt", document.updatedAt)
+            document.activeMaskId?.let { put("activeMaskId", it) }
             put("operations", buildJsonArray { document.operations.forEach { add(it.encode()) } })
         }
         return json.encodeToString(JsonObject.serializer(), root)
@@ -50,6 +52,7 @@ object EditDocumentJson {
             id = root.getValue("id").jsonPrimitive.content,
             source = ImageRef(root.getValue("source").jsonPrimitive.content),
             operations = operations,
+            activeMaskId = root["activeMaskId"]?.jsonPrimitive?.content,
             createdAt = root.getValue("createdAt").jsonPrimitive.long,
             updatedAt = root.getValue("updatedAt").jsonPrimitive.long,
         )
@@ -61,6 +64,11 @@ object EditDocumentJson {
             put("id", id)
             put("kind", kind.name)
             put("value", value)
+        }
+        is Operation.Mask -> buildJsonObject {
+            put("type", TYPE_MASK)
+            put("id", id)
+            put("maskRef", maskRef.path)
         }
         is Operation.Crop -> buildJsonObject {
             put("type", TYPE_CROP)
@@ -77,6 +85,7 @@ object EditDocumentJson {
         val id = node["id"]?.jsonPrimitive?.content ?: return warn(logger, "operation without an id")
         return when (val type = node["type"]?.jsonPrimitive?.content) {
             TYPE_ADJUST -> decodeAdjust(node, id, logger)
+            TYPE_MASK -> decodeMask(node, id, logger)
             TYPE_CROP -> Operation.Crop(
                 id = id,
                 rect = RectF(
@@ -89,6 +98,18 @@ object EditDocumentJson {
             )
             else -> warn(logger, "unknown operation type '$type'")
         }
+    }
+
+    /**
+     * A `mask` node without a `maskRef` is dropped rather than fatal, the same way an unknown
+     * type is: one unreadable operation must not cost the user the whole document. A document
+     * whose `activeMaskId` pointed at it then fails `referencesResolve`, which is where the
+     * user is actually told (specs/edit_model.md).
+     */
+    private fun decodeMask(node: JsonObject, id: String, logger: Logger?): Operation? {
+        val ref = node["maskRef"]?.jsonPrimitive?.content
+            ?: return warn(logger, "mask '$id' without a maskRef")
+        return Operation.Mask(id, ImageRef(ref))
     }
 
     private fun decodeAdjust(node: JsonObject, id: String, logger: Logger?): Operation? {

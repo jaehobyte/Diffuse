@@ -9,6 +9,7 @@ import com.diffuse.core.common.newId
 import com.diffuse.core.data.db.ProjectDao
 import com.diffuse.core.data.db.ProjectEntity
 import com.diffuse.core.data.file.ProjectFiles
+import com.diffuse.core.imaging.load.MaskIo
 import com.diffuse.core.imaging.load.SourceImage
 import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.core.imaging.model.EditDocumentJson
@@ -75,7 +76,30 @@ class DefaultProjectRepository(
     override suspend fun load(id: String): Result<EditDocument> = withContext(dispatchers.io) {
         val file = files.documentFile(id)
         if (!file.isFile) return@withContext Result.Failure(AppError.MissingSource)
-        runCatchingIo { EditDocumentJson.decode(file.readText(), logger) }
+        when (val decoded = runCatchingIo { EditDocumentJson.decode(file.readText(), logger) }) {
+            is Result.Failure -> decoded
+            // specs/edit_model.md: a dangling mask reference is not something to load past —
+            // dropping it silently would drop the user's selection without telling them.
+            is Result.Success ->
+                if (decoded.value.referencesResolve()) {
+                    decoded
+                } else {
+                    logger?.warn(TAG, "document $id references a mask that is not in the list")
+                    Result.Failure(AppError.Unsupported)
+                }
+        }
+    }
+
+    override suspend fun saveMask(
+        projectId: String,
+        maskId: String,
+        alpha: Bitmap,
+    ): Result<ImageRef> = withContext(dispatchers.io) {
+        runCatchingIo {
+            val file = files.maskFile(projectId, maskId)
+            MaskIo.write(file, alpha)
+            ImageRef(file.absolutePath)
+        }
     }
 
     /**

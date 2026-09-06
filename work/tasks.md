@@ -93,7 +93,7 @@ Only the server endpoint is still outstanding. If a task hits a missing prerequi
 
 ## Phase 6 — Selection tool
 
-- [ ] T29 `Operation.Mask` in the model and renderer
+- [x] T29 `Operation.Mask` in the model and renderer
   spec: specs/edit_model.md, render.md
   deps: —
   done when:

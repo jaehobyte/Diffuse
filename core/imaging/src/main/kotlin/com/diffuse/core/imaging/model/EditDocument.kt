@@ -14,6 +14,8 @@ data class EditDocument(
     val id: String,
     val source: ImageRef,
     val operations: List<Operation> = emptyList(),
+    /** specs/edit_model.md: the one [Operation.Mask] other tools apply to, or null. */
+    val activeMaskId: String? = null,
     val createdAt: Long,
     val updatedAt: Long,
 ) {
@@ -25,6 +27,24 @@ data class EditDocument(
             ?: 0f
 
     fun crop(): Operation.Crop? = operations.filterIsInstance<Operation.Crop>().firstOrNull()
+
+    fun mask(id: String): Operation.Mask? =
+        operations.filterIsInstance<Operation.Mask>().firstOrNull { it.id == id }
+
+    fun activeMask(): Operation.Mask? = activeMaskId?.let(::mask)
+
+    /**
+     * Adds a selection and makes it active, as one step. Older masks stay in the list so undo
+     * can restore them; only [activeMaskId] moves.
+     */
+    fun withMask(maskRef: ImageRef, id: String = newId()): EditDocument =
+        copy(operations = operations + Operation.Mask(id, maskRef), activeMaskId = id)
+
+    /**
+     * specs/edit_model.md: every mask reference must resolve. A document that fails this is not
+     * loadable — silently dropping the reference would silently drop the user's selection.
+     */
+    fun referencesResolve(): Boolean = activeMaskId == null || mask(activeMaskId) != null
 
     /**
      * One live [Operation.Adjust] per kind: setting a kind that already exists updates it
