@@ -8,6 +8,33 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T66 (prerequisite 2 — the bench number)
+
+- **The budget is missed, and the six-HSL case is where.** gpu_render.md §1 asked for this
+  measurement specifically and `RenderBenchmarkTest` never made it: it measured Exposure +
+  Contrast, the cheap case. A second `@Test` measures six 혼합 sliders on the same
+  `huge_6000x4000.jpg` source at the same 1080px target, so the two numbers differ only in the
+  operations.
+
+  ```
+  preview p50 [2 adjusts] :  77ms
+  preview p50 [6 hsl]     : 406ms
+  ```
+
+  Six HSL passes add **329ms** — about 55ms each, more than the whole decode-and-downsample
+  baseline costs once. render.md's budget is 100ms p50, so the operations alone are 3.3× it.
+
+- **The constant is not a device number; the ratio is.** This runs on the JVM under Robolectric,
+  which is why the test prints "not a device budget" and why the earlier number was never treated
+  as a verdict. What survives the platform change is that a six-HSL document costs **5.3×** a
+  two-adjust one, and that one HSL pass outweighs decoding a 24MP JPEG. D14 (adjust_hsl.md §5)
+  refused to fold consecutive HSL adjusts into one pass because folding changes the maths; this is
+  the bill for that decision, and it is the bill AGSL would pay.
+
+- **This closes prerequisite 2 only.** T66 stays `[!]` on prerequisite 1 — minSdk 26 → 33 on a
+  frozen file, which is a product decision (it drops Android 8 through 12), not a measurement.
+  The bench is not a task, so no task is marked `[x]` for it.
+
 ### T70
 
 - **The rule got one home, `tools/AdjustStack.kt`, holding both halves.** `generativeInput` (the

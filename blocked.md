@@ -16,18 +16,28 @@ The same change has to correct two statements that become wrong, not merely stal
 - `specs/imaging.md`, "minSdk is 26 and HEIF decoding only arrives at API 28" — at minSdk 33 the
   HEIF caveat disappears entirely
 
-**2. A benchmark number.** `specs/render.md` sets the budget: `preview`, 4096px source → 1080px
-target, < 100 ms p50 on a Pixel 6a-class device. `scripts/bench.sh` exists and is excluded from
-`check`, and nobody has run it against a document carrying HSL ops. Measure the six-혼합-slider case
-specifically — `HslOps` evaluates eight band weights per pixel and adjust_hsl.md §5 refused to fold
-consecutive HSL adjusts into one pass (D14), so six sliders are six full passes over the bitmap.
+**2. A benchmark number — DONE, and it says the budget is missed.** `RenderBenchmarkTest` gained
+the case gpu_render.md §1 named: six 혼합 sliders on the same source and target as the existing
+two-adjust measurement.
 
-**The decision a human needs to make:** whether the numbers justify the port at all. Porting a
-renderer that already meets its budget is work with no user-visible result, and it doubles the
-surface every future op has to satisfy. **If the bench says the budget is met, close T66 as "not
-needed"** and record the numbers in `work/decisions.md`. That is a good outcome.
+```
+preview p50 [2 adjusts] :  77ms
+preview p50 [6 hsl]     : 406ms
+```
 
-Nothing was attempted. No code was written.
+Six HSL passes add 329ms, ~55ms each — one pass costs more than decoding and downsampling a 24MP
+JPEG. render.md's budget is 100ms p50. The absolute numbers are JVM/Robolectric and not a Pixel 6a,
+but the ratio is platform-independent: 5.3× for six sliders. `HslOps` evaluates eight band weights
+per pixel and adjust_hsl.md §5 (D14) refused to fold consecutive HSL adjusts into one pass, so six
+sliders really are six full passes. Numbers are in `work/decisions.md` under T66.
+
+**The decision that is left:** prerequisite 1 only — whether minSdk 26 → 33 is acceptable. That
+drops Android 8 through 12, `gradle/libs.versions.toml` is frozen by CLAUDE.md, and the same change
+must correct `specs/architecture.md` §2 and `specs/imaging.md`'s HEIF sentence. The "close T66 as
+not needed" outcome is off the table: the bench asked for it and did not get it.
+
+No production code was written. The only change is the second `@Test`, which is gated on
+`DIFFUSE_BENCHMARK` and so is not part of `check`.
 
 ## T57 — A sheet's 취소 must not tap the tool underneath it
 
