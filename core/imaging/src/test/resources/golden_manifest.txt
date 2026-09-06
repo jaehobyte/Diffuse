@@ -39,6 +39,9 @@ cutout_render.png
 # T38 (specs/generative_erase.md 6)
 generative_erase_render.png
 
+# T59 (specs/generative_fill.md §5)
+generative_fill_render.png
+
 # T54 (specs/adjust_hsl.md §10)
 hsl_blue_saturation_+0.5.png
 hsl_blue_saturation_-0.5.png

@@ -13,7 +13,7 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `[H]` human-only, loop must
 
 ## Queue
 
-**Phase 12, T59–T65.** T57 and T66 are `[!]` — both need a human. Pick the first `[ ]` whose deps
+**Phase 12, T60–T65.** T57 and T66 are `[!]` — both need a human. Pick the first `[ ]` whose deps
 are all `[x]`, as always.
 
 ---
@@ -169,7 +169,7 @@ design drifted — block it rather than adding one.
   core/ai/EditPlanProvider.kt, core/ai tests, feature/editor/tools/direct,
   feature/editor/EditorViewModel.kt, feature/editor strings.xml, feature/editor tests
 
-- [ ] T59 `Operation.GenerativeFill` — the op, the blend, the round trip
+- [x] T59 `Operation.GenerativeFill` — the op, the blend, the round trip
   spec: specs/generative_fill.md §5, §9; specs/edit_model.md; specs/render.md
   deps: —
   done when:

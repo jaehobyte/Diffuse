@@ -160,23 +160,28 @@ class CpuRenderer(
         operation: Operation,
     ): Bitmap = when (operation) {
         is Operation.Adjust -> applyAdjust(document, input, operation)
-        is Operation.GenerativeErase -> applyErase(document, input, operation)
+        is Operation.GenerativeErase ->
+            blendResult(document, input, operation.maskId, operation.resultRef)
+        is Operation.GenerativeFill ->
+            blendResult(document, input, operation.maskId, operation.resultRef)
         is Operation.CutOut -> applyCutOut(document, input, operation)
         // A mask is a reference, and the crop ran last in applyOperations.
         is Operation.Mask, is Operation.Crop -> input
     }
 
     /**
-     * specs/generative_erase.md §6: the result replaces pixels inside the mask only, so
-     * everything after it still composes.
+     * specs/generative_erase.md §6 and specs/generative_fill.md §5: the stored result replaces
+     * pixels inside the mask only, so everything after it still composes. 지우기 and 채우기 differ
+     * in which file they load and in nothing else, so they share this.
      */
-    private suspend fun applyErase(
+    private suspend fun blendResult(
         document: EditDocument,
         input: Bitmap,
-        erase: Operation.GenerativeErase,
+        maskId: String,
+        resultRef: ImageRef,
     ): Bitmap {
-        val mask = resolveMask(document, erase.maskId)
-        val result = decodeResult(erase.resultRef)
+        val mask = resolveMask(document, maskId)
+        val result = decodeResult(resultRef)
         return if (mask == null || result == null) {
             input
         } else {

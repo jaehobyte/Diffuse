@@ -38,6 +38,9 @@ data class EditDocument(
     fun generativeErases(): List<Operation.GenerativeErase> =
         operations.filterIsInstance<Operation.GenerativeErase>()
 
+    fun generativeFills(): List<Operation.GenerativeFill> =
+        operations.filterIsInstance<Operation.GenerativeFill>()
+
     /**
      * specs/edit_model.md: `source.hasAlpha || operations.any { it is CutOut }`. The document
      * holds no `SourceImage`, but `DefaultProjectRepository` writes the source as `.png`
@@ -56,6 +59,15 @@ data class EditDocument(
         id: String = newId(),
     ): EditDocument = copy(operations = operations + Operation.GenerativeErase(id, maskId, resultRef))
 
+    /** specs/generative_fill.md §5: the erase's shape plus the prompt that produced it. */
+    fun withGenerativeFill(
+        maskId: String,
+        resultRef: ImageRef,
+        prompt: String,
+        id: String = newId(),
+    ): EditDocument =
+        copy(operations = operations + Operation.GenerativeFill(id, maskId, resultRef, prompt))
+
     /**
      * Adds a selection and makes it active, as one step. Older masks stay in the list so undo
      * can restore them; only [activeMaskId] moves.
@@ -70,7 +82,8 @@ data class EditDocument(
     fun referencesResolve(): Boolean =
         (activeMaskId == null || mask(activeMaskId) != null) &&
             cutOuts().all { mask(it.maskId) != null } &&
-            generativeErases().all { mask(it.maskId) != null }
+            generativeErases().all { mask(it.maskId) != null } &&
+            generativeFills().all { mask(it.maskId) != null }
 
     /**
      * One live [Operation.Adjust] per `(kind, maskId)` pair: setting one that already exists

@@ -22,6 +22,7 @@ private const val TYPE_CROP = "crop"
 private const val TYPE_MASK = "mask"
 private const val TYPE_CUTOUT = "cutout"
 private const val TYPE_GENERATIVE_ERASE = "generativeErase"
+private const val TYPE_GENERATIVE_FILL = "generativeFill"
 
 /**
  * Operations are mapped by hand rather than through polymorphic serialisation, because
@@ -84,6 +85,13 @@ object EditDocumentJson {
             put("maskId", maskId)
             put("resultRef", resultRef.path)
         }
+        is Operation.GenerativeFill -> buildJsonObject {
+            put("type", TYPE_GENERATIVE_FILL)
+            put("id", id)
+            put("maskId", maskId)
+            put("resultRef", resultRef.path)
+            put("prompt", prompt)
+        }
         is Operation.Crop -> buildJsonObject {
             put("type", TYPE_CROP)
             put("id", id)
@@ -101,6 +109,7 @@ object EditDocumentJson {
             TYPE_ADJUST -> decodeAdjust(node, id, logger)
             TYPE_MASK -> decodeMask(node, id, logger)
             TYPE_GENERATIVE_ERASE -> decodeGenerativeErase(node, id, logger)
+            TYPE_GENERATIVE_FILL -> decodeGenerativeFill(node, id, logger)
             TYPE_CUTOUT -> node["maskId"]?.jsonPrimitive?.content
                 ?.let { Operation.CutOut(id, it) }
                 ?: warn(logger, "cutout '$id' without a maskId")
@@ -137,6 +146,17 @@ object EditDocumentJson {
             return warn(logger, "generativeErase '$id' without a maskId or resultRef")
         }
         return Operation.GenerativeErase(id, maskId, ImageRef(ref))
+    }
+
+    /** A missing prompt is empty rather than fatal: the pixels are what the render needs. */
+    private fun decodeGenerativeFill(node: JsonObject, id: String, logger: Logger?): Operation? {
+        val maskId = node["maskId"]?.jsonPrimitive?.content
+        val ref = node["resultRef"]?.jsonPrimitive?.content
+        if (maskId == null || ref == null) {
+            return warn(logger, "generativeFill '$id' without a maskId or resultRef")
+        }
+        val prompt = node["prompt"]?.jsonPrimitive?.content.orEmpty()
+        return Operation.GenerativeFill(id, maskId, ImageRef(ref), prompt)
     }
 
     private fun decodeAdjust(node: JsonObject, id: String, logger: Logger?): Operation? {

@@ -8,6 +8,21 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T59
+
+- **`applyErase` became `blendResult(document, input, maskId, resultRef)`.** 지우기 and 채우기
+  differ only in which file they load, so the renderer got one shared helper and two `when`
+  branches rather than two near-identical functions. The existing `generative_erase_render`
+  golden did not move, which is the evidence the refactor is pixel-identical.
+
+- **A `generativeFill` node with no `prompt` decodes to an empty prompt rather than being
+  dropped.** A missing `maskId` or `resultRef` is still fatal to the op, because those are what
+  the render needs; the prompt is provenance, and losing it should not cost the user pixels.
+
+- **The document version stays 1, with a test that says so.** edit_model.md's "unknown operation
+  types are dropped with a warning" is what makes adding an op backward compatible, so the bump
+  would buy nothing and would invalidate every stored document.
+
 ### T58
 
 - **`DirectHost.onFinished` carries the `CropRatio`, not a boolean.** The spec said the ViewModel
