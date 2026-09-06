@@ -15,8 +15,16 @@ import com.diffuse.core.common.AppError
  */
 data class SelectionState(
     val session: SegSession? = null,
-    /** `ALPHA_8` at the preview's size. Null means nothing is selected yet. */
+    /**
+     * What is selected right now: [base] merged with the current run's result. `ALPHA_8` at the
+     * preview's size, strictly binary. Null means nothing is selected yet.
+     */
     val mask: Bitmap? = null,
+    /** Everything merged before the current run. specs/selection_tool.md §4. */
+    val base: Bitmap? = null,
+    val mode: MergeMode = MergeMode.Add,
+    /** Snapshots of [base], one per completed merge, so Undo takes back exactly one. */
+    val merges: List<Bitmap?> = emptyList(),
     val points: List<PointF> = emptyList(),
     val labels: List<Boolean> = emptyList(),
     val inverted: Boolean = false,
@@ -48,9 +56,36 @@ data class SelectionState(
             copy(points = points.dropLast(1), labels = labels.dropLast(1))
         }
 
+    /**
+     * Ends the current run: what is on screen becomes the new [base], and the run's points go.
+     * specs/selection_tool.md §4 does this on a mode switch and after a text prompt, so the two
+     * mechanisms never fight over the same tap.
+     */
+    fun committingRun(): SelectionState = copy(
+        base = mask,
+        merges = merges + base,
+        points = emptyList(),
+        labels = emptyList(),
+    )
+
+    /** Takes back one merge. Null when there is nothing left to undo. */
+    fun withoutLastMerge(): SelectionState? =
+        if (merges.isEmpty()) {
+            null
+        } else {
+            copy(base = merges.last(), mask = merges.last(), merges = merges.dropLast(1))
+        }
+
     /** 지우기: the selection goes, the session stays so re-selecting is instant. */
-    fun cleared(): SelectionState =
-        copy(mask = null, points = emptyList(), labels = emptyList(), inverted = false, lowConfidence = false)
+    fun cleared(): SelectionState = copy(
+        mask = null,
+        base = null,
+        merges = emptyList(),
+        points = emptyList(),
+        labels = emptyList(),
+        inverted = false,
+        lowConfidence = false,
+    )
 
     companion object {
         /** specs/selection_tool.md §7: below this the user is nudged to add more points. */

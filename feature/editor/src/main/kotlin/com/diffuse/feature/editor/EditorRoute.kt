@@ -128,6 +128,7 @@ private fun sheetFor(
                 Tool.Crop -> CropToolSheet(state = state, viewModel = viewModel)
                 Tool.Select -> SelectSheet(
                     state = state.selection,
+                    onModeChange = viewModel.selection::setMode,
                     onInvert = viewModel.selection::invert,
                     onClear = viewModel.selection::clear,
                     onCancel = viewModel::cancelSheet,

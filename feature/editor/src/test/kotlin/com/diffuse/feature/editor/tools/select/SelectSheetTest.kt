@@ -30,6 +30,16 @@ class SelectSheetTest {
     private var inverts = 0
     private var clears = 0
     private var applies = 0
+    private val modes = mutableListOf<MergeMode>()
+
+    @Test
+    fun `the mode chips switch between add and subtract`() {
+        showSheet(SelectionState(mask = mask()))
+
+        compose.onNodeWithText("빼기").performClick()
+
+        assertEquals(listOf(MergeMode.Subtract), modes)
+    }
 
     @Test
     fun `apply is disabled until there is a mask`() {
@@ -85,6 +95,7 @@ class SelectSheetTest {
             AppTheme(ThemeMode.Edit) {
                 SelectSheet(
                     state = state,
+                    onModeChange = { modes += it },
                     onInvert = { inverts++ },
                     onClear = { clears++ },
                     onCancel = {},

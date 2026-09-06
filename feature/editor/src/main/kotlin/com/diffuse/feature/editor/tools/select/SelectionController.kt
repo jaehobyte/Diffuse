@@ -98,17 +98,55 @@ class SelectionController(
         segment(current.withPoint(PointF(x, y), foreground))
     }
 
-    /** specs/selection_tool.md §4: undo drops the last point and re-segments what is left. */
+    /**
+     * specs/selection_tool.md §4. Inside a point run undo drops the last point and re-segments;
+     * with the run empty it takes back one whole merge. One gesture, one step back, either way.
+     */
     fun undoPoint() {
         val current = _state.value
-        if (current.points.isEmpty()) return
-        segment(current.withoutLastPoint())
+        if (current.points.isNotEmpty()) {
+            segment(current.withoutLastPoint())
+        } else {
+            current.withoutLastMerge()?.let { _state.value = it }
+        }
     }
 
+    /**
+     * specs/selection_tool.md §4: switching the mode ends the current run, so a subtract-mode tap
+     * builds a new positive selection to take out rather than appending a background point.
+     */
+    fun setMode(mode: MergeMode) {
+        val current = _state.value
+        if (current.mode == mode) return
+        job?.cancel()
+        _state.value = current.committingRun().copy(mode = mode)
+    }
+
+    /** specs/selection_tool.md §4: a phrase's instances union into one mask, then merge as one. */
+    fun mergeIncoming(incoming: Bitmap) {
+        val current = _state.value
+        val merged = MaskOps.merged(current.base, incoming, current.mode)
+        _state.value = current.copy(
+            mask = merged.takeUnless(MaskOutline::isEmpty),
+            base = merged.takeUnless(MaskOutline::isEmpty),
+            merges = current.merges + current.base,
+            points = emptyList(),
+            labels = emptyList(),
+        )
+    }
+
+    /** specs/selection_tool.md §4: 반전 flips the accumulated mask, never an individual result. */
     fun invert() {
         val current = _state.value
         val mask = current.mask ?: return
-        _state.value = current.copy(mask = MaskOps.inverted(mask), inverted = !current.inverted)
+        val flipped = MaskOps.inverted(mask)
+        _state.value = current.copy(
+            mask = flipped,
+            base = flipped,
+            points = emptyList(),
+            labels = emptyList(),
+            inverted = !current.inverted,
+        )
     }
 
     /** 지우기: the selection goes, the session stays. */
@@ -155,20 +193,18 @@ class SelectionController(
         val prompt = next.prompt
         job?.cancel()
         if (prompt == null) {
-            _state.value = next.cleared()
+            // The run emptied out; what was accumulated before it stays.
+            _state.value = next.copy(mask = next.base, lowConfidence = false, busy = false)
             return
         }
         _state.value = next.copy(busy = true)
         job = scope.launch {
             _state.value = when (val result = segmentation.byPoints(session, prompt)) {
                 is Result.Success -> {
-                    val alpha = if (next.inverted) {
-                        MaskOps.inverted(result.value.alpha)
-                    } else {
-                        result.value.alpha
-                    }
+                    // The run's result merges into what was already accumulated (§4).
+                    val merged = MaskOps.merged(next.base, result.value.alpha, next.mode)
                     next.copy(
-                        mask = alpha.takeUnless(MaskOutline::isEmpty),
+                        mask = merged.takeUnless(MaskOutline::isEmpty),
                         lowConfidence = result.value.score < SelectionState.LOW_CONFIDENCE_SCORE,
                         busy = false,
                     )

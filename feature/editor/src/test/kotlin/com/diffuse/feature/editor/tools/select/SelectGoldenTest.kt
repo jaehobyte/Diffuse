@@ -51,6 +51,7 @@ class SelectGoldenTest {
                                 points = listOf(PointF(0.5f, 0.5f)),
                                 labels = listOf(true),
                             ),
+                            onModeChange = {},
                             onInvert = {},
                             onClear = {},
                             onCancel = {},
@@ -87,13 +88,43 @@ class SelectGoldenTest {
         capture("select_mask_preview")
     }
 
+    @Test
+    fun selectMaskMerged() {
+        val merged = MaskOps.merged(
+            MaskOps.merged(circleMask(0.38f), circleMask(0.62f), MergeMode.Add),
+            circleMask(0.5f, radiusFraction = 0.12f),
+            MergeMode.Subtract,
+        )
+        compose.setContent {
+            AppTheme(ThemeMode.Edit) {
+                var viewport by remember { mutableStateOf(CanvasViewport()) }
+                EditorCanvas(
+                    bitmap = testImage(),
+                    viewport = viewport,
+                    onViewportChange = { viewport = it },
+                    overlay = selectionOverlaySlot(
+                        mask = merged,
+                        points = listOf(PointF(0.38f, 0.5f), PointF(0.62f, 0.5f)),
+                        labels = listOf(true, true),
+                    ),
+                )
+            }
+        }
+        compose.waitForIdle()
+
+        capture("select_mask_merged")
+    }
+
     /** Matches the preview bitmap's 400×300, so the overlay lands exactly on the photo. */
-    private fun circleMask(): Bitmap {
+    private fun circleMask(
+        centreFraction: Float = 0.5f,
+        radiusFraction: Float = 0.3f,
+    ): Bitmap {
         val bitmap = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ALPHA_8)
-        val radius = HEIGHT * 0.3f
+        val radius = HEIGHT * radiusFraction
         for (y in 0 until HEIGHT) {
             for (x in 0 until WIDTH) {
-                val dx = x - WIDTH / 2f
+                val dx = x - WIDTH * centreFraction
                 val dy = y - HEIGHT / 2f
                 val inside = dx * dx + dy * dy <= radius * radius
                 bitmap.setPixel(x, y, if (inside) MaskOps.OPAQUE shl 24 else 0)

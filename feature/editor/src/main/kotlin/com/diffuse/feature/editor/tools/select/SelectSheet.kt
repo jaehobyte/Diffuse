@@ -1,5 +1,6 @@
 package com.diffuse.feature.editor.tools.select
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -16,10 +17,12 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.diffuse.core.ui.components.EditSheet
 import com.diffuse.core.ui.theme.LocalAppColors
+import com.diffuse.core.ui.theme.Tokens
 import com.diffuse.core.ui.theme.Typography
 import com.diffuse.feature.editor.R
 
 const val SelectSheetTestTag = "SelectSheet"
+const val SelectModeRowTestTag = "SelectModeRow"
 const val SelectInvertTestTag = "SelectInvert"
 const val SelectClearTestTag = "SelectClear"
 const val SelectHintTestTag = "SelectHint"
@@ -35,6 +38,7 @@ private val ActionRadius = 16.dp
 @Composable
 fun SelectSheet(
     state: SelectionState,
+    onModeChange: (MergeMode) -> Unit,
     onInvert: () -> Unit,
     onClear: () -> Unit,
     onCancel: () -> Unit,
@@ -49,6 +53,18 @@ fun SelectSheet(
         applyEnabled = state.hasMask,
         modifier = modifier.testTag(SelectSheetTestTag),
     ) {
+        Row(
+            modifier = Modifier.testTag(SelectModeRowTestTag),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            MergeMode.entries.forEach { entry ->
+                ModeChip(
+                    mode = entry,
+                    selected = entry == state.mode,
+                    onClick = { onModeChange(entry) },
+                )
+            }
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             SecondaryAction(
                 testTag = SelectInvertTestTag,
@@ -73,6 +89,27 @@ fun SelectSheet(
             modifier = Modifier.testTag(SelectHintTestTag),
         )
     }
+}
+
+/** DESIGN.md §4: the selected mode is the accent-filled chip, matching the crop presets. */
+@Composable
+private fun ModeChip(mode: MergeMode, selected: Boolean, onClick: () -> Unit) {
+    val colors = LocalAppColors.current
+    val label = stringResource(mode.labelRes)
+    Text(
+        text = label,
+        style = Typography.label,
+        color = if (selected) Tokens.onAccent else colors.ink,
+        modifier = Modifier
+            .testTag(label)
+            .height(32.dp)
+            .background(
+                color = if (selected) Tokens.accent else colors.surfaceRaised,
+                shape = RoundedCornerShape(ActionRadius),
+            )
+            .clickable(role = Role.RadioButton, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+    )
 }
 
 @Composable

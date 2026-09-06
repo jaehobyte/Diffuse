@@ -125,7 +125,7 @@ Only the server endpoint is still outstanding. If a task hits a missing prerequi
         T28's deferred SAM 3 settings sheet lands here, since this is the first screen that needs it
   touches: feature/editor/tools/select, feature/editor/canvas (gesture mode + mask overlay draw only)
 
-- [ ] T31 Accumulated mask merging with add / subtract
+- [x] T31 Accumulated mask merging with add / subtract
   spec: specs/selection_tool.md §Merge
   deps: T30
   done when:
@@ -139,7 +139,8 @@ Only the server endpoint is still outstanding. If a task hits a missing prerequi
     - each merge is one entry on the tool's deque, so Undo removes exactly one merge
     - `MaskMergeTest` (pure): add then subtract on overlapping circles gives the expected coverage;
       invert is its own inverse; the alpha stays strictly binary
-    - golden `select_mask_merged`
+    - golden `select_mask_merged`; `select_sheet_open` gains the mode row, so it is named here
+      and may be re-recorded once
   touches: feature/editor/tools/select
 
 - [ ] T32 Adjustments limited to the selection

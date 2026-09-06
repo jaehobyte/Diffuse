@@ -266,6 +266,67 @@ class SelectionToolTest {
         assertNotNull(viewModel.uiState.value.selection.message)
     }
 
+    // ---- merging (specs/selection_tool.md 4) -----------------------------
+
+    @Test
+    fun `switching mode ends the run, so the next tap builds a new selection`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onToolClick(Tool.Select)
+        viewModel.selection.addPoint(0.3f, 0.3f, foreground = true)
+        val added = MaskBitmaps.coverage(viewModel.uiState.value.selection.mask!!)
+
+        viewModel.selection.setMode(MergeMode.Subtract)
+
+        val selection = viewModel.uiState.value.selection
+        assertTrue(selection.points.isEmpty())
+        assertEquals(added, MaskBitmaps.coverage(selection.base!!), 0f)
+    }
+
+    @Test
+    fun `a subtract-mode tap takes its own result out of the selection`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onToolClick(Tool.Select)
+        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
+        val added = MaskBitmaps.coverage(viewModel.uiState.value.selection.mask!!)
+
+        viewModel.selection.setMode(MergeMode.Subtract)
+        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
+
+        assertNull(viewModel.uiState.value.selection.mask)
+        assertTrue(added > 0f)
+    }
+
+    @Test
+    fun `undo with an empty run takes back one whole merge`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onToolClick(Tool.Select)
+        viewModel.selection.addPoint(0.3f, 0.3f, foreground = true)
+        val afterFirst = MaskBitmaps.coverage(viewModel.uiState.value.selection.mask!!)
+        viewModel.selection.setMode(MergeMode.Subtract)
+        viewModel.selection.setMode(MergeMode.Add)
+        viewModel.selection.addPoint(0.7f, 0.7f, foreground = true)
+        viewModel.undo()
+
+        // The run is empty now, so the next undo unwinds the merge itself.
+        viewModel.undo()
+
+        assertEquals(afterFirst, MaskBitmaps.coverage(viewModel.uiState.value.selection.mask!!), 0f)
+    }
+
+    @Test
+    fun `invert flips the whole accumulated selection`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onToolClick(Tool.Select)
+        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
+        val before = MaskBitmaps.coverage(viewModel.uiState.value.selection.mask!!)
+
+        viewModel.selection.invert()
+
+        val selection = viewModel.uiState.value.selection
+        assertEquals(1f - before, MaskBitmaps.coverage(selection.mask!!), 0.001f)
+        assertEquals(selection.mask, selection.base)
+    }
+
     @Test
     fun `saving settings closes the sheet and re-probes`() = runTest {
         provider.setAvailability(Availability.Unavailable(AppError.Invalid("not configured")))

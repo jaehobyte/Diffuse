@@ -14,10 +14,14 @@ Specs are written and consistent: `ai_provider.md`, `segmentation.md`, `selectio
 (rewritten), `prompt_input.md`, `generative_erase.md` (new), plus amendments to `edit_model.md`,
 `architecture.md` (§2, §6, §8, §9, §10) and `DESIGN.md` (§1 accent ruling, §4 prompt bar).
 
-**T26-T30 done.** The selection tool works end to end against the SAM 3 service. Next is T31,
-accumulated mask merging.
+**T26-T31 done.** The selection tool works end to end against the SAM 3 service, including
+add/subtract merging. Next is T32, masked adjustments.
 
 ## Done
+
+- T31 Accumulated merging — `MaskOps.merged/union`, a [추가 | 빼기] chip row, and an undo that
+  drops a point inside a run and one whole merge once the run is empty. 12 tests + golden
+  `select_mask_merged`; `select_sheet_open` re-recorded for the new row.
 
 - T30 "선택" tool — `SelectionController` owns the whole tool (availability, session, points,
   mask, settings sheet); `EditorViewModel` only commits it. Canvas `gestureMode = SelectPoint`
@@ -73,10 +77,20 @@ _T01–T14 trimmed per CLAUDE.md (keep the last 10). Their decisions are still i
 
 ## Next
 
-T31 accumulated mask merging with [추가 | 빼기]. T34 (`PromptBar`) is still free-standing and can
-go at any time.
+T32 adjustments limited to the selection. T34 (`PromptBar`) is still free-standing.
 
 ## Decisions
+
+### T31
+
+- **Undo means one step back, whichever kind.** Inside a point run it drops the last point and
+  re-segments; with the run empty it takes back one whole merge. selection_tool.md §4 and §10 each
+  describe one of the two, and the user should not have to know which mode they are in.
+- **Switching the mode commits the run.** Otherwise a subtract-mode tap would have to choose
+  between appending a background point to the existing prompt and starting a new one, and the two
+  mechanisms would fight over the same gesture.
+- **`select_sheet_open` was re-recorded.** T31 adds the mode row to that sheet, so the golden
+  could not stay as it was; the task now names it, per the T22/T23 precedent.
 
 ### T30
 
