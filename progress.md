@@ -14,10 +14,13 @@ Specs are written and consistent: `ai_provider.md`, `segmentation.md`, `selectio
 (rewritten), `prompt_input.md`, `generative_erase.md` (new), plus amendments to `edit_model.md`,
 `architecture.md` (§2, §6, §8, §9, §10) and `DESIGN.md` (§1 accent ruling, §4 prompt bar).
 
-**T26-T32 done.** Selection works end to end, and adjustments can be limited to it.
-Next is T33, background removal.
+**T26-T33 done.** Phase 6 (the selection tool) is complete. Next is Phase 7: T34 `PromptBar`.
 
 ## Done
+
+- T33 Background removal — `Operation.CutOut`, `CutOutOp` doing `alpha = min(alpha, maskAlpha)`,
+  `EditDocument.hasAlpha`, 배경 지우기 writing the mask and the cut-out as one history entry, and
+  `ExportSettings.autoFormatFor` picking PNG. 13 tests + render golden `cutout_render`.
 
 - T32 Masked adjustments — `Operation.Adjust.maskId`, one live Adjust per `(kind, maskId)`,
   `MaskBlend` doing `lerp(in, adjusted, maskAlpha)` in the renderer, the "선택 영역에만" switch on
@@ -82,9 +85,22 @@ _T01–T14 trimmed per CLAUDE.md (keep the last 10). Their decisions are still i
 
 ## Next
 
-T33 background removal from the selection. T34 (`PromptBar`) is still free-standing.
+T34 `PromptBar`, then T35 voice input and T36 the prompt → mask flow.
 
 ## Decisions
+
+### T33
+
+- **배경 지우기 is a secondary action, not a primary pill.** selection_tool.md §8.2 asks for a
+  primary pill, but DESIGN.md §1 allows the sheet one accent at rest and that is its Apply. Two
+  accent pills would also make two different commits look equally primary.
+- **`EditDocument.hasAlpha` reads the source's file extension.** The document holds an `ImageRef`
+  and no `SourceImage`, but `DefaultProjectRepository` writes the source as `.png` exactly when it
+  had alpha, so the extension *is* that flag. Recorded here because it is a real coupling.
+- **Cut-outs render before the crop.** A cut-out is about pixels, like the adjustments; the crop
+  is geometry and stays last (render.md).
+- **`select_sheet_open` was re-recorded again**, for the same reason as T31: the task adds a row
+  to that sheet. Named in the task.
 
 ### T32
 

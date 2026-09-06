@@ -25,6 +25,7 @@ const val SelectSheetTestTag = "SelectSheet"
 const val SelectModeRowTestTag = "SelectModeRow"
 const val SelectInvertTestTag = "SelectInvert"
 const val SelectClearTestTag = "SelectClear"
+const val SelectCutOutTestTag = "SelectCutOut"
 const val SelectHintTestTag = "SelectHint"
 
 /** DESIGN.md §4: pills, so the secondary actions match every other button in the app. */
@@ -41,6 +42,7 @@ fun SelectSheet(
     onModeChange: (MergeMode) -> Unit,
     onInvert: () -> Unit,
     onClear: () -> Unit,
+    onCutOut: () -> Unit,
     onCancel: () -> Unit,
     onApply: () -> Unit,
     modifier: Modifier = Modifier,
@@ -77,6 +79,17 @@ fun SelectSheet(
                 label = stringResource(R.string.select_clear),
                 enabled = state.hasMask,
                 onClick = onClear,
+            )
+        }
+        // specs/selection_tool.md §8.2 calls this a primary pill, but DESIGN.md §1 allows the
+        // sheet one accent at rest and that is its Apply. A second accent pill would also make
+        // two different commits look equally primary. Secondary keeps the hierarchy honest.
+        if (state.hasMask) {
+            SecondaryAction(
+                testTag = SelectCutOutTestTag,
+                label = stringResource(R.string.select_cutout),
+                enabled = true,
+                onClick = onCutOut,
             )
         }
         // specs/selection_tool.md §7: hints are text under the buttons, never a snackbar.

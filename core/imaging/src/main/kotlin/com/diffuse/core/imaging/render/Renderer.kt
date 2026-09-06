@@ -123,14 +123,22 @@ class CpuRenderer(
         onProgress: (Float) -> Unit,
     ): Bitmap {
         val adjustments = document.operations.filterIsInstance<Operation.Adjust>()
+        val cutOuts = document.cutOuts()
         val crop = document.crop()
-        val total = adjustments.size + if (crop == null) 0 else 1
+        val total = adjustments.size + cutOuts.size + if (crop == null) 0 else 1
         var output = base
         var completed = 0
 
         adjustments.forEach { adjust ->
             coroutineContext.ensureActive()
             output = applyAdjust(document, output, adjust)
+            completed++
+            onProgress(completed.toFloat() / total)
+        }
+        // Before the crop, which is geometry: a cut-out is about pixels, like the adjustments.
+        cutOuts.forEach { cutOut ->
+            coroutineContext.ensureActive()
+            resolveMask(document, cutOut.maskId)?.let { output = CutOutOp.apply(output, it) }
             completed++
             onProgress(completed.toFloat() / total)
         }

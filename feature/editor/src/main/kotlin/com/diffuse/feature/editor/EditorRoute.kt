@@ -137,6 +137,7 @@ private fun sheetFor(
                     onModeChange = viewModel.selection::setMode,
                     onInvert = viewModel.selection::invert,
                     onClear = viewModel.selection::clear,
+                    onCutOut = viewModel::applyCutOut,
                     onCancel = viewModel::cancelSheet,
                     onApply = viewModel::applySheet,
                 )

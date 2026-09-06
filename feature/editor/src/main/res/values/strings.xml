@@ -24,6 +24,7 @@
     <string name="select_mode_subtract">빼기</string>
     <string name="select_invert">반전</string>
     <string name="select_clear">지우기</string>
+    <string name="select_cutout">배경 지우기</string>
     <string name="select_low_confidence">선택이 불확실해요. 점을 더 추가해보세요.</string>
     <string name="select_hint">사진을 탭해 영역을 선택하세요. 길게 누르면 제외돼요.</string>
     <string name="select_unavailable_not_configured">서버 주소를 먼저 설정해주세요</string>

@@ -54,6 +54,7 @@ class SelectGoldenTest {
                             onModeChange = {},
                             onInvert = {},
                             onClear = {},
+                            onCutOut = {},
                             onCancel = {},
                             onApply = {},
                         )

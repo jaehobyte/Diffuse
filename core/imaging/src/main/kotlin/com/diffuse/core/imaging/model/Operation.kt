@@ -65,6 +65,12 @@ sealed interface Operation {
         val maskRef: ImageRef,
     ) : Operation
 
+    /**
+     * specs/selection_tool.md §8.2: clears the alpha outside [maskId], leaving a cut-out.
+     * Several may stack; each one restricts the alpha further.
+     */
+    data class CutOut(override val id: String, val maskId: String) : Operation
+
     /** [rect] is normalised 0..1 against the un-cropped, un-rotated source. */
     data class Crop(
         override val id: String,

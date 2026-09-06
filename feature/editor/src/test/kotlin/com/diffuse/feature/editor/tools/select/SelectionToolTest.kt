@@ -250,6 +250,36 @@ class SelectionToolTest {
         assertNull(viewModel.uiState.value.selectedTool)
     }
 
+    @Test
+    fun `배경 지우기 writes the mask and the cut-out as one history entry`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onToolClick(Tool.Select)
+        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
+
+        viewModel.applyCutOut()
+
+        val document = viewModel.uiState.value.document!!
+        val maskId = document.operations.filterIsInstance<Operation.Mask>().single().id
+        assertEquals(maskId, document.cutOuts().single().maskId)
+        assertTrue(document.hasAlpha)
+        assertNull(viewModel.uiState.value.selectedTool)
+    }
+
+    @Test
+    fun `undo takes back the mask and the cut-out together`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onToolClick(Tool.Select)
+        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
+        viewModel.applyCutOut()
+
+        viewModel.undo()
+
+        val document = viewModel.uiState.value.document!!
+        assertEquals(emptyList<Operation>(), document.operations)
+        assertNull(document.activeMaskId)
+        assertFalse(document.hasAlpha)
+    }
+
     // ---- failures --------------------------------------------------------
 
     @Test

@@ -20,6 +20,7 @@ private const val TAG = "EditDocumentJson"
 private const val TYPE_ADJUST = "adjust"
 private const val TYPE_CROP = "crop"
 private const val TYPE_MASK = "mask"
+private const val TYPE_CUTOUT = "cutout"
 
 /**
  * Operations are mapped by hand rather than through polymorphic serialisation, because
@@ -71,6 +72,11 @@ object EditDocumentJson {
             put("id", id)
             put("maskRef", maskRef.path)
         }
+        is Operation.CutOut -> buildJsonObject {
+            put("type", TYPE_CUTOUT)
+            put("id", id)
+            put("maskId", maskId)
+        }
         is Operation.Crop -> buildJsonObject {
             put("type", TYPE_CROP)
             put("id", id)
@@ -87,6 +93,9 @@ object EditDocumentJson {
         return when (val type = node["type"]?.jsonPrimitive?.content) {
             TYPE_ADJUST -> decodeAdjust(node, id, logger)
             TYPE_MASK -> decodeMask(node, id, logger)
+            TYPE_CUTOUT -> node["maskId"]?.jsonPrimitive?.content
+                ?.let { Operation.CutOut(id, it) }
+                ?: warn(logger, "cutout '$id' without a maskId")
             TYPE_CROP -> Operation.Crop(
                 id = id,
                 rect = RectF(

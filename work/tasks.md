@@ -155,14 +155,15 @@ Only the server endpoint is still outstanding. If a task hits a missing prerequi
     - existing unmasked goldens unchanged
   touches: core/imaging/ops, core/imaging/render, feature/editor/tools/*
 
-- [ ] T33 Background removal from the selection
+- [x] T33 Background removal from the selection
   spec: specs/selection_tool.md §CutOut
   deps: T30
   done when:
     - the selection sheet gains a primary pill "배경 지우기", visible only once a mask exists
     - `Operation.CutOut(maskId)`: alpha outside the mask → 0; `hasAlpha` becomes true; checkerboard shows
     - export auto-selects PNG (the export.md rule already exists)
-    - golden `cutout_render`; UI test: cutout → undo restores alpha
+    - golden `cutout_render`; UI test: cutout → undo restores alpha; `select_sheet_open` gains
+      the 배경 지우기 row, so it is named here and may be re-recorded once
   touches: core/imaging/ops, feature/editor/tools/select, feature/export (only if the auto-PNG rule needs the new flag)
 
 ## Phase 7 — Prompt input

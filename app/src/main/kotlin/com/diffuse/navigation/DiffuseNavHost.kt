@@ -2,6 +2,7 @@ package com.diffuse.navigation
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.SnackbarHost
@@ -36,6 +37,7 @@ import com.diffuse.feature.export.ExportSettings
 import com.diffuse.feature.export.ExportSettingsStore
 import com.diffuse.feature.export.ExportSheet
 import com.diffuse.feature.export.Exporter
+import com.diffuse.feature.export.autoFormatFor
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
@@ -118,25 +120,25 @@ private fun EditorWithExport(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        EditorRoute(onBack = onBack, onExport = { sheetOpen = true })
-
+        EditorRoute(
+            onBack = onBack,
+            onExport = {
+                settings = settings.autoFormatFor(state.document?.hasAlpha == true)
+                sheetOpen = true
+            },
+        )
         if (sheetOpen) {
-            Box(modifier = Modifier.align(Alignment.BottomCenter)) {
-                ExportSheet(
-                    settings = settings,
-                    onSettingsChange = { settings = it },
-                    onCancel = { sheetOpen = false },
-                    onSave = ::startExport,
-                )
-            }
+            ExportSheetSlot(
+                settings = settings,
+                onSettingsChange = { settings = it },
+                onCancel = { sheetOpen = false },
+                onSave = ::startExport,
+            )
         }
         if (exportJob != null) {
             ExportProgressOverlay(progress = progress, onCancel = { exportJob?.cancel() })
         }
-        SnackbarHost(
-            hostState = snackbarHostState,
-            modifier = Modifier.align(Alignment.BottomCenter),
-        )
+        SnackbarHost(snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
     }
 
     // specs/editor_shell.md: back with an export running is a destructive confirmation.
@@ -186,4 +188,22 @@ private fun AbortExportDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
             }
         },
     )
+}
+
+/** DESIGN.md §4: the export sheet rises from the bottom, over the editor. */
+@Composable
+private fun BoxScope.ExportSheetSlot(
+    settings: ExportSettings,
+    onSettingsChange: (ExportSettings) -> Unit,
+    onCancel: () -> Unit,
+    onSave: () -> Unit,
+) {
+    Box(modifier = Modifier.align(Alignment.BottomCenter)) {
+        ExportSheet(
+            settings = settings,
+            onSettingsChange = onSettingsChange,
+            onCancel = onCancel,
+            onSave = onSave,
+        )
+    }
 }

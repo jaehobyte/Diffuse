@@ -148,23 +148,18 @@ class EditorViewModel @Inject constructor(
             return
         } else {
             sheetBaseline = state.document
+            // T23: the crop geometry is normalised, so it needs the source's pixel aspect to
+            // hold a preset. The bare-source preview has the source's shape.
+            val aspect = state.source
+                ?.takeIf { it.height > 0 }
+                ?.let { it.width.toFloat() / it.height }
+                ?: 1f
             _uiState.value = state.copy(
                 selectedTool = tool,
-                cropState = state.document
-                    ?.let { CropState.from(it, sourceAspect()) }
-                    ?: CropState(),
+                cropState = state.document?.let { CropState.from(it, aspect) } ?: CropState(),
             )
             if (tool == Tool.Select) state.preview?.let { selection.open(it.asAndroidBitmap()) }
         }
-    }
-
-    /**
-     * T23: the crop geometry is normalised, so it needs the source's pixel aspect to hold a
-     * preset. The bare-source preview has the source's shape, which is all the tool needs.
-     */
-    private fun sourceAspect(): Float {
-        val source = _uiState.value.source ?: return 1f
-        return if (source.height > 0) source.width.toFloat() / source.height else 1f
     }
 
     fun onAdjust(kind: AdjustKind, value: Float) {
@@ -227,14 +222,18 @@ class EditorViewModel @Inject constructor(
      * first means a failed write leaves the sheet open with the selection intact, rather than
      * a document pointing at a file that is not there.
      */
-    private fun applySelection() {
+    /** specs/selection_tool.md §8.2: applies the mask *and* the cut-out as one history entry. */
+    fun applyCutOut() = applySelection(cutOut = true)
+
+    private fun applySelection(cutOut: Boolean = false) {
         val stack = history ?: return
         val mask = _uiState.value.selection.mask ?: return
         val maskId = newId()
         viewModelScope.launch {
             when (val saved = repository.saveMask(projectId, maskId, mask)) {
                 is Result.Success -> {
-                    stack.push(stack.current.value.withMask(saved.value, maskId))
+                    val applied = stack.current.value.withMask(saved.value, maskId)
+                    stack.push(if (cutOut) applied.withCutOut(maskId) else applied)
                     stack.commitCoalesce()
                     sheetBaseline = null
                     selection.closeSheet()

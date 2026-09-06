@@ -33,6 +33,20 @@ data class EditDocument(
 
     fun activeMask(): Operation.Mask? = activeMaskId?.let(::mask)
 
+    fun cutOuts(): List<Operation.CutOut> = operations.filterIsInstance<Operation.CutOut>()
+
+    /**
+     * specs/edit_model.md: `source.hasAlpha || operations.any { it is CutOut }`. The document
+     * holds no `SourceImage`, but `DefaultProjectRepository` writes the source as `.png`
+     * exactly when it had an alpha channel, so the extension is that flag.
+     */
+    val hasAlpha: Boolean
+        get() = source.path.endsWith(".png", ignoreCase = true) || cutOuts().isNotEmpty()
+
+    /** Applies the active mask as a cut-out, in the same step that records the mask. */
+    fun withCutOut(maskId: String, id: String = newId()): EditDocument =
+        copy(operations = operations + Operation.CutOut(id, maskId))
+
     /**
      * Adds a selection and makes it active, as one step. Older masks stay in the list so undo
      * can restore them; only [activeMaskId] moves.
@@ -44,7 +58,9 @@ data class EditDocument(
      * specs/edit_model.md: every mask reference must resolve. A document that fails this is not
      * loadable — silently dropping the reference would silently drop the user's selection.
      */
-    fun referencesResolve(): Boolean = activeMaskId == null || mask(activeMaskId) != null
+    fun referencesResolve(): Boolean =
+        (activeMaskId == null || mask(activeMaskId) != null) &&
+            cutOuts().all { mask(it.maskId) != null }
 
     /**
      * One live [Operation.Adjust] per `(kind, maskId)` pair: setting one that already exists

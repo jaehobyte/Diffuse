@@ -7,6 +7,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.diffuse.core.ui.theme.AppTheme
 import com.diffuse.core.ui.theme.ThemeMode
@@ -31,6 +32,23 @@ class SelectSheetTest {
     private var clears = 0
     private var applies = 0
     private val modes = mutableListOf<MergeMode>()
+    private var cutOuts = 0
+
+    @Test
+    fun `배경 지우기 appears only once there is a mask`() {
+        showSheet(SelectionState())
+        compose.onNodeWithTag(SelectCutOutTestTag).assertDoesNotExist()
+    }
+
+    @Test
+    fun `배경 지우기 reports the click`() {
+        showSheet(SelectionState(mask = mask()))
+
+        // The sheet caps at 45% of the screen, so this row can start below the fold.
+        compose.onNodeWithTag(SelectCutOutTestTag).performScrollTo().performClick()
+
+        assertEquals(1, cutOuts)
+    }
 
     @Test
     fun `the mode chips switch between add and subtract`() {
@@ -98,6 +116,7 @@ class SelectSheetTest {
                     onModeChange = { modes += it },
                     onInvert = { inverts++ },
                     onClear = { clears++ },
+                    onCutOut = { cutOuts++ },
                     onCancel = {},
                     onApply = { applies++ },
                 )
