@@ -1,6 +1,7 @@
 package com.diffuse.feature.editor.tools.erase
 
 import android.graphics.Bitmap
+import android.graphics.Color
 import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -16,6 +17,7 @@ import com.diffuse.core.common.Result
 import com.diffuse.core.data.ProjectRepository
 import com.diffuse.core.data.ProjectSummary
 import com.diffuse.core.imaging.load.SourceImage
+import com.diffuse.core.imaging.model.AdjustKind
 import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.core.imaging.model.ImageRef
 import com.diffuse.core.imaging.model.Operation
@@ -232,11 +234,57 @@ class GenerativeEraseToolTest {
         assertTrue(viewModel.uiState.value.document!!.generativeErases().isEmpty())
     }
 
+
+    // ---- the erase has to sit under the adjust stack ----------------------
+
+    @Test
+    fun `the eraser is shown the frame without the adjustments baked in`() = runTest {
+        val viewModel = withSelection(adjustedFirst = true)
+
+        viewModel.onToolClick(Tool.Erase)
+
+        assertEquals(PLAIN, eraser.lastImage!!.getPixel(0, 0))
+    }
+
+    @Test
+    fun `the erase lands before an adjustment that was already there`() = runTest {
+        val viewModel = withSelection(adjustedFirst = true)
+
+        viewModel.onToolClick(Tool.Erase)
+
+        val operations = viewModel.uiState.value.document!!.operations
+        val erase = operations.indexOfFirst { it is Operation.GenerativeErase }
+        val adjust = operations.indexOfFirst { it is Operation.Adjust }
+        assertTrue(
+            "the erase must run before the adjustment, was $operations",
+            erase in 0 until adjust,
+        )
+        // Moving it puts the erase ahead of the Mask ops it names, which is only legal because
+        // masks change no pixels and are looked up by id.
+        assertTrue(viewModel.uiState.value.document!!.referencesResolve())
+    }
+
+    @Test
+    fun `with nothing adjusted yet the erase is still appended last`() = runTest {
+        val viewModel = withSelection()
+
+        viewModel.onToolClick(Tool.Erase)
+
+        val operations = viewModel.uiState.value.document!!.operations
+        assertTrue(operations.last() is Operation.GenerativeErase)
+    }
+
     // ---- fixtures --------------------------------------------------------
 
     /** Applies a selection first, which is what the eraser consumes. */
-    private suspend fun withSelection(): EditorViewModel {
+    private suspend fun withSelection(adjustedFirst: Boolean = false): EditorViewModel {
         val viewModel = viewModel()
+        // The reported bug needs an unmasked adjustment already in the list: it is made before
+        // there is any selection, so `maskedAdjust` cannot claim it.
+        if (adjustedFirst) {
+            viewModel.onAdjust(AdjustKind.Exposure, EXPOSURE)
+            viewModel.onAdjustFinished()
+        }
         viewModel.onToolClick(Tool.Select)
         viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
         viewModel.applySheet()
@@ -251,13 +299,24 @@ class GenerativeEraseToolTest {
         savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),
     )
 
-    /** Resolves any mask to a full-frame one, so the eraser always has something to work on. */
+    /**
+     * Resolves any mask to a full-frame one, so the eraser always has something to work on.
+     * The frame is colour-coded by whether the document still carries adjustments, which is
+     * how a test can tell which of the two renders the eraser was handed.
+     */
     private class FakeRenderer : Renderer {
         override suspend fun preview(document: EditDocument, targetLongEdgePx: Int) =
-            Result.Success(Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888))
+            Result.Success(frame(document))
 
         override suspend fun full(document: EditDocument, onProgress: (Float) -> Unit) =
-            Result.Success(Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888))
+            Result.Success(frame(document))
+
+        private fun frame(document: EditDocument): Bitmap =
+            Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888).apply {
+                eraseColor(
+                    if (document.operations.any { it is Operation.Adjust }) ADJUSTED else PLAIN,
+                )
+            }
 
         override suspend fun resolveMask(document: EditDocument, maskId: String): Bitmap? =
             document.mask(maskId)?.let { fullFrameMask() }
@@ -314,5 +373,8 @@ class GenerativeEraseToolTest {
         const val SIZE = 32
         const val OPAQUE = 255
         const val ALPHA_SHIFT = 24
+        const val EXPOSURE = 0.3f
+        val PLAIN = Color.rgb(10, 20, 30)
+        val ADJUSTED = Color.rgb(200, 210, 220)
     }
 }
