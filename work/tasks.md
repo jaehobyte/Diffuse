@@ -168,7 +168,7 @@ Only the server endpoint is still outstanding. If a task hits a missing prerequi
 
 ## Phase 7 — Prompt input
 
-- [ ] T34 `PromptBar` component
+- [x] T34 `PromptBar` component
   spec: specs/prompt_input.md, DESIGN.md §4 (prompt bar)
   deps: —
   done when:

@@ -14,9 +14,14 @@ Specs are written and consistent: `ai_provider.md`, `segmentation.md`, `selectio
 (rewritten), `prompt_input.md`, `generative_erase.md` (new), plus amendments to `edit_model.md`,
 `architecture.md` (§2, §6, §8, §9, §10) and `DESIGN.md` (§1 accent ruling, §4 prompt bar).
 
-**T26-T33 done.** Phase 6 (the selection tool) is complete. Next is Phase 7: T34 `PromptBar`.
+**T26-T34 done.** The selection tool is complete and the prompt bar exists. Next is T35,
+voice input.
 
 ## Done
+
+- T34 `PromptBar` — 48dp / 16dp radius / `editSurfaceRaised`, mic and send at 48dp hit areas,
+  Korean placeholder, IME Done submitting the trimmed value, and the mic turning accent only
+  while listening. 8 tests + goldens `prompt_bar_empty` / `_filled` / `_listening`.
 
 - T33 Background removal — `Operation.CutOut`, `CutOutOp` doing `alpha = min(alpha, maskAlpha)`,
   `EditDocument.hasAlpha`, 배경 지우기 writing the mask and the cut-out as one history entry, and
@@ -85,9 +90,20 @@ _T01–T14 trimmed per CLAUDE.md (keep the last 10). Their decisions are still i
 
 ## Next
 
-T34 `PromptBar`, then T35 voice input and T36 the prompt → mask flow.
+T35 voice input behind `SpeechInput`, then T36 the prompt → mask flow.
 
 ## Decisions
+
+### T34
+
+- **Neither icon is accent.** DESIGN.md §1 allows a sheet one accent at rest and that is its
+  Apply pill; a prompt bar taking it would make one sheet commit differently from every other.
+  Send earns its weight from the enabled state and the IME Done key.
+- **`core:ui` gained material-icons-extended.** DESIGN.md §7 mandates one rounded icon set and
+  the core set has no Mic. The library is already in the APK through `:feature:editor`, so this
+  costs nothing.
+- **`BasicTextField` with a hand-rolled placeholder**, not `OutlinedTextField`: Material's field
+  brings its own container, label and indicator, none of which DESIGN.md §4 wants.
 
 ### T33
 

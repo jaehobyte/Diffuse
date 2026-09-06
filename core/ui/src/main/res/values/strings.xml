@@ -2,4 +2,11 @@
 <resources>
     <string name="sheet_cancel">취소</string>
     <string name="sheet_apply">적용</string>
+
+    <!-- specs/prompt_input.md §2. A short noun phrase, not a sentence: SAM 3's text endpoint
+         is concept segmentation, and a sentence degrades it. -->
+    <string name="prompt_placeholder">무엇을 선택할까요? 예: 사람, 하늘</string>
+    <string name="prompt_send">보내기</string>
+    <string name="prompt_mic">음성으로 입력</string>
+    <string name="prompt_stop">그만 듣기</string>
 </resources>
