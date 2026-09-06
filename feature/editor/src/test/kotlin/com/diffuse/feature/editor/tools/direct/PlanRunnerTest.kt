@@ -196,6 +196,25 @@ class PlanRunnerTest {
         assertEquals(savedErases, document.generativeErases().map { it.id })
     }
 
+    /** specs/vibe_edit.md §9.2 + T51: the eraser is told what was removed. */
+    @Test
+    fun `the erase hint is the phrase the Select used`() = runTest {
+        val plan = EditPlan(listOf(PlanStep.Select("bus"), PlanStep.Erase))
+
+        lastDocument(plan)
+
+        assertEquals("bus", eraser.lastHint)
+    }
+
+    @Test
+    fun `an erase with no Select in the plan has no hint to give`() = runTest {
+        val plan = EditPlan(listOf(PlanStep.Erase))
+
+        runner.run(plan, documentWithMask(), preview(), activeMask = fullMask()).toList()
+
+        assertNull(eraser.lastHint)
+    }
+
     @Test
     fun `the mask the eraser was shown is larger than the selection`() = runTest {
         val plan = EditPlan(listOf(PlanStep.Select("나무"), PlanStep.Erase))

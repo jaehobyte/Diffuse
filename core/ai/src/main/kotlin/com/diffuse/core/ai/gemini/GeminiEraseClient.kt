@@ -157,18 +157,27 @@ internal class GeminiEraseClient(
          * most reliable.
          */
         const val INSTRUCTION =
-            "The image contains a solid pure-white region. Replace that region with " +
-                "photorealistic content that continues the surrounding scene: match its " +
-                "lighting, texture, perspective, focus and grain so the result looks like a " +
-                "single unedited photograph. Do not introduce any new object, person, text or " +
-                "watermark. Do not alter anything outside the white region. Return only the " +
-                "edited image."
+            "You are editing a photograph. A solid pure-white patch has been painted over the " +
+                "area to remove. Fill that entire patch with photorealistic content that " +
+                "continues the scene behind it, matching the surrounding lighting, texture, " +
+                "perspective, focus, grain and noise, so the result looks like one unedited " +
+                "photograph that never contained the thing that was there. Requirements: no " +
+                "white or near-white patch may remain where the painted area was; returning the " +
+                "input image unchanged is not an acceptable answer; do not draw any new object, " +
+                "person, text or watermark; do not alter anything outside the painted area; do " +
+                "not add a border, frame or caption. Return only the edited image."
 
+        /**
+         * T51: the hint says what was **removed**, not what to draw. It used to read "The white
+         * region previously contained: <hint>." beside "Do not introduce any new object", which
+         * a model can read as an instruction to paint the thing back in.
+         */
         fun instruction(hint: String?): String =
             if (hint.isNullOrBlank()) {
                 INSTRUCTION
             } else {
-                "$INSTRUCTION The white region previously contained: $hint."
+                "$INSTRUCTION The painted area used to contain $hint, which has been removed on " +
+                    "purpose: reconstruct what was behind it and do not draw it again."
             }
 
         private const val TAG = "GeminiEraseClient"

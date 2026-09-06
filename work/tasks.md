@@ -262,7 +262,7 @@ straight spec-conformance bug; the rest are a mask margin, two prompt rewrites a
   touches: feature/editor/tools/select/MaskOps.kt, feature/editor/tools/erase,
   feature/editor/tools/direct, feature/editor tests, core/imaging/src/test/resources/golden
 
-- [ ] T51 The erase instruction, and an answer that is still a hole
+- [x] T51 The erase instruction, and an answer that is still a hole
   spec: specs/generative_erase.md §4, §5, §6
   deps: —
   report: "erase 시에 image가 inpainting되지 않고 그냥 하얀색만 남는 경우가 있어."

@@ -2,11 +2,12 @@
 
 ## Current
 
-**T50 done. Next: T51 — the erase instruction and the no-op guard.**
+**T51 done. Next: T52 — English phrases and complete plans from the planner.** Then T53.
 
-Then T52 (English phrases, complete plans) and T53 (the combinations, proven end to end).
-
-## Done
+- T51 The erase instruction says no white may remain and that echoing the input is not an answer;
+  the hint now says the thing was **removed** rather than naming what to draw, and `PlanRunner`
+  passes the `Select` phrase. `GeminiEraseProvider` refuses a result whose masked region came back
+  white (≥90% of sampled pixels), so a no-op answer is a retry rather than a committed hole.
 
 - T50 The erase runs through the selection **plus a margin** — `MaskOps.dilated` (separable,
   binary), `EraseMask` owning the one radius, and `EraseCommit` storing the dilated mask beside

@@ -8,6 +8,31 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T51 — the hint was telling the model to draw the thing back
+
+The old hint sentence read "The white region previously contained: a car." immediately after "Do
+not introduce any new object". Those two together are ambiguous at best, and for a model that is
+being asked to *remove* a car, naming the car is the wrong half of the sentence to lead with. It
+now says the thing "has been removed on purpose: reconstruct what was behind it and do not draw it
+again", and `PlanRunner` passes the phrase the `Select` step used, so the 지시 tool's erase is the
+one that actually has a hint to give. `EraseController` still passes null — the manual tool never
+learns a name for what the user tapped.
+
+The instruction itself gained the two sentences the device's failure needed: no white or near-white
+patch may remain, and returning the input unchanged is not an answer.
+
+### T51 — a white answer is a failure, not a document
+
+Prompt changes are a probability, not a guarantee, so the provider now checks: if ≥ 90% of the
+sampled masked pixels come back within 2/255 of pure white, the erase fails with `Unavailable`
+rather than committing a white patch and an undo the user has to find. Sampling every 4th pixel
+keeps it off the profile — 65k reads on a 1080px preview — and the false positive is the one case
+generative_erase.md §4 already calls benign (a white wall, snow, a blown sky), where the cost is a
+retry rather than lost work.
+
+Deliberately **not** a new `AppError`: "the model gave us nothing usable" is what `Unavailable`
+already means everywhere else in §6.
+
 ### T50 — the margin mask is a second `Mask` op, and the selection stays where it was
 
 The margin has to be on the mask the *document* stores, not only on the pixels sent to Gemini: the

@@ -24,6 +24,10 @@ class FakeEraseProvider : EraseProvider {
     var lastMask: Bitmap? = null
         private set
 
+    /** T51: what the caller said was removed, so the model is not asked to draw it back. */
+    var lastHint: String? = null
+        private set
+
     private var nextError: AppError? = null
 
     fun failNext(error: AppError) {
@@ -41,6 +45,7 @@ class FakeEraseProvider : EraseProvider {
         }
         eraseCount++
         lastMask = mask
+        lastHint = hint
         val fill = meanColourOutsideMask(image, mask)
         val out = image.copy(Bitmap.Config.ARGB_8888, true)
         for (y in 0 until out.height) {

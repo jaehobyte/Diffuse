@@ -113,9 +113,15 @@ class PlanRunner(
 
         private var session: SegSession? = null
 
+        /** T51: what the last `Select` was looking for, so the eraser can be told what is gone. */
+        private var phrase: String? = null
+
         suspend fun apply(step: PlanStep, document: EditDocument): Result<EditDocument> =
             when (step) {
-                is PlanStep.Select -> select(step.phrase, document)
+                is PlanStep.Select -> {
+                    phrase = step.phrase
+                    select(step.phrase, document)
+                }
                 is PlanStep.Adjust -> Result.Success(
                     document.withAdjust(
                         step.kind,
@@ -191,7 +197,7 @@ class PlanRunner(
                 missing()
             } else {
                 val dilated = EraseMask.dilated(selected)
-                when (val result = erase.erase(preview, dilated, hint = null)) {
+                when (val result = erase.erase(preview, dilated, hint = phrase)) {
                     is Result.Failure -> result
                     is Result.Success -> eraseCommit.apply(document, dilated, result.value)
                 }

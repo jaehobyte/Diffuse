@@ -2,6 +2,7 @@ package com.diffuse.core.ai.gemini
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Color
 import com.diffuse.core.ai.Availability
 import com.diffuse.core.ai.EraseProvider
 import com.diffuse.core.common.AppError
@@ -53,7 +54,7 @@ class GeminiEraseProvider @Inject internal constructor(
             coroutineContext.ensureActive()
 
             when (val outcome = client.erase(jpeg, hint)) {
-                is GeminiEraseClient.Outcome.Success -> decode(outcome.image, image)
+                is GeminiEraseClient.Outcome.Success -> filled(decode(outcome.image, image), mask)
                 is GeminiEraseClient.Outcome.Failure -> Result.Failure(outcome.error)
             }
         }
@@ -91,7 +92,59 @@ class GeminiEraseProvider @Inject internal constructor(
         )
     }
 
+    /**
+     * T51: the model sometimes answers with the whitened input, unchanged — on the device that
+     * showed up as a flat white patch where the object used to be. A patch that is still white is
+     * not a result, so it fails and the user can retry rather than committing a hole to history.
+     *
+     * The one photo where this misfires is the one §4 already calls out as benign — a white wall,
+     * snow, an overexposed sky — and there the cost is a retry, not lost work.
+     */
+    private fun filled(result: Result<Bitmap>, mask: Bitmap): Result<Bitmap> = when (result) {
+        is Result.Failure -> result
+        is Result.Success ->
+            if (stillAHole(result.value, mask)) Result.Failure(AppError.Unavailable) else result
+    }
+
+    /** Sampled every [SAMPLE_STEP] pixels: this runs on the main result path, not in a test. */
+    private fun stillAHole(result: Bitmap, mask: Bitmap): Boolean {
+        val counts = IntArray(2)
+        var y = 0
+        while (y < result.height) {
+            sampleRow(result, mask, y, counts)
+            y += SAMPLE_STEP
+        }
+        val masked = counts[MASKED_COUNT]
+        return masked > 0 && counts[WHITE_COUNT].toFloat() / masked >= WHITE_RESULT_THRESHOLD
+    }
+
+    private fun sampleRow(result: Bitmap, mask: Bitmap, y: Int, counts: IntArray) {
+        var x = 0
+        while (x < result.width) {
+            val inside = (mask.getPixel(x, y) ushr ALPHA_SHIFT) != 0
+            if (inside) counts[MASKED_COUNT]++
+            if (inside && isNearWhite(result.getPixel(x, y))) counts[WHITE_COUNT]++
+            x += SAMPLE_STEP
+        }
+    }
+
+    private fun isNearWhite(pixel: Int): Boolean =
+        Color.red(pixel) >= NEAR_WHITE_CHANNEL &&
+            Color.green(pixel) >= NEAR_WHITE_CHANNEL &&
+            Color.blue(pixel) >= NEAR_WHITE_CHANNEL
+
     private companion object {
+        /** Within 2/255 of pure white, which is what a JPEG round trip leaves of #FFFFFF. */
+        const val NEAR_WHITE_CHANNEL = 253
+
+        /** Below this the model did fill something, even if it filled it badly. */
+        const val WHITE_RESULT_THRESHOLD = 0.9f
+
+        const val SAMPLE_STEP = 4
+        const val ALPHA_SHIFT = 24
+        const val MASKED_COUNT = 0
+        const val WHITE_COUNT = 1
+
         fun availabilityFor(config: GeminiConfig): Availability =
             if (config.isConfigured) {
                 Availability.Ready

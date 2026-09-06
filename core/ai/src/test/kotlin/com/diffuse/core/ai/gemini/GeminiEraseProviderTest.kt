@@ -144,6 +144,35 @@ class GeminiEraseProviderTest {
         assertEquals(Bitmap.Config.ARGB_8888, bitmap.config)
     }
 
+    /** T51: the device's first symptom — the model echoes the whitened input back. */
+    @Test
+    fun `a result that is still white where the mask was is refused`() = runTest {
+        server.enqueue(imageResponse(SIZE, SIZE, Color.WHITE))
+
+        val outcome = provider.erase(image(SIZE, SIZE), mask(SIZE, SIZE), hint = null)
+
+        assertEquals(Result.Failure(AppError.Unavailable), outcome)
+    }
+
+    @Test
+    fun `a result that was actually filled is kept`() = runTest {
+        server.enqueue(imageResponse(SIZE, SIZE, Color.rgb(30, 90, 40)))
+
+        val outcome = provider.erase(image(SIZE, SIZE), mask(SIZE, SIZE), hint = null)
+
+        assertEquals(Color.rgb(30, 90, 40), (outcome as Result.Success).value.getPixel(2, 2))
+    }
+
+    @Test
+    fun `white outside the mask is nobody's business`() = runTest {
+        // Only the left half is masked; a white right half is just a bright photo.
+        server.enqueue(imageResponse(SIZE, SIZE, Color.rgb(30, 90, 40), rightHalf = Color.WHITE))
+
+        val outcome = provider.erase(image(SIZE, SIZE), mask(SIZE, SIZE), hint = null)
+
+        assertTrue(outcome is Result.Success)
+    }
+
     @Test
     fun `a failure from the client is passed straight through`() = runTest {
         server.enqueue(
@@ -225,9 +254,14 @@ class GeminiEraseProviderTest {
         return bitmap
     }
 
-    private fun imageResponse(width: Int, height: Int): MockResponse {
+    private fun imageResponse(
+        width: Int,
+        height: Int,
+        fill: Int? = null,
+        rightHalf: Int? = null,
+    ): MockResponse {
         val out = ByteArrayOutputStream()
-        Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        responseBitmap(width, height, fill, rightHalf)
             .compress(Bitmap.CompressFormat.PNG, 100, out)
         return json(
             """
@@ -236,6 +270,17 @@ class GeminiEraseProviderTest {
             ]}}]}
             """.trimIndent(),
         )
+    }
+
+    private fun responseBitmap(width: Int, height: Int, fill: Int?, rightHalf: Int?): Bitmap {
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        if (fill != null) bitmap.eraseColor(fill)
+        if (rightHalf == null) return bitmap
+        for (pixel in 0 until width * height) {
+            val x = pixel % width
+            if (x >= width / 2) bitmap.setPixel(x, pixel / width, rightHalf)
+        }
+        return bitmap
     }
 
     private fun json(body: String) = MockResponse()
