@@ -8,6 +8,24 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T54 — three things the spec did not settle
+
+**The band centres and the sextant boundaries are named constants.** detekt's MagicNumber does not
+spare enum arguments, and `Red(0f), Orange(30f), …` trips it seven times. The constants sit
+directly under the enum (the shape `AdjustKind`'s `ZERO_CENTRED` already uses), so §2's table is
+still the one place a reader looks.
+
+**`HslColor` packs its own RGB rather than calling `render.packRgb`.** It lives in the model layer,
+which does not depend on the render layer, and importing across that edge to save three lines is a
+worse trade than repeating the clamp. The *conversion* is still defined once, which is the part the
+chips and the ops must agree on.
+
+**`Ops.adjust` and `labelRes()` both early-return on `kind.hsl` and keep an `else -> error(...)` in
+the `when` over the remaining ten.** Listing 24 names in a branch to preserve exhaustiveness is
+noise, and the error message says exactly why the branch is unreachable. This is also what made the
+T54/T55 boundary move: `labelRes()` stops compiling the moment the kinds exist, so its mapping and
+the three `mix_*` strings had to ship with the kinds rather than with the sheet.
+
 ### T53 — the rows T49 already proved were not written twice
 
 tasks.md listed six combinations. Four of them — a masked adjust after an erase, an adjust before

@@ -38,3 +38,13 @@ cutout_render.png
 
 # T38 (specs/generative_erase.md 6)
 generative_erase_render.png
+
+# T54 (specs/adjust_hsl.md §10)
+hsl_blue_saturation_+0.5.png
+hsl_blue_saturation_-0.5.png
+hsl_red_hue_+0.5.png
+hsl_red_hue_-0.5.png
+hsl_red_luminance_+0.5.png
+hsl_red_luminance_-0.5.png
+hsl_red_saturation_+0.5.png
+hsl_red_saturation_-0.5.png

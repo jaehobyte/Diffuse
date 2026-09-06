@@ -329,10 +329,122 @@ straight spec-conformance bug; the rest are a mask margin, two prompt rewrites a
 
 ---
 
+## Phase 11 — 혼합: HSL 색상 보정
+
+Eight hue bands × 색조/채도/휘도, so "the reds are too strong" and "make the sky bluer" stop being
+requests only a global slider can half-answer. specs/adjust_hsl.md is the whole feature.
+
+**It adds 24 `AdjustKind` entries and one op function, and nothing else.** No new `Operation`, no
+JSON `v` bump, no renderer path, no new `PlanStep`, no new `AppError` case, no new dependency. If a
+task here looks like it needs one, the design drifted — block it rather than adding one.
+
+### Open decisions (Phase 11) — a human answers these, the loop must not
+
+1. **render.md line 54** ("Golden image per `AdjustKind` at +0.5 and −0.5") is no longer what the
+   project does now that there are 34 kinds; adjust_hsl.md §10 is the rule for the HSL ones. It
+   needs one sentence pointing there, and `specs/*.md` is frozen for the loop.
+2. **adjust_hsl.md §7's two rulings** — the selected chip is an `editInk` ring rather than the
+   accent, and 색조 labels both `color_tint` and `mix_hue` — are taken on DESIGN.md's behalf.
+   Cheaper to overrule before T55 records its goldens than after.
+
+Neither blocks T54–T56: the tasks proceed on the spec as written.
+
+- [x] T54 The bands, the maths, and 24 kinds
+  spec: specs/adjust_hsl.md §2, §3, §4, §5, §10; specs/edit_model.md; specs/render.md
+  deps: —
+  done when:
+    - `HslBand`, `HslChannel`, `HslTarget` and `HslColor` in `core/imaging/model/Hsl.kt`;
+      `AdjustKind` gains `hsl: HslTarget? = null` and the 24 `Hsl<Band><Channel>` entries,
+      **appended**, so no existing entry moves
+    - the band centres live in `HslBand` and nowhere else — no degree literal at a call site
+    - `HslOps` implements §4 exactly: tent weights that sum to 1 with a weight of 0 at every other
+      band's centre, the `smoothstep(0.05, 0.20, s)` neutral gate, and the three channel formulas.
+      휘도 scales RGB by `2^(v × w × 0.5)`; it does not write HSL's `l`
+    - `Ops.adjust` dispatches every HSL kind through `kind.hsl` in **one** branch, not 24, and
+      without a `!!`. Needing either means §3's single nullable field was not followed
+    - `Pixels.kt`'s `mapPixels`, `smoothstep`, `exposureGain` and `packRgb` are reused, not
+      re-implemented, and `HslColor.fromRgb` writes into a scratch array the pass owns — one
+      allocation per pass, never one per pixel
+    - **the renderer is not touched.** T49's in-order walk already dispatches `Adjust`, and the
+      masked path already blends. If a change there looks necessary, stop and block
+    - the JSON root `v` stays 1 and no serializer changes: only enum names were added
+    - goldens: the eight files of §10, listed in `golden_manifest.txt` under a `# T54` heading.
+      Nothing else in that manifest moves
+    - property tests per §10, on a band strip the test **builds in code**. No new file under
+      `fixtures/` — those are human-committed (testing.md §7)
+    - `EditDocumentJson` round-trips an HSL `Adjust` carrying a `maskId`, and an unknown kind still
+      drops with the document still loading
+    - `labelRes()` maps the 24 kinds to their **channel** label and the three `mix_*` strings of §9
+      exist. This is here rather than in T55 because `AdjustKind` gaining entries makes that `when`
+      non-exhaustive: without it `:feature:editor` does not compile and T54 cannot be green on its
+      own. The band labels and everything else about the sheet stay in T55
+  touches: core/imaging/model/Hsl.kt, core/imaging/model/Operation.kt,
+  core/imaging/render/HslOps.kt, core/imaging/render/Ops.kt, core/imaging tests,
+  core/imaging/src/test/resources/golden, core/imaging/src/test/resources/golden_manifest.txt,
+  feature/editor/tools/ToolLabels.kt, feature/editor strings.xml
+
+- [ ] T55 혼합 sheet — the chip row and the tool
+  spec: specs/adjust_hsl.md §6, §7, §9, §10; specs/adjust_color.md; DESIGN.md §4, §5
+  deps: T54
+  done when:
+    - `AdjustSheet` gains **one** parameter, `header: @Composable ColumnScope.() -> Unit = {}`,
+      rendered between the "선택 영역에만" toggle and the sliders. `light_sheet_open`,
+      `color_sheet_open` and `detail_sheet_open` pass **without re-recording** — one of them moving
+      means the parameter was not added the way §6 says. The sheet is not duplicated
+    - `Tool.Mix(editor_tool_mix, Icons.Rounded.Colorize)` inserted **after `Tool.Color`**, and
+      `ToolSheetHost` gains one `when` branch. Adding a tool stays "one entry here plus one tool
+      definition" (architecture.md §5.2)
+    - `MixSheet` per §6: the chip row as `header`, the selected band's three kinds as the sliders
+      in 색조 → 채도 → 휘도 order, `maskOption` forwarded unchanged so 선택 영역에만 works here too,
+      and the selected band in `rememberSaveable` — not in the document, not in `EditorUiState`
+    - chips per §6: a 32dp swatch filled from `HslColor.toRgb(centre, 0.7f, 0.5f)` (the same
+      conversion the maths uses, so a swatch cannot drift from its band), 48dp hit area, 12dp
+      spacing, selected marked by a 2dp `editInk` ring and an `editInk` label. **The sheet's one
+      accent stays on 적용** (§7); no chip is ever accent
+    - `stepLabel()` beside `labelRes()` composes the band prefix, and `DirectSheet` renders through
+      it. No new step template. (`labelRes()` and the three channel strings landed in T54 — see the
+      note there)
+    - the remaining ten strings of §9 in `feature/editor` `strings.xml`; nothing hardcoded in a
+      Composable
+    - goldens `mix_sheet_open` and `mix_sheet_band_selected`; `editor_shell_default` re-recorded
+      **for one reason only** — the strip gains an eighth item — and the commit message says so
+    - tests: §10's sheet list, including the drag→one history entry→undo case and the assertion
+      that the Red swatch's colour is not the `accent` token
+  touches: feature/editor/tools/mix, feature/editor/tools/AdjustSheet.kt,
+  feature/editor/tools/ToolSheetHost.kt, feature/editor/tools/ToolLabels.kt,
+  feature/editor/tools/direct/DirectSheet.kt, feature/editor/Tool.kt, feature/editor strings.xml,
+  feature/editor tests, feature/editor screenshot goldens
+
+- [ ] T56 `adjust_color_range` — the planner's fifth function
+  spec: specs/adjust_hsl.md §8, §10; specs/vibe_edit.md §4, §5
+  deps: T54
+  done when:
+    - `adjust_color_range` declared in `GeminiPlanCatalog` per §8, as English `internal` constants
+      beside the other four. Wire payload, so **not** in `strings.xml`
+    - `GeminiPlanClient` expands one call into up to three ordinary `PlanStep.Adjust` steps in
+      hue → saturation → luminance order, each clamped to the kind's range. **No new `PlanStep`, no
+      `PlanRunner` change, no new §11 template.** If one looks necessary, stop and block — §8 chose
+      this shape precisely so the runner and the sheet stay untouched
+    - drop rules per §8: an unknown `color` drops the call and later calls survive; a non-finite or
+      absent channel drops that channel only; all three absent contributes no steps, and a plan
+      that ends up empty is a **valid** empty plan, not a failure
+    - `adjust`'s `kind` enum and `adjustKindOf` filter `it.hsl == null`, so the wire still carries
+      exactly ten names. The `wireName` KDoc ("§4's ten `AdjustKind` names") is updated to say why
+      the HSL kinds never travel that path
+    - `PLAN_SYSTEM_INSTRUCTION` gains §8's one rule and one example, and nothing else
+    - tests: §10's planner list, including the recorded body listing ten `kind` values with no HSL
+      among them, and `blue` + two channels decoding to two steps in order
+  touches: core/ai/gemini/GeminiPlanCatalog.kt, core/ai/gemini/GeminiPlanClient.kt, core/ai tests
+
+---
+
 ## Backlog
 
 _Empty._ Phase 10 closed what the first device run found. The next queue comes from the **second**
 device run: T51 and T52 are prompt rewrites, and only a real model can say whether they hold.
+
+Still waiting on that second device run; Phase 11 is queued ahead of it because it needs no device
+and no key — every one of its tests is a golden, a property or `MockWebServer`.
 
 ---
 
@@ -344,7 +456,7 @@ device run: T51 and T52 are prompt rewrites, and only a real model can say wheth
   Revisit only if offline selection becomes a requirement.
 - D10 Generative fill / replace, reusing the T42 `GeminiEraseClient` boundary. The only new pieces
   are a different instruction constant and a prompt bar to source it from. Once it exists it is also
-  a fifth entry in the T45 function catalog.
+  another entry in the T45 function catalog.
 - D11 Prompt history in the 지시 sheet — the last few requests, tappable to re-run. Deliberately out
   of Phase 9 (vibe_edit.md §13); the plan itself is never persisted.
 - D12 `crop` as a planner function. Excluded from T45 on purpose (vibe_edit.md §4): a model
@@ -352,3 +464,9 @@ device run: T51 and T52 are prompt rewrites, and only a real model can say wheth
   a preview of the rect before it can be offered, not another line of step text.
 - D13 A multi-turn planning loop (ADR-012's rejected alternative). Only worth revisiting if
   single-shot plans are measurably wrong often enough to pay a round trip per step.
+- D14 Folding consecutive HSL adjusts into one pass. Rejected as an optimisation in
+  adjust_hsl.md §5: evaluating every band against the input pixel simultaneously is a different
+  result from applying the ops in order, so it is a maths change. Revisit only with a `bench.sh`
+  number showing a realistic document missing the preview budget.
+- D15 Per-band range editing — the eyedropper that redefines where a band starts and ends. The
+  eight centres in adjust_hsl.md §2 are fixed in v1.

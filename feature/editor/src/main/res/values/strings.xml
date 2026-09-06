@@ -99,4 +99,9 @@
     <string name="detail_title">디테일</string>
     <string name="detail_sharpen">선명도</string>
     <string name="detail_vignette">비네트</string>
+
+    <!-- specs/adjust_hsl.md §9 -->
+    <string name="mix_hue">색조</string>
+    <string name="mix_saturation">채도</string>
+    <string name="mix_luminance">휘도</string>
 </resources>

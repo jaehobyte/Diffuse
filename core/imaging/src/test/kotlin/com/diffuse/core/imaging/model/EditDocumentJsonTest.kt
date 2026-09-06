@@ -73,6 +73,20 @@ class EditDocumentJsonTest {
     }
 
     @Test
+    fun `a masked HSL adjust round trips`() {
+        // specs/adjust_hsl.md §3: 24 more kinds, and no serializer change to carry them.
+        val kind = AdjustKind.entries.first { it.hsl?.band == HslBand.Blue }
+        val operations = listOf(
+            Operation.Mask("m", ImageRef("/projects/d/mask.png")),
+            Operation.Adjust("a", kind, 0.5f, maskId = "m"),
+        )
+
+        val restored = EditDocumentJson.decode(EditDocumentJson.encode(document(operations)))
+
+        assertEquals(operations, restored.operations)
+    }
+
+    @Test
     fun `the encoded root carries the schema version`() {
         assertTrue(EditDocumentJson.encode(document()).contains("\"v\":1"))
     }
