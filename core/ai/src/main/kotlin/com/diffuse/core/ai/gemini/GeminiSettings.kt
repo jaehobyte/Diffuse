@@ -22,7 +22,7 @@ import javax.inject.Singleton
 @Singleton
 class GeminiSettings @Inject constructor(
     @ApplicationContext context: Context,
-) {
+) : GeminiConfigSource {
 
     private val prefs: SharedPreferences =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -31,6 +31,8 @@ class GeminiSettings @Inject constructor(
 
     /** Emits on every override, so availability re-derives without a probe (§7). */
     val config: StateFlow<GeminiConfig> = _config
+
+    override fun current(): GeminiConfig = _config.value
 
     fun update(apiKey: String) {
         val normalized = apiKey.trim()

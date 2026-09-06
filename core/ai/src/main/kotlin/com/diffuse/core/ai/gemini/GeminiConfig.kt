@@ -19,3 +19,11 @@ data class GeminiConfig(
         const val DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com"
     }
 }
+
+/**
+ * Read on every call rather than injected once, so a key typed into the settings sheet takes
+ * effect without rebuilding the client. `GeminiSettings` is the real implementation.
+ */
+fun interface GeminiConfigSource {
+    fun current(): GeminiConfig
+}

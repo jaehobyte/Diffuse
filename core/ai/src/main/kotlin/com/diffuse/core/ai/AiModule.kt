@@ -1,6 +1,9 @@
 package com.diffuse.core.ai
 
-import com.diffuse.core.ai.erase.Sam3EraseProvider
+import com.diffuse.core.ai.gemini.GeminiConfigSource
+import com.diffuse.core.ai.gemini.GeminiEraseClient
+import com.diffuse.core.ai.gemini.GeminiEraseProvider
+import com.diffuse.core.ai.gemini.GeminiSettings
 import com.diffuse.core.ai.sam3.Sam3Client
 import com.diffuse.core.ai.sam3.Sam3ConfigSource
 import com.diffuse.core.ai.sam3.Sam3SegmentationProvider
@@ -31,7 +34,10 @@ internal abstract class AiModule {
     abstract fun speech(impl: AndroidSpeechInput): SpeechInput
 
     @Binds
-    abstract fun erase(impl: Sam3EraseProvider): EraseProvider
+    abstract fun geminiConfig(impl: GeminiSettings): GeminiConfigSource
+
+    @Binds
+    abstract fun erase(impl: GeminiEraseProvider): EraseProvider
 
     companion object {
         @Provides
@@ -51,5 +57,15 @@ internal abstract class AiModule {
             okHttp: OkHttpClient,
             logger: com.diffuse.core.common.Logger,
         ): Sam3Client = Sam3Client(config, dispatchers, okHttp, logger)
+
+        /** Provided for the same reason `Sam3Client` is: the wire stays inside this module. */
+        @Provides
+        @Singleton
+        fun geminiEraseClient(
+            config: GeminiConfigSource,
+            dispatchers: DispatcherProvider,
+            okHttp: OkHttpClient,
+            logger: com.diffuse.core.common.Logger,
+        ): GeminiEraseClient = GeminiEraseClient(config, dispatchers, okHttp, logger)
     }
 }

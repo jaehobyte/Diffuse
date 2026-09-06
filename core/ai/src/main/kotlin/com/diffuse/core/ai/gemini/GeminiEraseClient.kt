@@ -22,11 +22,6 @@ import kotlin.coroutines.coroutineContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-/** Read on every call, so a key typed into the sheet takes effect without rebuilding the client. */
-internal fun interface GeminiConfigSource {
-    fun current(): GeminiConfig
-}
-
 /**
  * specs/generative_erase.md §5, §6. One endpoint, one request shape: the whitened image plus an
  * instruction, answered with an image.

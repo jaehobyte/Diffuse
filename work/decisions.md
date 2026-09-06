@@ -20,6 +20,38 @@ Nothing in `work/tasks.md` is left. What a human still owes:
 
 ## Decisions
 
+### T42 — the provider takes `DispatcherProvider`, which §7's snippet does not show
+
+§7 sketches `GeminiEraseProvider(client, settings)` but then requires "all of it on
+`DispatcherProvider.io`, with `ensureActive()` before the network call". The bitmap work —
+downscale, `WhiteFill`, JPEG compress — happens in the provider, not the client, so the provider
+needs the dispatcher itself. Three constructor parameters, not two.
+
+It also uses `dispatchers.default` for the scope `availability`'s `stateIn` runs in, which is what
+lets a test make that mapping settle synchronously by handing back `Dispatchers.Unconfined`.
+
+### T42 — `availability` is a mapped `StateFlow`, and the scope is never cancelled
+
+`GeminiEraseProvider` is a `@Singleton` with no lifecycle, so the `CoroutineScope` backing
+`stateIn` lives as long as the process — the same lifetime the flow it exposes has. `Eagerly` so
+`availability.value` is correct before anyone collects, which is what `EraseController` reads on
+its first frame.
+
+### T42 — the "whitened bytes on the wire" test asserts near-white, not `0xFFFFFFFF`
+
+The image is sent as JPEG q90, so the decoded bytes are white to within a quantization step and
+the boundary column is visibly off (0xFFF5FFFF in the first run). Asserting exact white would
+have been asserting the absence of lossy compression, which is not what this test is for. It
+checks every channel is ≥ 235 inside the mask, and that the unmasked half is still recognizably
+the original blue — which is what actually proves `WhiteFill` sits in the path.
+
+### T42 — `MaskPng.kt` went with the other three
+
+§13 makes it conditional on nothing referencing it afterwards. After `Sam3EraseClient` and
+`Sam3EraseProvider` were removed, a repo-wide grep found its own declaration and nothing else, so
+it was deleted rather than moved to `gemini/`. The Gemini path sends no mask over the wire at all.
+
+
 ### T41 — a pixel loop, not a `SRC_IN` composite
 
 §4 offers either. The loop wins on readability: the composite needs a scratch bitmap, a `Paint`

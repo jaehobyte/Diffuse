@@ -2,13 +2,15 @@
 
 ## Current
 
-**T41 — `WhiteFill`, painting the hole.**
-1. `internal object WhiteFill.apply(image, mask): Bitmap` in `core/ai/gemini`.
-2. Masked alpha non-zero → opaque `#FFFFFFFF`; everything else copied verbatim; `ARGB_8888` out
-   at the input size; the input is never mutated → verify: a pixel-level test.
-3. Binary in, binary out: no feathering, no partial blend (§4).
-4. A mask whose size differs from the image's fails loudly.
-5. Verify: `WhiteFillTest`, then `scripts/check.sh` green.
+**T42 — `GeminiEraseProvider`, and the proxy comes out.**
+1. `GeminiImageCodec`: 1024 long edge, JPEG q90 → 75 once, null past 20 MB; the mask scaled
+   nearest-neighbour → verify: `GeminiImageCodecTest`.
+2. `GeminiEraseProvider`: §7's five steps in order, on `dispatchers.io`, `ensureActive()` before
+   the call; `availability` derived from the key with no probe.
+3. `AiModule` binds it; the `Sam3EraseProvider` binding goes.
+4. Delete exactly §13's three files, plus `MaskPng.kt` once nothing references it.
+5. Verify: the load-bearing test decodes the recorded body and finds a masked pixel white; the
+   T38 tests and the `generative_erase_render` golden pass unedited; `scripts/check.sh` green.
 
 ## Done
 

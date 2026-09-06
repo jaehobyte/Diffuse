@@ -103,7 +103,7 @@ generative_erase.md §13 lists the three files that come out, and nothing else m
       size differs from the image's fails loudly
   touches: core/ai/gemini
 
-- [ ] T42 `GeminiEraseProvider`, and the proxy comes out
+- [x] T42 `GeminiEraseProvider`, and the proxy comes out
   spec: specs/generative_erase.md §7, §11, §12, §13
   deps: T40, T41
   done when:
