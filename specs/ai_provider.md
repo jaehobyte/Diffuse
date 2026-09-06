@@ -1,10 +1,10 @@
 # specs/ai_provider.md — AI provider boundary
 
-Owner tasks: T26 (segmentation), T39–T42 (erase)
+Owner tasks: T26 (segmentation), T39–T42 (erase), T44 (planning)
 Module: `core:ai`
 Depends on: architecture.md §6 (extension points), §9 (errors)
 Decisions: ADR-009 (server-side SAM 3), ADR-011 (the device calls Gemini directly; supersedes
-ADR-010, the sam3-server proxy)
+ADR-010, the sam3-server proxy), ADR-012 (one planning call, the app executes)
 
 ## 1. Purpose
 Put every model behind a small suspend interface so the editor never knows which runtime is
@@ -12,9 +12,22 @@ underneath, tests run with fakes, and a different backend slots in without touch
 `feature:editor`. In v2 both providers happen to be HTTP clients; nothing in the interfaces says so.
 
 ## 2. Module
-`core:ai` depends on `core:common` and on `core:imaging` **only for `ImageRef`**. It must not depend
-on Compose, on Hilt-android UI, or on any `feature:*`. `feature:editor` depends on `core:ai`. Add the
-edge to dependency-guard.
+`core:ai` depends on `core:common`, and on `core:imaging` for **`AdjustKind` alone**. It must not
+depend on Compose, on Hilt-android UI, on Room, or on any `feature:*`. `feature:editor` depends on
+`core:ai`.
+
+That second edge is new in T44 and is worth being precise about, because this section was wrong
+before it. T26–T42 wrote `core:ai` against `Bitmap` and never imported `ImageRef`, so `core/ai/
+build.gradle.kts` declared **no** dependency on `core:imaging` at all — the "only for `ImageRef`"
+this paragraph used to claim described an intention, not the build file. `EditPlanProvider` makes
+the edge real: it returns steps naming an adjustment, and the honest type for one is the enum the
+model layer already defines. Returning the wire's function name as a `String` instead would split
+one validation across two modules and leave `PlanStep` unable to say what it means.
+
+`AdjustKind` is a pure Kotlin enum with no Android dependency, and dependency-guard's allowlist has
+permitted `:core:ai → :core:imaging` since T01, so T44 adds one line to a module build file and
+nothing to the frozen root one. Nothing else in `core:imaging` may be reached for — no
+`EditDocument`, no `Operation`, no renderer.
 
 ## 3. Interfaces
 ```kotlin
@@ -53,7 +66,28 @@ interface EraseProvider {
     /** [mask] is ALPHA_8 at [image]'s size. Opaque pixels are the region to erase. */
     suspend fun erase(image: Bitmap, mask: Bitmap, hint: String?): Result<Bitmap>
 }
+
+/** One step of a plan. Each maps onto a tool that already exists; see vibe_edit.md §4. */
+sealed interface PlanStep {
+    data class Select(val phrase: String) : PlanStep
+    data class Adjust(val kind: AdjustKind, val value: Float, val masked: Boolean) : PlanStep
+    object Erase : PlanStep
+    object CutOut : PlanStep
+}
+
+/** [steps] in execution order. Empty means the model declined to act — not a failure. */
+data class EditPlan(val steps: List<PlanStep>)
+
+interface EditPlanProvider {
+    val availability: StateFlow<Availability>
+    /** Decides which tools to run for [request]. One call, no session, no state. */
+    suspend fun plan(image: Bitmap, request: String): Result<EditPlan>
+}
 ```
+
+`EditPlanProvider` chooses a workflow; it never returns pixels. Executing the steps is
+`feature:editor`'s job (vibe_edit.md §9), which is what keeps this interface as small as the other
+two and lets a different planner — or a hand-written one — slot in behind it.
 
 `EraseProvider` says nothing about *how* the hole is described to a model. Painting the masked
 region white is `GeminiEraseProvider`'s private business (generative_erase.md §4), so swapping the
@@ -104,9 +138,14 @@ backend under this interface leaves `EraseController` and `FakeEraseProvider` un
 `FakeEraseProvider`: fills the mask region with the mean color of the pixels in a 4px band just
 outside the mask. Deterministic, so goldens are stable.
 
-No test reaches an external host. `Sam3Client` and `GeminiEraseClient` tests use `MockWebServer` on
-localhost; both take their base URL as a constructor seam, which is what makes that possible for a
-client whose production host is a public one.
+`FakePlanProvider`: `availability = Ready`; `next(plan)` sets what the following call returns and
+`failNext(error)` makes it fail. The default plan is
+`EditPlan(listOf(Select("나무"), Adjust(Saturation, 0.3f, masked = true)))` — the request vibe_edit.md
+was specified from, so the goldens read as that story.
+
+No test reaches an external host. The `Sam3Client`, `GeminiEraseClient` and `GeminiPlanClient`
+tests use `MockWebServer` on localhost; all three take their base URL as a constructor seam, which
+is what makes that possible for a client whose production host is a public one.
 
 ## 7. DI
 ```kotlin
@@ -114,6 +153,7 @@ client whose production host is a public one.
 abstract class AiModule {
     @Binds abstract fun seg(impl: Sam3SegmentationProvider): SegmentationProvider
     @Binds abstract fun erase(impl: GeminiEraseProvider): EraseProvider
+    @Binds abstract fun plan(impl: GeminiPlanProvider): EditPlanProvider
 }
 ```
 Tests replace it with `@TestInstallIn` binding the fakes.

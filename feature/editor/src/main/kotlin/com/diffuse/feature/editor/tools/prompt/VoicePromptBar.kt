@@ -13,11 +13,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
 import com.diffuse.core.ai.speech.SpeechInput
 import com.diffuse.core.ai.speech.SpeechState
 import com.diffuse.core.ui.components.PromptBar
 import com.diffuse.feature.editor.R
+import com.diffuse.core.ui.R as CoreUiR
 import kotlinx.coroutines.flow.collectLatest
 
 /**
@@ -34,6 +36,8 @@ fun VoicePromptBar(
     onSubmit: (String) -> Unit,
     speech: SpeechInput,
     modifier: Modifier = Modifier,
+    /** specs/vibe_edit.md §3: forwarded so the 지시 sheet can name its own example. */
+    placeholder: String = stringResource(CoreUiR.string.prompt_placeholder),
     enabled: Boolean = true,
     onMessage: (Int) -> Unit = {},
 ) {
@@ -72,6 +76,7 @@ fun VoicePromptBar(
         onValueChange = onValueChange,
         onSubmit = onSubmit,
         modifier = modifier,
+        placeholder = placeholder,
         onMicClick = if (!speech.isAvailable || hideMic) {
             null
         } else {

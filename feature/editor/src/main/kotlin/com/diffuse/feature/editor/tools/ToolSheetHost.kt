@@ -34,8 +34,8 @@ fun ToolSheetHost(
         Tool.Detail -> DetailSheet(
             document, onValueChange, onValueChangeFinished, onCancel, onApply, modifier, maskOption,
         )
-        // Crop and Select carry their own state, so the route hosts them alongside the editor's.
-        // Erase has no sheet at all: tapping the tool runs it (generative_erase.md §5).
-        Tool.Crop, Tool.Select, Tool.Erase, null -> Unit
+        // Crop, Select and Direct carry their own state, so the route hosts them alongside the
+        // editor's. Erase has no sheet at all: tapping the tool runs it (generative_erase.md §5).
+        Tool.Crop, Tool.Select, Tool.Erase, Tool.Direct, null -> Unit
     }
 }

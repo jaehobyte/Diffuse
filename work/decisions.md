@@ -6,19 +6,215 @@ Every entry records a choice that the specs did not make for us, or one where th
 spec disagreed and the code won. Read the entry for a task before changing that task's code:
 most of these are the second attempt, not the first.
 
-## Decisions below, and the full text is in git history._
-
-## Next
-
-Nothing in `work/tasks.md` is left. What a human still owes:
-
-1. `POST /v1/edit/erase` in `~/sam3-server` (the last prerequisite; T37/T38 are written against
-   the contract and tested with MockWebServer).
-2. Point `sam3.baseUrl` / `sam3.token` at a running service and try the tools on a device — none
-   of this has been exercised against the real model, only against the fakes.
-3. The APK is still over the 15MB budget; see "Open issues for a human".
-
 ## Decisions
+
+### T53 — the rows T49 already proved were not written twice
+
+tasks.md listed six combinations. Four of them — a masked adjust after an erase, an adjust before
+one, two erases, and a cut-out before an adjust — are what `OperationOrderTest` was written for in
+T49, and a second copy in a second file would be two things to keep true rather than one. T53 adds
+what a *plan* produces on top of that: a global adjust after an erase (the "버스 지우고 예쁘게"
+shape), an erase the user then cuts out, the export-resolution path, and a missing mask file
+degrading to the untouched photo.
+
+The task's real check is that it needed **no production code**. It did not, which is the evidence
+that T49 and T50 were finished rather than merely green.
+
+### T52 — examples in the system instruction, because the rules alone did not hold
+
+The instruction already said "use the fewest steps"; the device still showed the model answering
+"버스 지워줘" with `select_region` alone about half the time. Rules describe, examples demonstrate,
+so §4's prose now carries four worked ones — including the two-call removal and a removal followed
+by two unmasked adjusts, which are exactly the two shapes that came back wrong.
+
+The phrase is English by instruction rather than by a translation layer: SAM 3 is the thing that
+needs English, the planner is already reading the Korean request, and asking it to output the
+English noun costs nothing where a translation call would cost a second round trip. The manual
+선택 tool is left alone — see "Open decisions" in `work/tasks.md`; it is the user typing, not the
+model, and the fix there is a product question.
+
+The step list therefore reads "bus 선택". That is the honest rendering of what the plan holds and
+it keeps vibe_edit.md §3's rule that no model-authored sentence reaches the screen. A Korean
+`label` argument would read better and would put a second model-authored string on screen, which
+is a spec amendment rather than a task.
+
+### T51 — the hint was telling the model to draw the thing back
+
+The old hint sentence read "The white region previously contained: a car." immediately after "Do
+not introduce any new object". Those two together are ambiguous at best, and for a model that is
+being asked to *remove* a car, naming the car is the wrong half of the sentence to lead with. It
+now says the thing "has been removed on purpose: reconstruct what was behind it and do not draw it
+again", and `PlanRunner` passes the phrase the `Select` step used, so the 지시 tool's erase is the
+one that actually has a hint to give. `EraseController` still passes null — the manual tool never
+learns a name for what the user tapped.
+
+The instruction itself gained the two sentences the device's failure needed: no white or near-white
+patch may remain, and returning the input unchanged is not an answer.
+
+### T51 — a white answer is a failure, not a document
+
+Prompt changes are a probability, not a guarantee, so the provider now checks: if ≥ 90% of the
+sampled masked pixels come back within 2/255 of pure white, the erase fails with `Unavailable`
+rather than committing a white patch and an undo the user has to find. Sampling every 4th pixel
+keeps it off the profile — 65k reads on a 1080px preview — and the false positive is the one case
+generative_erase.md §4 already calls benign (a white wall, snow, a blown sky), where the cost is a
+retry rather than lost work.
+
+Deliberately **not** a new `AppError`: "the model gave us nothing usable" is what `Unavailable`
+already means everywhere else in §6.
+
+### T50 — the margin mask is a second `Mask` op, and the selection stays where it was
+
+The margin has to be on the mask the *document* stores, not only on the pixels sent to Gemini: the
+renderer composes `lerp(in, result, maskAlpha)` (generative_erase.md §10), so anything the model
+filled outside the stored mask is restored from the source and the halo survives. So an erase now
+appends `Mask(dilated)` and a `GenerativeErase` that names it — two ops, still one `history.push`,
+so one undo still takes the whole erase back.
+
+`activeMaskId` deliberately does **not** move to the margin mask. What the user selected is what a
+following adjust or cut-out should use; a cut-out especially wants the tight edge, which is the
+opposite of what an inpainting boundary wants. `withMask` moves the active id, so the commit puts
+it back with a `copy` rather than growing `EditDocument`'s API for one caller.
+
+That forced `EraseController.runAndCommit` to take the document instead of a `maskId` plus two save
+lambdas — six parameters, which detekt caps at five. The two saves became `EraseCommit`, which the
+지시 tool's `Erase` step uses too, so "which mask did we erase through" has exactly one answer.
+
+The margin is `max(4px, 1.5% of the short edge)` — about a dozen pixels at preview resolution,
+which is what an antialiased fringe plus a contact shadow actually measures. Dilation is two
+separable passes with a square kernel: O(n·r) instead of a disc's O(n·r²), and at a dozen pixels
+nobody can see the difference between a square and a disc in an inpainting boundary.
+
+### T49 — one walk over the list, and `Crop` stays the only exception
+
+`applyOperations` filtered the list into `adjustments` / `erases` / `cutOuts` and ran the three
+groups in that fixed order. For a document the manual tools produce that is indistinguishable from
+list order, which is why it survived T38 and T48: the sheets only ever append an adjust to a
+document whose erase came first. The 지시 tool is the first thing that commits
+[Mask, GenerativeErase, Adjust] in one go, and there the grouping applied the adjustment *first*
+and then overwrote it with the erase result inside the very same mask.
+
+The fix is the shape generative_erase.md §10 already asked for: walk `document.operations` once and
+dispatch per type. `Crop` keeps its exception (render.md: last regardless of position, so
+adjustments are visible inside it) and `Mask` contributes no pixels. The three render goldens did
+not move, which is the evidence that no *existing* document's output changed.
+
+`onProgress` now counts one step per pixel op rather than per group, so a document with three
+adjusts and one erase reports quarters instead of halves — still monotonic and still exactly 1f at
+the end, which is all export's progress bar promises.
+
+### T48 — `DirectHost`, and why the tool run left `EditorViewModel`
+
+The first cut put the run loop in the ViewModel, which pushed it to 25 functions against detekt's
+`thresholdInClasses: 20`. The run moved into `DirectController`, which now takes the `PlanRunner`
+and one `DirectHost`: `canvas()` (what the canvas is showing), `commit()` (history is the VM's),
+`releaseSession()` (§9.4) and `onFinished()` (§3's "the sheet closes when the run ends"). That is
+the same "the tool is one object; the two things it cannot do arrive as lambdas" split
+`EraseController` uses — an interface rather than four lambda parameters only because seven
+constructor parameters trip `LongParameterList`.
+
+Two knock-on edits to keep `check` green, both behaviour-identical: `onToolClick` became a `when`
+(its Direct branch is inline, because a private `onDirectTapped` would have been the 20th
+function), and the crop aspect inside it became an `if/else` instead of a `?.takeIf?.let ?:`
+chain, which brought the method back under `CyclomaticComplexMethod`'s 15.
+
+### T48 — the icon, the step numbers, and cancel
+
+`Icons.Rounded.AutoAwesome` for 지시: it is the Material Symbols Rounded entry for "describe it and
+the model does it", and the wand (`AutoFixHigh`) is already 지우기. DESIGN.md §7's ban on "✨ AI
+Magic" is about marketing copy, and the label stays the verb 지시.
+
+Step numbers are `"${index + 1}. "` in the Composable rather than a template, because a digit and
+a period are not translatable text and §11's templates deliberately hold only the sentence.
+
+Cancelling a run clears `busy` and leaves the sheet open with its plan, matching the eraser's
+cancel. §3 closes the sheet when the run *ends*; §9.3 says a cancel keeps the steps already
+committed, and re-tapping 적용 on the same plan would re-run them, so the honest options were to
+leave the sheet up or to close it. Leaving it up shows the user what they interrupted.
+
+### T47 — `run` takes the resolved `activeMask`, because §9's signature could not reach one
+
+vibe_edit.md §9.2 says an `Erase` step calls `erase.erase(preview, mask, hint = null)`, but the
+constructor it lists has no `Renderer` and no mask resolver, so a plan whose selection came from
+the *document* rather than from an earlier `Select` had no pixels to erase. `run` therefore takes
+`activeMask: Bitmap?` beside `preview`. `EditorViewModel` already resolves exactly that on every
+document change (`EditorUiState.activeMask`) and already hands it to `EraseController` the same
+way, so this adds no dependency and no second resolution path. A `Select` step replaces it for the
+steps that follow.
+
+### T47 — "found nothing" travels as an `AppError.Invalid` with a prefix
+
+§10 needs three different messages out of one `Stopped` event: `direct_not_found` naming the word,
+`direct_blocked`, and the generic failure. A new `AppError` case is forbidden by the phase header,
+so an empty `byText` becomes `Invalid("not found:<phrase>")` — the shape `blocked:` already uses,
+and `PlanRunner.NOT_FOUND_PREFIX` is where T48 reads it back. The phrase has to be in the error
+because the tool shows *which* word failed.
+
+### T47 — the session closes under `NonCancellable`
+
+`close` is best-effort (ai_provider.md §4), but a cancelled run's `finally` cannot suspend, and
+without the wrapper cancelling a run would leak the session for the backend's whole TTL — the very
+thing `SelectionController.release` exists to avoid.
+
+### T46 — `GeminiImageCodec` was reused without a change, as §8 asked
+
+The task said a codec change would be a signal to block. None was needed: `downscale` takes a
+bitmap and `encode` takes a bitmap, and only `downscaleMask` / `WhiteFill` are mask-specific, so
+the planner calls the two it needs and touches neither. The provider mirrors `GeminiEraseProvider`
+line for line — same `stateIn` on `settings.config`, same `availabilityFor`, same
+`withContext(io)` + `ensureActive()` order — because a second shape here would be a second thing
+to reason about, not a simplification.
+
+`AiModule` gained a `@Provides` for `GeminiPlanClient` beside the other two, for the reason the
+existing comment gives: the client is `internal`, so no feature can reach past the provider to
+the wire.
+
+### T45 — the §6 table moved into `GeminiHttp.kt` rather than being copied
+
+vibe_edit.md §6 says the planner maps errors "identical to generative_erase.md §6, row for row".
+Two copies of that table would be two things to keep identical, so the status mapping, the error
+envelope parse and the `Call.await()` bridge are now top-level `internal` functions both clients
+call. `GeminiEraseClient`'s behaviour is unchanged — its 23 tests pass untouched — and its public
+`BLOCKED_PREFIX` / `API_KEY_HEADER` constants stay where they were, now aliasing the shared ones.
+
+The planner's `BLOCKING_REASONS` is `SAFETY` / `PROHIBITED_CONTENT`, the two vibe_edit.md §6 names,
+and not the eraser's three: `IMAGE_SAFETY` is a reason for a refused *image*, which this call never
+asks for. A blocked prompt arrives as `promptFeedback.blockReason` either way.
+
+### T45 — the client returns `Result<EditPlan>`, not an `Outcome`
+
+`GeminiEraseClient.Outcome` exists because its success carries a `ByteArray`, whose `equals` is
+identity — a data class holding one cannot be compared in a test. `EditPlan` is an ordinary data
+class, so the shared `Result` works and one type disappears from the module.
+
+### T45 — parameter schemas are a typed `Schema`, not a `JsonObject`
+
+The OpenAPI subset Gemini accepts is small enough to spell as a data class (`type`, `description`,
+`enum`, `properties`, `required`), and `explicitNulls = false` drops the fields a declaration does
+not use. `buildJsonObject` would have read as JSON embedded in Kotlin and lost the compiler's help
+with the four declarations. `enum` is `enumValues` in Kotlin with `@SerialName("enum")`.
+
+### T45 — a value that is not a number drops the step, and a JSON string that parses does not
+
+`args["value"]` is read as a `JsonPrimitive` and run through `floatOrNull`, so `"0.3"` from a model
+that quoted its number is accepted while `"x"` and `"NaN"` are dropped. §5 asks for non-finite to
+drop the step and that is what `isFinite()` does; clamping is `AdjustKind.coerce`, so the range
+lives in edit_model.md's enum and not in the client.
+
+### T44 — `data object` for the argument-less steps, and `DEFAULT_PLAN` on the companion
+
+specs/vibe_edit.md §7 writes `object Erase` / `object CutOut`; the code uses `data object`, which
+is what `AppError` already does for its argument-less cases and what makes `PlanStep.Erase` print
+as itself in a failed assertion. No behavioural difference.
+
+`FakePlanProvider.DEFAULT_PLAN` is public on the companion rather than private, because the tests
+that assert "the second call fell back to the default" would otherwise have to re-spell the plan
+and drift from it. `planCount` mirrors `FakeEraseProvider.eraseCount`; nothing else was added, so
+`next` and `failNext` each override exactly one call and nothing accumulates between tests.
+
+`core/ai/build.gradle.kts` took `implementation(projects.core.imaging)` and not `api`, as T44 says.
+`AdjustKind` does appear in `EditPlanProvider`'s signature, but `feature:editor` — the only
+consumer — already declares `core:imaging` itself, so nothing needs the edge transitively.
 
 ### T43 — `EraseTap` is returned, not acted on
 

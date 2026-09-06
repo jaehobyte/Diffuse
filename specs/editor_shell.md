@@ -14,7 +14,7 @@ The frame hosting canvas, tools, and sheets. Owns editor-level state (selected t
 ├──────────────────────────────┤
 │         EditorCanvas         │ fills remaining
 ├──────────────────────────────┤ 72dp  Tool strip (editSurface)
-│   ○Light   ○Color   ○Crop   ○Detail   │
+│  ○빛 ○색 ○자르기 ○디테일 ○선택 ○지우기 ○지시  │
 └──────────────────────────────┘
 ```
 Sheets (`EditSheet`) slide up over the tool strip, max 45% height.
@@ -29,7 +29,7 @@ data class EditorUiState(
     val exporting: Boolean,       // shows the progress overlay (T20)
     val snackbar: String?,
 )
-enum class Tool { Light, Color, Crop, Detail }
+enum class Tool { Light, Color, Crop, Detail, Select, Erase, Direct }
 ```
 Single `EditorViewModel`, MVI-style: UI sends `EditorIntent`, VM reduces to `EditorUiState`.
 
@@ -43,7 +43,8 @@ Single `EditorViewModel`, MVI-style: UI sends `EditorIntent`, VM reduces to `Edi
 ## Tool strip behavior
 - Tapping a tool sets `selectedTool` and opens its sheet. Tapping the selected tool again closes it (= Cancel).
 - Selected state: accent icon + label + 2dp indicator.
-- `LazyRow`; selected item scrolls into view. Four tools fit without scrolling on phones; keep the row scrollable for v2 additions.
+- `LazyRow`; selected item scrolls into view. Seven tools do not fit on a phone, so the row scrolls — which is why it was a `LazyRow` from T11, when four did fit.
+- New tools are **appended**. The order is the order they shipped in, not a ranking; reordering would move the item under a user's thumb for no stated reason.
 
 ## Sheet lifecycle
 - Open: snapshot the document as `sheetBaseline`.

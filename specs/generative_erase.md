@@ -83,8 +83,8 @@ offers. The one photo where this is weakest — a white wall, snow, an overexpos
 easiest possible inpainting job, so the failure mode is benign.
 
 It lives in `core/ai/gemini` rather than `core:imaging`: it is a detail of how one provider talks to
-one model, not a rendering operation, and `core:ai` must keep its `core:imaging` dependency to
-`ImageRef` alone (ai_provider.md §2).
+one model, not a rendering operation. `core:ai` reaches into `core:imaging` for `AdjustKind` and
+nothing else (ai_provider.md §2), and a pixel operation is exactly the "nothing else".
 
 ## 5. The Gemini call (T40)
 `GeminiEraseClient`, OkHttp + kotlinx.serialization. One class, one request shape.

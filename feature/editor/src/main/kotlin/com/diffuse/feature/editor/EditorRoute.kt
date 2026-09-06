@@ -18,6 +18,7 @@ import com.diffuse.feature.editor.tools.MaskOption
 import com.diffuse.feature.editor.tools.ToolSheetHost
 import com.diffuse.feature.editor.tools.crop.CropSheet
 import com.diffuse.feature.editor.tools.crop.STRAIGHTEN_MAX_DEG
+import com.diffuse.feature.editor.tools.direct.DirectSheet
 import com.diffuse.feature.editor.tools.prompt.VoicePromptBar
 import com.diffuse.feature.editor.tools.select.Sam3SettingsSheet
 import com.diffuse.feature.editor.tools.select.SelectSheet
@@ -76,17 +77,18 @@ fun EditorRoute(
             },
             // specs/selection_tool.md §5: while `busy` the previous mask stays; only the
             // one-off `open` earns the overlay.
-            busy = state.selection.working || state.erase.busy,
+            busy = state.selection.working || state.erase.busy || state.direct.working,
             busyLabelRes = busyLabel(state),
             onCancelWork = {
                 viewModel.selection.cancelWork()
                 viewModel.erase.cancel()
+                viewModel.direct.cancelWork()
             },
-            message = (state.selection.message ?: state.erase.message)
-                ?.let { stringResource(it) },
+            message = message(state),
             onMessageShown = {
                 viewModel.selection.onMessageShown()
                 viewModel.erase.onMessageShown()
+                viewModel.direct.onMessageShown()
             },
             canvasOverlay = canvasOverlay(state, viewModel),
             sheet = sheetFor(state, document, viewModel),
@@ -98,13 +100,31 @@ fun EditorRoute(
 private fun disabledTools(state: EditorUiState): Set<Tool> = buildSet {
     if (!state.selection.enabled) add(Tool.Select)
     if (!state.erase.enabled || state.document?.activeMaskId == null) add(Tool.Erase)
+    // specs/vibe_edit.md §10: the key alone. A plan with no `Select` needs no SAM 3 server.
+    if (!state.direct.enabled) add(Tool.Direct)
 }
 
 /** DESIGN.md §4 State display: the overlay says what is actually happening. */
 private fun busyLabel(state: EditorUiState): Int = when {
+    state.direct.planning -> R.string.direct_planning
+    state.direct.running -> R.string.direct_running
     state.erase.busy -> R.string.erase_working
     state.selection.phraseBusy -> R.string.select_prompt_working
     else -> R.string.select_preparing
+}
+
+/**
+ * specs/vibe_edit.md §10: `direct_not_found` is the one line that names the word that failed,
+ * so the direct tool's message carries its argument.
+ */
+@Composable
+private fun message(state: EditorUiState): String? {
+    val direct = state.direct.message
+    return when {
+        direct?.arg != null -> stringResource(direct.res, direct.arg)
+        direct != null -> stringResource(direct.res)
+        else -> (state.selection.message ?: state.erase.message)?.let { stringResource(it) }
+    }
 }
 
 /** specs/canvas.md: one overlay slot, claimed by whichever tool is open. */
@@ -174,6 +194,7 @@ private fun sheetFor(
                         )
                     },
                 )
+                Tool.Direct -> DirectToolSheet(state = state, viewModel = viewModel)
                 else -> ToolSheetHost(
                     maskOption = MaskOption(
                         available = doc.activeMaskId != null,
@@ -202,6 +223,27 @@ private fun cropTransform(state: EditorUiState): OverlayTransform =
     } else {
         OverlayTransform.None
     }
+
+/** specs/vibe_edit.md §3: the bar, the step list, and [취소 | 적용] with 적용 the one accent. */
+@Composable
+private fun DirectToolSheet(state: EditorUiState, viewModel: EditorViewModel) {
+    DirectSheet(
+        state = state.direct,
+        onCancel = viewModel::cancelSheet,
+        onApply = viewModel::applySheet,
+        promptBar = {
+            VoicePromptBar(
+                value = state.direct.request,
+                onValueChange = viewModel.direct::setRequest,
+                onSubmit = viewModel.direct::submit,
+                speech = viewModel.speech,
+                placeholder = stringResource(R.string.direct_placeholder),
+                enabled = !state.direct.working,
+                onMessage = viewModel.direct::showMessage,
+            )
+        },
+    )
+}
 
 @Composable
 private fun CropToolSheet(state: EditorUiState, viewModel: EditorViewModel) {

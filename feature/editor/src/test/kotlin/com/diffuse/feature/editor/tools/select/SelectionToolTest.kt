@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.diffuse.core.ai.Availability
 import com.diffuse.core.ai.FakeEraseProvider
+import com.diffuse.core.ai.FakePlanProvider
 import com.diffuse.core.ai.FakeSegmentationProvider
 import com.diffuse.core.ai.MaskBitmaps
 import com.diffuse.core.ai.gemini.GeminiSettings
@@ -22,6 +23,7 @@ import com.diffuse.core.imaging.model.Operation
 import com.diffuse.core.imaging.render.Renderer
 import com.diffuse.feature.editor.EditorAi
 import com.diffuse.feature.editor.EditorViewModel
+import com.diffuse.feature.editor.TestDispatchers
 import com.diffuse.feature.editor.Tool
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -615,7 +617,8 @@ class SelectionToolTest {
     ) = EditorViewModel(
         repository = repository,
         renderer = FakeRenderer(),
-        ai = EditorAi(segmentation, eraseProvider, FakeSpeechInput(), settings, geminiSettings),
+        ai = EditorAi(segmentation, eraseProvider, FakePlanProvider(), FakeSpeechInput(), settings, geminiSettings),
+        dispatchers = TestDispatchers,
         savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),
     )
 

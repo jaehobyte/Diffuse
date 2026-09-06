@@ -116,45 +116,31 @@ class CpuRenderer(
     }
 
     /**
-     * specs/render.md pipeline order: adjustments in list order, then the crop last
-     * regardless of where it sits, so adjustments stay visible inside the crop.
+     * specs/render.md pipeline order, and specs/generative_erase.md §10's "ops added after the
+     * erase apply on top of it, in list order": the list is walked **once, in order**, so what
+     * the user did last is what lands last.
+     *
+     * `Crop` is the single exception — it runs last wherever it sits, so adjustments stay visible
+     * inside it (render.md). `Mask` changes no pixels; other ops reference it by id.
+     *
+     * Grouping by type instead, which this did until T49, silently dropped every masked
+     * adjustment made after an erase: the adjustment was computed first and the erase result then
+     * overwrote the same mask region.
      */
     private suspend fun applyOperations(
         document: EditDocument,
         base: Bitmap,
         onProgress: (Float) -> Unit,
     ): Bitmap {
-        val adjustments = document.operations.filterIsInstance<Operation.Adjust>()
-        val erases = document.generativeErases()
-        val cutOuts = document.cutOuts()
         val crop = document.crop()
-        val total =
-            adjustments.size + erases.size + cutOuts.size + if (crop == null) 0 else 1
+        val pixelOps = document.operations.filter { it !is Operation.Mask && it !is Operation.Crop }
+        val total = pixelOps.size + if (crop == null) 0 else 1
         var output = base
         var completed = 0
 
-        adjustments.forEach { adjust ->
+        pixelOps.forEach { operation ->
             coroutineContext.ensureActive()
-            output = applyAdjust(document, output, adjust)
-            completed++
-            onProgress(completed.toFloat() / total)
-        }
-        // specs/generative_erase.md §6: the result replaces pixels inside the mask only, so
-        // everything after it still composes.
-        erases.forEach { erase ->
-            coroutineContext.ensureActive()
-            val mask = resolveMask(document, erase.maskId)
-            val result = decodeResult(erase.resultRef)
-            if (mask != null && result != null) {
-                output = MaskBlend.blend(output, scaleTo(result, output), mask)
-            }
-            completed++
-            onProgress(completed.toFloat() / total)
-        }
-        // Before the crop, which is geometry: a cut-out is about pixels, like the adjustments.
-        cutOuts.forEach { cutOut ->
-            coroutineContext.ensureActive()
-            resolveMask(document, cutOut.maskId)?.let { output = CutOutOp.apply(output, it) }
+            output = applyOperation(document, output, operation)
             completed++
             onProgress(completed.toFloat() / total)
         }
@@ -167,6 +153,43 @@ class CpuRenderer(
         if (total == 0) onProgress(1f)
         return output
     }
+
+    private suspend fun applyOperation(
+        document: EditDocument,
+        input: Bitmap,
+        operation: Operation,
+    ): Bitmap = when (operation) {
+        is Operation.Adjust -> applyAdjust(document, input, operation)
+        is Operation.GenerativeErase -> applyErase(document, input, operation)
+        is Operation.CutOut -> applyCutOut(document, input, operation)
+        // A mask is a reference, and the crop ran last in applyOperations.
+        is Operation.Mask, is Operation.Crop -> input
+    }
+
+    /**
+     * specs/generative_erase.md §6: the result replaces pixels inside the mask only, so
+     * everything after it still composes.
+     */
+    private suspend fun applyErase(
+        document: EditDocument,
+        input: Bitmap,
+        erase: Operation.GenerativeErase,
+    ): Bitmap {
+        val mask = resolveMask(document, erase.maskId)
+        val result = decodeResult(erase.resultRef)
+        return if (mask == null || result == null) {
+            input
+        } else {
+            MaskBlend.blend(input, scaleTo(result, input), mask)
+        }
+    }
+
+    /** A cut-out is about pixels, like the adjustments; only the crop is geometry. */
+    private suspend fun applyCutOut(
+        document: EditDocument,
+        input: Bitmap,
+        cutOut: Operation.CutOut,
+    ): Bitmap = resolveMask(document, cutOut.maskId)?.let { CutOutOp.apply(input, it) } ?: input
 
     /**
      * specs/selection_tool.md §8.1: a masked adjustment is computed over the whole frame and

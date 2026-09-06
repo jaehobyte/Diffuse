@@ -41,6 +41,8 @@ android {
 
 dependencies {
     api(projects.core.common)
+    // specs/ai_provider.md §2: for `AdjustKind` alone, which `PlanStep.Adjust` carries.
+    implementation(projects.core.imaging)
     implementation(libs.okhttp)
     implementation(libs.kotlinx.serialization.json)
 

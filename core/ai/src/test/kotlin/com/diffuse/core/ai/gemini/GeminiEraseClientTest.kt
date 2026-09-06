@@ -112,7 +112,9 @@ class GeminiEraseClientTest {
     @Test
     fun `a hint appends one sentence, and a blank one appends nothing`() {
         assertEquals(
-            GeminiEraseClient.INSTRUCTION + " The white region previously contained: a car.",
+            GeminiEraseClient.INSTRUCTION +
+                " The painted area used to contain a car, which has been removed on purpose: " +
+                "reconstruct what was behind it and do not draw it again.",
             GeminiEraseClient.instruction("a car"),
         )
         assertEquals(GeminiEraseClient.INSTRUCTION, GeminiEraseClient.instruction("  "))
@@ -120,6 +122,27 @@ class GeminiEraseClientTest {
     }
 
     // ---- the response ----------------------------------------------------
+
+    /** T51: the two sentences that close the "it came back white" failure the device showed. */
+    @Test
+    fun `the instruction forbids leaving white and forbids echoing the input`() {
+        assertTrue(
+            GeminiEraseClient.INSTRUCTION.contains("no white or near-white patch may remain"),
+        )
+        assertTrue(
+            GeminiEraseClient.INSTRUCTION
+                .contains("returning the input image unchanged is not an acceptable answer"),
+        )
+        assertTrue(GeminiEraseClient.INSTRUCTION.contains("do not draw any new object"))
+    }
+
+    @Test
+    fun `the hint says the thing was removed, never what to draw`() {
+        val instruction = GeminiEraseClient.instruction("a bus")
+
+        assertTrue(instruction.contains("has been removed on purpose"))
+        assertTrue(instruction.contains("do not draw it again"))
+    }
 
     @Test
     fun `a base64 image part decodes`() = runTest {

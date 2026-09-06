@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.diffuse.core.ai.Availability
 import com.diffuse.core.ai.FakeEraseProvider
+import com.diffuse.core.ai.FakePlanProvider
 import com.diffuse.core.ai.FakeSegmentationProvider
 import com.diffuse.core.ai.gemini.GeminiSettings
 import com.diffuse.core.ai.sam3.Sam3Settings
@@ -21,6 +22,7 @@ import com.diffuse.core.imaging.model.Operation
 import com.diffuse.core.imaging.render.Renderer
 import com.diffuse.feature.editor.EditorAi
 import com.diffuse.feature.editor.EditorViewModel
+import com.diffuse.feature.editor.TestDispatchers
 import com.diffuse.feature.editor.R
 import com.diffuse.feature.editor.Tool
 import kotlinx.coroutines.Dispatchers
@@ -33,7 +35,9 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -146,16 +150,36 @@ class GenerativeEraseToolTest {
     }
 
     @Test
-    fun `running it writes one GenerativeErase op referencing the active mask`() = runTest {
+    fun `running it writes one GenerativeErase op referencing the margin mask it used`() = runTest {
         val viewModel = withSelection()
+        val selected = viewModel.uiState.value.document!!.activeMaskId
 
         viewModel.onToolClick(Tool.Erase)
 
         val document = viewModel.uiState.value.document!!
         val erase = document.generativeErases().single()
-        assertEquals(document.activeMaskId, erase.maskId)
+        // T50: the erase runs through the selection plus a margin, and stores that mask, because
+        // the renderer composes the result through whatever mask the op names. The user's own
+        // selection stays active for whatever they do next.
+        assertEquals(selected, document.activeMaskId)
+        assertNotEquals(selected, erase.maskId)
+        assertEquals(2, document.operations.filterIsInstance<Operation.Mask>().size)
         assertEquals(1, eraser.eraseCount)
         assertEquals(listOf(erase.id), repository.savedErases)
+    }
+
+    @Test
+    fun `the mask the eraser was shown is larger than the selection`() = runTest {
+        val viewModel = withSelection()
+
+        viewModel.onToolClick(Tool.Erase)
+
+        // FakeRenderer resolves any mask to a full frame, so the selection is every pixel and a
+        // dilation cannot grow it — what is provable here is that the eraser saw the dilated
+        // bitmap rather than the one the renderer handed the tool.
+        val handed = eraser.lastMask!!
+        assertEquals(SIZE, handed.width)
+        assertNotSame(viewModel.uiState.value.activeMask, handed)
     }
 
     @Test
@@ -222,7 +246,8 @@ class GenerativeEraseToolTest {
     private fun viewModel() = EditorViewModel(
         repository = repository,
         renderer = FakeRenderer(),
-        ai = EditorAi(segmentation, eraser, FakeSpeechInput(), settings, geminiSettings),
+        ai = EditorAi(segmentation, eraser, FakePlanProvider(), FakeSpeechInput(), settings, geminiSettings),
+        dispatchers = TestDispatchers,
         savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),
     )
 

@@ -16,6 +16,7 @@
     <string name="editor_tool_detail">디테일</string>
     <string name="editor_tool_select">선택</string>
     <string name="editor_tool_erase">지우기</string>
+    <string name="editor_tool_direct">지시</string>
 
     <!-- specs/generative_erase.md §5 -->
     <string name="erase_working">지우는 중</string>
@@ -25,6 +26,22 @@
     <string name="erase_needs_key">설정에서 Gemini API 키를 입력해주세요</string>
     <string name="erase_blocked">이 이미지는 편집할 수 없어요</string>
     <string name="adjust_masked_only">선택 영역에만</string>
+
+    <!-- specs/vibe_edit.md §11 -->
+    <string name="direct_title">지시</string>
+    <string name="direct_placeholder">무엇을 바꿀까요? 예: 나무를 더 푸르게</string>
+    <string name="direct_planning">무엇을 할지 생각하는 중</string>
+    <string name="direct_running">적용하는 중</string>
+    <string name="direct_not_understood">무엇을 할지 모르겠어요. 다르게 말해보세요.</string>
+    <string name="direct_not_found">%1$s을(를) 찾지 못했어요</string>
+    <string name="direct_needs_key">설정에서 Gemini API 키를 입력해주세요</string>
+    <string name="direct_blocked">이 이미지는 편집할 수 없어요</string>
+    <string name="direct_failed">적용하지 못했어요</string>
+    <string name="direct_step_select">%1$s 선택</string>
+    <string name="direct_step_adjust">%1$s %2$d</string>
+    <string name="direct_step_adjust_masked">선택 영역 %1$s %2$d</string>
+    <string name="direct_step_erase">선택 영역 지우기</string>
+    <string name="direct_step_cutout">배경 지우기</string>
 
     <!-- specs/selection_tool.md -->
     <string name="select_title">선택</string>

@@ -14,6 +14,67 @@ object MaskOps {
     fun inverted(mask: Bitmap): Bitmap = mapPixels(mask) { set -> !set }
 
     /**
+     * Grows [mask] by [radiusPx] in every direction. Binary in, binary out — this is a margin,
+     * not a feather, so specs/generative_erase.md §4's "no partial blend" still holds.
+     *
+     * Two separable passes with a square kernel (Chebyshev distance), which is O(n·r) rather than
+     * the O(n·r²) a circular kernel costs; at a margin of a dozen pixels the difference between a
+     * square and a disc is not visible in an inpainting boundary.
+     */
+    fun dilated(mask: Bitmap, radiusPx: Int): Bitmap {
+        require(radiusPx >= 0) { "radius must not be negative" }
+        if (radiusPx == 0) return copyOf(mask)
+        val width = mask.width
+        val height = mask.height
+        val source = BooleanArray(width * height) { isSet(mask, it % width, it / width) }
+        val grown = dilateColumns(dilateRows(source, width, height, radiusPx), width, height, radiusPx)
+        val out = Bitmap.createBitmap(width, height, Bitmap.Config.ALPHA_8)
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                out.setPixel(x, y, if (grown[y * width + x]) OPAQUE shl ALPHA_SHIFT else 0)
+            }
+        }
+        return out
+    }
+
+    private fun dilateRows(
+        source: BooleanArray,
+        width: Int,
+        height: Int,
+        radius: Int,
+    ): BooleanArray {
+        val out = BooleanArray(source.size)
+        for (y in 0 until height) {
+            val row = y * width
+            for (x in 0 until width) {
+                out[row + x] = (-radius..radius).any { offset ->
+                    val moved = x + offset
+                    moved in 0 until width && source[row + moved]
+                }
+            }
+        }
+        return out
+    }
+
+    private fun dilateColumns(
+        source: BooleanArray,
+        width: Int,
+        height: Int,
+        radius: Int,
+    ): BooleanArray {
+        val out = BooleanArray(source.size)
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                out[y * width + x] = (-radius..radius).any { offset ->
+                    val moved = y + offset
+                    moved in 0 until height && source[moved * width + x]
+                }
+            }
+        }
+        return out
+    }
+
+    /**
      * specs/selection_tool.md §4:
      * `Add -> max(acc, new)` and `Subtract -> min(acc, 255 - new)`.
      */

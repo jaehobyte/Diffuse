@@ -6,8 +6,7 @@ import com.diffuse.core.ai.Availability
 import com.diffuse.core.ai.EraseProvider
 import com.diffuse.core.common.AppError
 import com.diffuse.core.common.Result
-import com.diffuse.core.common.newId
-import com.diffuse.core.imaging.model.ImageRef
+import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.feature.editor.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -46,6 +45,7 @@ data class EraseState(
  */
 class EraseController(
     private val provider: EraseProvider,
+    private val commit: EraseCommit,
     private val scope: CoroutineScope,
 ) {
 
@@ -89,31 +89,35 @@ class EraseController(
 
     /**
      * specs/generative_erase.md §5, §6. Runs the model and, only once the result is safely on
-     * disk, hands it to [commit] as one history entry.
+     * disk, hands the new document to [onCommitted] as one history entry.
      *
      * The whole sequence lives here rather than in `EditorViewModel` so the tool is one object,
-     * the way the selection tool is. [save] and [commit] are the two things it cannot do itself:
-     * the repository is the ViewModel's, and so is the history stack.
+     * the way the selection tool is. Writing files and pushing history are the two things it
+     * cannot do itself: the repository is the ViewModel's, and so is the history stack.
      *
-     * A null [image], [mask] or [maskId] means there is nothing to erase, which is a message
-     * rather than a no-op — the user pressed a button and deserves to know why nothing happened.
+     * A null [image], [mask] or [document] — or a document with nothing selected — means there is
+     * nothing to erase, which is a message rather than a no-op: the user pressed a button and
+     * deserves to know why nothing happened.
+     *
+     * T50: the model is shown the selection **plus a margin**, and that dilated mask is what the
+     * document stores, because the renderer composes the result through it.
      */
     fun runAndCommit(
         image: Bitmap?,
         mask: Bitmap?,
-        maskId: String?,
-        save: suspend (eraseId: String, result: Bitmap) -> Result<ImageRef>,
-        commit: (maskId: String, result: ImageRef, eraseId: String) -> Unit,
+        document: EditDocument?,
+        onCommitted: (EditDocument) -> Unit,
     ) {
-        if (image == null || mask == null || maskId == null) {
+        if (image == null || mask == null || document?.activeMaskId == null) {
             showMessage(R.string.erase_needs_selection)
             return
         }
         job?.cancel()
         _state.value = _state.value.copy(busy = true, message = null)
         job = scope.launch {
-            when (val result = provider.erase(image, mask, hint = null)) {
-                is Result.Success -> store(maskId, result.value, save, commit)
+            val dilated = EraseMask.dilated(mask)
+            when (val result = provider.erase(image, dilated, hint = null)) {
+                is Result.Success -> store(document, dilated, result.value, onCommitted)
                 is Result.Failure -> _state.value =
                     _state.value.copy(busy = false, message = messageFor(result.error))
             }
@@ -121,15 +125,14 @@ class EraseController(
     }
 
     private suspend fun store(
-        maskId: String,
+        document: EditDocument,
+        dilated: Bitmap,
         result: Bitmap,
-        save: suspend (String, Bitmap) -> Result<ImageRef>,
-        commit: (String, ImageRef, String) -> Unit,
+        onCommitted: (EditDocument) -> Unit,
     ) {
-        val eraseId = newId()
-        _state.value = when (val saved = save(eraseId, result)) {
+        _state.value = when (val committed = commit.apply(document, dilated, result)) {
             is Result.Success -> {
-                commit(maskId, saved.value, eraseId)
+                onCommitted(committed.value)
                 _state.value.copy(busy = false)
             }
             is Result.Failure -> _state.value.copy(busy = false, message = R.string.erase_failed)

@@ -8,6 +8,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.diffuse.core.ai.speech.SpeechInput
+import com.diffuse.core.common.DispatcherProvider
 import com.diffuse.core.common.Result
 import com.diffuse.core.common.newId
 import com.diffuse.core.data.ProjectAutosave
@@ -17,6 +18,13 @@ import com.diffuse.core.imaging.model.AdjustKind
 import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.core.imaging.render.Renderer
 import com.diffuse.feature.editor.tools.crop.CropState
+import com.diffuse.feature.editor.tools.direct.DirectCanvas
+import com.diffuse.feature.editor.tools.direct.DirectController
+import com.diffuse.feature.editor.tools.direct.DirectHost
+import com.diffuse.feature.editor.tools.direct.DirectState
+import com.diffuse.feature.editor.tools.direct.DirectTap
+import com.diffuse.feature.editor.tools.direct.PlanRunner
+import com.diffuse.feature.editor.tools.erase.EraseCommit
 import com.diffuse.feature.editor.tools.erase.EraseController
 import com.diffuse.feature.editor.tools.erase.EraseState
 import com.diffuse.feature.editor.tools.erase.EraseTap
@@ -46,6 +54,8 @@ data class EditorUiState(
     val selection: SelectionState = SelectionState(),
     /** specs/generative_erase.md §5: the tool has no sheet, so this is all its state. */
     val erase: EraseState = EraseState(),
+    /** specs/vibe_edit.md §3: the plan lives here between the response and 적용. */
+    val direct: DirectState = DirectState(),
     /** specs/selection_tool.md §8.1: default on, so an adjustment lands where the user looked. */
     val maskedAdjust: Boolean = true,
     /** The applied mask, resolved for the scrim the adjust sheets show. */
@@ -58,6 +68,7 @@ class EditorViewModel @Inject constructor(
     private val repository: ProjectRepository,
     private val renderer: Renderer,
     ai: EditorAi,
+    dispatchers: DispatcherProvider,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -82,8 +93,54 @@ class EditorViewModel @Inject constructor(
     /** specs/prompt_input.md §3: handed straight to the prompt bar; the VM never drives it. */
     val speech: SpeechInput = ai.speech
 
-    /** specs/generative_erase.md: runs the model; this class is what commits the result. */
-    val erase = EraseController(ai.erase, viewModelScope)
+    /** specs/generative_erase.md §10, T50: one commit shape for both erase paths. */
+    private val eraseCommit = EraseCommit(
+        saveMask = { maskId, mask -> repository.saveMask(projectId, maskId, mask) },
+        saveResult = { eraseId, result -> repository.saveEraseResult(projectId, eraseId, result) },
+    )
+
+    /** specs/generative_erase.md: runs the model; this class is what pushes the result. */
+    val erase = EraseController(ai.erase, eraseCommit, viewModelScope)
+
+    /**
+     * specs/vibe_edit.md §3, §9. The tool owns the plan and the run; what it cannot know is
+     * which project is open, what the canvas is showing, and where history lives, so those
+     * four arrive as lambdas — the shape `EraseController` already uses for its save.
+     */
+    val direct = DirectController(
+        provider = ai.plan,
+        runner = PlanRunner(
+            segmentation = ai.segmentation,
+            erase = ai.erase,
+            dispatchers = dispatchers,
+            saveMask = { maskId, mask -> repository.saveMask(projectId, maskId, mask) },
+            eraseCommit = eraseCommit,
+        ),
+        scope = viewModelScope,
+        host = object : DirectHost {
+            override fun canvas(): DirectCanvas? {
+                val state = _uiState.value
+                val document = state.document
+                val preview = state.preview?.asAndroidBitmap()
+                return if (document == null || preview == null) {
+                    null
+                } else {
+                    DirectCanvas(document, preview, state.activeMask)
+                }
+            }
+
+            override fun commit(document: EditDocument) {
+                history?.push(document)
+            }
+
+            override suspend fun releaseSession() = selection.release()
+
+            override fun onFinished() {
+                sheetBaseline = null
+                _uiState.value = _uiState.value.copy(selectedTool = null)
+            }
+        },
+    )
 
     init {
         viewModelScope.launch { load() }
@@ -92,6 +149,9 @@ class EditorViewModel @Inject constructor(
         }
         viewModelScope.launch {
             erase.state.collect { _uiState.value = _uiState.value.copy(erase = it) }
+        }
+        viewModelScope.launch {
+            direct.state.collect { _uiState.value = _uiState.value.copy(direct = it) }
         }
     }
 
@@ -153,27 +213,43 @@ class EditorViewModel @Inject constructor(
 
     fun onToolClick(tool: Tool) {
         val state = _uiState.value
-        if (state.selectedTool == tool) {
-            cancelSheet()
-        } else if (tool == Tool.Select && !selection.onToolTapped()) {
-            return
-        } else if (tool == Tool.Erase) {
-            onEraseTapped(state)
-        } else {
-            sheetBaseline = state.document
-            // T23: the crop geometry is normalised, so it needs the source's pixel aspect to
-            // hold a preset. The bare-source preview has the source's shape.
-            val aspect = state.source
-                ?.takeIf { it.height > 0 }
-                ?.let { it.width.toFloat() / it.height }
-                ?: 1f
-            _uiState.value = state.copy(
-                selectedTool = tool,
-                cropState = state.document?.let { CropState.from(it, aspect) } ?: CropState(),
-            )
-            if (tool == Tool.Select) state.preview?.let { selection.open(it.asAndroidBitmap()) }
+        when {
+            state.selectedTool == tool -> cancelSheet()
+            tool == Tool.Select && !selection.onToolTapped() -> Unit
+            tool == Tool.Erase -> onEraseTapped(state)
+            // specs/vibe_edit.md §10: a blank key opens the 서버 설정 sheet, through the same
+            // controller-returns-an-intent shape 지우기 uses. One sheet, one owner.
+            tool == Tool.Direct -> when (direct.onToolTapped()) {
+                DirectTap.OpenSettings -> selection.setSettingsVisible(true)
+                DirectTap.Open -> {
+                    sheetBaseline = state.document
+                    _uiState.value = state.copy(selectedTool = Tool.Direct)
+                }
+            }
+            else -> {
+                sheetBaseline = state.document
+                // T23: the crop geometry is normalised, so it needs the source's pixel aspect
+                // to hold a preset. The bare-source preview has the source's shape.
+                val source = state.source
+                val aspect = if (source == null || source.height <= 0) {
+                    1f
+                } else {
+                    source.width.toFloat() / source.height
+                }
+                val document = state.document
+                _uiState.value = state.copy(
+                    selectedTool = tool,
+                    cropState = if (document == null) {
+                        CropState()
+                    } else {
+                        CropState.from(document, aspect)
+                    },
+                )
+                if (tool == Tool.Select) state.preview?.let { selection.open(it.asAndroidBitmap()) }
+            }
         }
     }
+
 
     /**
      * specs/generative_erase.md §5, §9: the tool has no sheet — tapping it either runs the model
@@ -186,14 +262,8 @@ class EditorViewModel @Inject constructor(
             EraseTap.Run -> erase.runAndCommit(
                 image = state.preview?.asAndroidBitmap(),
                 mask = state.activeMask,
-                maskId = state.document?.activeMaskId,
-                save = { eraseId, result -> repository.saveEraseResult(projectId, eraseId, result) },
-                commit = { maskId, ref, eraseId ->
-                    history?.run {
-                        push(current.value.withGenerativeErase(maskId, ref, eraseId))
-                        commitCoalesce()
-                    }
-                },
+                document = state.document,
+                onCommitted = { document -> history?.push(document) },
             )
         }
     }
@@ -231,22 +301,26 @@ class EditorViewModel @Inject constructor(
         }
         sheetBaseline = null
         selection.closeSheet()
+        direct.close()
         _uiState.value = _uiState.value.copy(selectedTool = null)
     }
 
     fun applySheet() {
-        val stack = history
         val state = _uiState.value
-        if (state.selectedTool == Tool.Select) {
-            applySelection()
-            return
+        when (state.selectedTool) {
+            Tool.Select -> applySelection()
+            // specs/vibe_edit.md §3: 적용 runs the plan; the sheet closes when the run ends.
+            Tool.Direct -> direct.apply()
+            else -> {
+                val stack = history
+                if (state.selectedTool == Tool.Crop && stack != null) {
+                    stack.push(state.cropState.applyTo(stack.current.value))
+                }
+                stack?.commitCoalesce()
+                sheetBaseline = null
+                _uiState.value = state.copy(selectedTool = null)
+            }
         }
-        if (state.selectedTool == Tool.Crop && stack != null) {
-            stack.push(state.cropState.applyTo(stack.current.value))
-        }
-        stack?.commitCoalesce()
-        sheetBaseline = null
-        _uiState.value = state.copy(selectedTool = null)
     }
 
     /**
