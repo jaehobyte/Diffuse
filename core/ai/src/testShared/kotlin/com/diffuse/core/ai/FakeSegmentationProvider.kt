@@ -44,7 +44,6 @@ class FakeSegmentationProvider(
     }
 
     override suspend fun open(image: Bitmap): Result<SegSession> {
-        delay(openDelayMs)
         takeError()?.let { return Result.Failure(it) }
         openCount++
         val session = SegSession(
@@ -53,7 +52,10 @@ class FakeSegmentationProvider(
             imageHeight = image.height,
             expiresAtEpochMs = Long.MAX_VALUE,
         )
+        // Registered *before* the delay, the way a real backend creates the session and only
+        // then sends the response: a caller that gives up in between has still cost one.
         openSessions += session
+        delay(openDelayMs)
         return Result.Success(session)
     }
 

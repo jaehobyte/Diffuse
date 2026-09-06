@@ -33,8 +33,11 @@ class SelectionController(
     private val _state = MutableStateFlow(SelectionState())
     val state: StateFlow<SelectionState> = _state.asStateFlow()
 
-    /** In flight `open` or `byPoints`; a new prompt supersedes it rather than queueing (§4). */
+    /** In flight `byPoints` or `byText`; a new prompt supersedes it rather than queueing (§4). */
     private var job: Job? = null
+
+    /** Set when the user gives up on an `open` that is already on the wire. See [open]. */
+    private var abandonedOpen = false
 
     init {
         scope.launch {
@@ -59,18 +62,25 @@ class SelectionController(
     fun onToolTapped(): Boolean {
         val availability = _state.value.availability
         if (availability is Availability.Ready) return true
-        val reason = (availability as? Availability.Unavailable)?.reason
-        _state.value = if (reason is AppError.Invalid) {
-            _state.value.copy(showSettings = true)
-        } else {
-            _state.value.copy(
-                message = when (reason) {
-                    AppError.Unauthorized -> R.string.select_unavailable_unauthorized
-                    else -> R.string.select_unavailable_offline
-                },
-            )
-        }
+        explain((availability as? Availability.Unavailable)?.reason)
         return false
+    }
+
+    private fun explain(reason: AppError?) {
+        if (reason is AppError.Invalid) {
+            _state.value = _state.value.copy(showSettings = true)
+            return
+        }
+        _state.value = _state.value.copy(
+            message = when (reason) {
+                AppError.Unauthorized -> R.string.select_unavailable_unauthorized
+                else -> R.string.select_unavailable_offline
+            },
+        )
+        // A rate limit, a dropped connection and a restarting server all arrive as `Unavailable`,
+        // and all three pass. Without a probe here the tool stays greyed until the settings
+        // change, which is a dead end the user cannot get out of.
+        scope.launch { segmentation.refresh() }
     }
 
     /**
@@ -79,16 +89,38 @@ class SelectionController(
      * same editor session reuses it.
      */
     fun open(preview: Bitmap) {
-        if (_state.value.session != null) return
-        job?.cancel()
+        // `preparing` as well as `session`: an upload takes seconds, and without this a second
+        // tap in that window starts a second one.
+        if (_state.value.session != null || _state.value.preparing) return
+        abandonedOpen = false
         _state.value = _state.value.copy(preparing = true)
-        job = scope.launch {
-            _state.value = when (val opened = segmentation.open(preview)) {
-                is Result.Success -> _state.value.copy(session = opened.value, preparing = false)
-                is Result.Failure ->
+        // Deliberately not held in `job`. Cancelling an upload that is already on the wire does
+        // not un-create the session the server makes from it — it only loses the id, leaving an
+        // orphan to occupy one of the backend's four slots until its TTL expires. So the call
+        // always runs to completion, and a session nobody wants any more is released below.
+        scope.launch {
+            when (val opened = segmentation.open(preview)) {
+                is Result.Success -> if (abandonedOpen) {
+                    segmentation.close(opened.value)
+                    _state.value = _state.value.copy(preparing = false)
+                } else {
+                    _state.value = _state.value.copy(session = opened.value, preparing = false)
+                }
+                is Result.Failure -> _state.value =
                     _state.value.copy(preparing = false, message = R.string.select_failed)
             }
         }
+    }
+
+    /**
+     * specs/selection_tool.md §6: the session outlives the sheet, but not the editor. Leaving
+     * without this leaks it for the backend's whole TTL.
+     */
+    suspend fun release() {
+        abandonedOpen = true
+        job?.cancel()
+        _state.value.session?.let { segmentation.close(it) }
+        _state.value = _state.value.cleared().copy(session = null, preparing = false, busy = false)
     }
 
     /** specs/selection_tool.md §2: tap adds a foreground point, long-press a background one. */
@@ -200,6 +232,9 @@ class SelectionController(
 
     /** DESIGN.md §7: AI work always offers a way out. */
     fun cancelWork() {
+        // A prompt creates nothing, so cancelling one is free; an `open` is not, so it is
+        // marked abandoned instead and released as soon as its id is known.
+        abandonedOpen = true
         job?.cancel()
         // Whatever was accumulated stays exactly as it was.
         _state.value = _state.value.copy(preparing = false, busy = false, phraseBusy = false)

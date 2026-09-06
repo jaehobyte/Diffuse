@@ -23,10 +23,13 @@ import com.diffuse.feature.editor.EditorAi
 import com.diffuse.feature.editor.EditorViewModel
 import com.diffuse.feature.editor.Tool
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -107,6 +110,64 @@ class SelectionToolTest {
         viewModel.onToolClick(Tool.Select)
 
         assertEquals(1, provider.openCount)
+    }
+
+    /**
+     * The server's session cache is 4 deep with a 120s TTL. A second upload while the first is
+     * still in flight leaks a session server-side and, repeated, trips the rate limiter — which
+     * is exactly what happened on the first device run.
+     */
+    /**
+     * Giving up on a slow upload does not un-create the session the server already made. Left
+     * unreleased, four of those fill its cache and the fifth attempt is rate-limited — which is
+     * what took the tool offline on the first device run.
+     */
+    @Test
+    fun `cancelling a slow open releases the session the server already made`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val slow = FakeSegmentationProvider(openDelayMs = 5_000)
+        val viewModel = viewModel(slow)
+        advanceUntilIdle()
+
+        viewModel.onToolClick(Tool.Select)
+        advanceTimeBy(1_000)
+        viewModel.selection.cancelWork()
+        advanceUntilIdle()
+
+        assertTrue(
+            "a session was left behind on the server",
+            slow.openSessions.isEmpty(),
+        )
+    }
+
+    @Test
+    fun `leaving the editor releases the session`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onToolClick(Tool.Select)
+        assertEquals(1, provider.openSessions.size)
+
+        viewModel.onLeave()
+
+        assertTrue("the session was left open on the server", provider.openSessions.isEmpty())
+    }
+
+    /**
+     * 429 and a dropped connection both arrive as `Unavailable`, and both are transient. Latching
+     * the tool off until the settings change leaves the user with a permanently grey button.
+     */
+    @Test
+    fun `a transient outage re-probes on the next tap instead of staying greyed`() = runTest {
+        val viewModel = viewModel()
+        provider.setAvailability(Availability.Unavailable(AppError.Unavailable))
+        val probesBefore = provider.refreshCount
+
+        viewModel.onToolClick(Tool.Select)
+
+        assertNotNull("the user is told", viewModel.uiState.value.selection.message)
+        assertTrue(
+            "and the backend is re-probed rather than left greyed",
+            provider.refreshCount > probesBefore,
+        )
     }
 
     // ---- points ----------------------------------------------------------
@@ -481,10 +542,12 @@ class SelectionToolTest {
 
     // ---- fixtures --------------------------------------------------------
 
-    private fun viewModel() = EditorViewModel(
+    private fun viewModel(
+        segmentation: FakeSegmentationProvider = provider,
+    ) = EditorViewModel(
         repository = repository,
         renderer = FakeRenderer(),
-        ai = EditorAi(provider, eraseProvider, FakeSpeechInput(), settings),
+        ai = EditorAi(segmentation, eraseProvider, FakeSpeechInput(), settings),
         savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),
     )
 

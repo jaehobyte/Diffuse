@@ -20,6 +20,30 @@ Nothing in `work/tasks.md` is left. What a human still owes:
 
 ## Decisions
 
+### T30/T39 — the first device run
+
+Three defects, found from the server's access log after the tool went permanently grey. The log
+showed six `POST /v1/images` with no prompts and no `DELETE`s between them, then three `429`s —
+the server's `upload_rate` is 6 per 60 seconds, so the limiter fired exactly as configured.
+
+- **A cancelled `open` was leaking a session.** Aborting the upload does not un-create what the
+  server already made from it; it only loses the id, leaving an orphan in one of the backend's
+  four slots for the full 120s TTL. The call is no longer cancellable — it runs to completion and
+  a session nobody wants any more is `close`d as soon as its id is known.
+- **`open` guarded on `session != null` only.** An upload takes seconds, and `session` is not set
+  until it finishes, so every tap inside that window started another one. It now guards on
+  `preparing` too.
+- **A 429 latched `availability` to `Unavailable` for good.** Rate limits, dropped connections and
+  a restarting server all arrive as `Unavailable` and all three pass, but nothing re-probed except
+  a settings change — so the tool stayed grey with no way back. Tapping a greyed tool now probes.
+
+`FakeSegmentationProvider` registers its session *before* its delay, which is what a real backend
+does; without that the leak was invisible to tests, and the first two versions of the regression
+test passed for the wrong reason.
+
+- **Nobody ever called `close()`.** selection_tool.md §6 says leaving the editor releases the
+  session; `EditorViewModel.onLeave` now does, before the autosave so a slow write cannot hold it.
+
 ### T38
 
 - **`EraseController` owns run → save → commit, not `EditorViewModel`.** detekt flagged the

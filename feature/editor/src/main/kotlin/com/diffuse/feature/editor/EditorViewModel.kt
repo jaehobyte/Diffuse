@@ -282,6 +282,8 @@ class EditorViewModel @Inject constructor(
 
     /** specs/editor_shell.md: back autosaves; specs/persistence.md discards empty projects. */
     suspend fun onLeave() {
+        // Before the save, so a slow write cannot hold the backend's session open (§6).
+        selection.release()
         val document = _uiState.value.document ?: return
         if (!autosave.discardIfUntouched(document)) autosave.saveNow(document)
     }
