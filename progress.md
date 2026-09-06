@@ -2,9 +2,16 @@
 
 ## Current
 
-**T44 done. Next: T45 `GeminiPlanClient`** — the function-calling layer (specs/vibe_edit.md §4–§6).
+**T45 done. Next: T46 `GeminiPlanProvider`** — §8's four steps, availability off the key, the
+`AiModule` binding.
 
 ## Done
+
+- T45 `GeminiPlanClient` — `POST …/gemini-2.5-flash:generateContent` (the text model), the four
+  §4 declarations plus the system instruction as English `internal` constants, `toolConfig.mode
+  = ANY`, `functionCall` parts read in order with text parts skipped, and an unknown name /
+  missing argument / non-finite value dropping just that step. §6's rows now live once, in
+  `GeminiHttp.kt`, shared with the eraser. 29 MockWebServer tests.
 
 - T44 `EditPlanProvider` — `PlanStep` (`Select` / `Adjust` / `Erase` / `CutOut`), `EditPlan` and
   the provider interface in `core/ai`; `Adjust` carries `AdjustKind`, which makes

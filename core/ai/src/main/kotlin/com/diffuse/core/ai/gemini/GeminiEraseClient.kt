@@ -5,22 +5,16 @@ import com.diffuse.core.common.AppError
 import com.diffuse.core.common.DispatcherProvider
 import com.diffuse.core.common.Logger
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
-import okhttp3.Call
-import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.Response
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.coroutineContext
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 
 /**
  * specs/generative_erase.md §5, §6. One endpoint, one request shape: the whitened image plus an
@@ -88,7 +82,7 @@ internal class GeminiEraseClient(
             .header(API_KEY_HEADER, config.apiKey)
             .post(
                 json.encodeToString(GenerateContentRequest.serializer(), payload)
-                    .toRequestBody(JSON_MEDIA_TYPE.toMediaType()),
+                    .toRequestBody(GEMINI_JSON_MEDIA_TYPE.toMediaType()),
             )
             .build()
 
@@ -140,49 +134,21 @@ internal class GeminiEraseClient(
         response.promptFeedback?.blockReason
             ?: response.candidates.firstOrNull()?.finishReason?.takeIf { it in BLOCKING_REASONS }
 
-    /** specs/generative_erase.md §6, verbatim. No new `AppError` case. */
+    /** specs/generative_erase.md §6, shared with `GeminiPlanClient` (GeminiHttp.kt). */
     private fun statusFailure(code: Int, body: String): Outcome {
-        val error = errorOf(body)
+        val error = geminiErrorOf(json, body)
         logger?.warn(TAG, "POST $PATH -> $code ${error.status}: ${error.message}")
-        return Outcome.Failure(
-            when {
-                code == HTTP_BAD_REQUEST && error.status == FAILED_PRECONDITION -> AppError.Unavailable
-                code == HTTP_BAD_REQUEST -> AppError.Invalid(error.message)
-                code == HTTP_UNAUTHORIZED || code == HTTP_FORBIDDEN -> AppError.Unauthorized
-                code == HTTP_NOT_FOUND -> AppError.Unsupported
-                code == HTTP_PAYLOAD_TOO_LARGE -> AppError.TooLarge
-                code == HTTP_TOO_MANY_REQUESTS -> AppError.Unavailable
-                code in SERVER_ERRORS -> AppError.Unavailable
-                else -> AppError.Io(IOException("HTTP $code: ${error.message}"))
-            },
-        )
-    }
-
-    private fun errorOf(body: String): GeminiError = try {
-        json.decodeFromString(GeminiErrorEnvelope.serializer(), body).error
-    } catch (_: SerializationException) {
-        GeminiError(message = body)
+        return Outcome.Failure(geminiStatusError(code, error))
     }
 
     private fun base64(bytes: ByteArray): String =
         Base64.encodeToString(bytes, Base64.NO_WRAP)
 
-    private suspend fun Call.await(): Response = suspendCancellableCoroutine { continuation ->
-        continuation.invokeOnCancellation { cancel() }
-        enqueue(object : Callback {
-            override fun onFailure(call: Call, e: IOException) {
-                if (!continuation.isCancelled) continuation.resumeWithException(e)
-            }
-
-            override fun onResponse(call: Call, response: Response) = continuation.resume(response)
-        })
-    }
-
     companion object {
         /** Recognisable to the tool, which shows a different string for it (§9). */
-        const val BLOCKED_PREFIX = "blocked:"
+        const val BLOCKED_PREFIX = GEMINI_BLOCKED_PREFIX
 
-        const val API_KEY_HEADER = "x-goog-api-key"
+        const val API_KEY_HEADER = GEMINI_API_KEY_HEADER
         const val PATH = "/v1beta/models/gemini-2.5-flash-image:generateContent"
 
         /**
@@ -207,22 +173,12 @@ internal class GeminiEraseClient(
 
         private const val TAG = "GeminiEraseClient"
         private const val JPEG_MEDIA_TYPE = "image/jpeg"
-        private const val JSON_MEDIA_TYPE = "application/json; charset=utf-8"
         private const val IMAGE_MODALITY = "IMAGE"
-        private const val FAILED_PRECONDITION = "FAILED_PRECONDITION"
 
         private val BLOCKING_REASONS =
             setOf("SAFETY", "PROHIBITED_CONTENT", "IMAGE_SAFETY")
 
         private const val CONNECT_TIMEOUT_S = 10L
         private const val READ_TIMEOUT_S = 60L
-
-        private const val HTTP_BAD_REQUEST = 400
-        private const val HTTP_UNAUTHORIZED = 401
-        private const val HTTP_FORBIDDEN = 403
-        private const val HTTP_NOT_FOUND = 404
-        private const val HTTP_PAYLOAD_TOO_LARGE = 413
-        private const val HTTP_TOO_MANY_REQUESTS = 429
-        private val SERVER_ERRORS = setOf(500, 503, 504)
     }
 }

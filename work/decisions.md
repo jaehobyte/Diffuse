@@ -8,6 +8,38 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T45 — the §6 table moved into `GeminiHttp.kt` rather than being copied
+
+vibe_edit.md §6 says the planner maps errors "identical to generative_erase.md §6, row for row".
+Two copies of that table would be two things to keep identical, so the status mapping, the error
+envelope parse and the `Call.await()` bridge are now top-level `internal` functions both clients
+call. `GeminiEraseClient`'s behaviour is unchanged — its 23 tests pass untouched — and its public
+`BLOCKED_PREFIX` / `API_KEY_HEADER` constants stay where they were, now aliasing the shared ones.
+
+The planner's `BLOCKING_REASONS` is `SAFETY` / `PROHIBITED_CONTENT`, the two vibe_edit.md §6 names,
+and not the eraser's three: `IMAGE_SAFETY` is a reason for a refused *image*, which this call never
+asks for. A blocked prompt arrives as `promptFeedback.blockReason` either way.
+
+### T45 — the client returns `Result<EditPlan>`, not an `Outcome`
+
+`GeminiEraseClient.Outcome` exists because its success carries a `ByteArray`, whose `equals` is
+identity — a data class holding one cannot be compared in a test. `EditPlan` is an ordinary data
+class, so the shared `Result` works and one type disappears from the module.
+
+### T45 — parameter schemas are a typed `Schema`, not a `JsonObject`
+
+The OpenAPI subset Gemini accepts is small enough to spell as a data class (`type`, `description`,
+`enum`, `properties`, `required`), and `explicitNulls = false` drops the fields a declaration does
+not use. `buildJsonObject` would have read as JSON embedded in Kotlin and lost the compiler's help
+with the four declarations. `enum` is `enumValues` in Kotlin with `@SerialName("enum")`.
+
+### T45 — a value that is not a number drops the step, and a JSON string that parses does not
+
+`args["value"]` is read as a `JsonPrimitive` and run through `floatOrNull`, so `"0.3"` from a model
+that quoted its number is accepted while `"x"` and `"NaN"` are dropped. §5 asks for non-finite to
+drop the step and that is what `isFinite()` does; clamping is `AdjustKind.coerce`, so the range
+lives in edit_model.md's enum and not in the client.
+
 ### T44 — `data object` for the argument-less steps, and `DEFAULT_PLAN` on the companion
 
 specs/vibe_edit.md §7 writes `object Erase` / `object CutOut`; the code uses `data object`, which

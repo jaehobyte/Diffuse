@@ -80,7 +80,7 @@ adding one. specs/vibe_edit.md is the whole feature.
       overriding it once, `failNext` failing exactly one call
   touches: core/ai/EditPlanProvider.kt, core/ai/src/testShared, core/ai tests, core/ai/build.gradle.kts
 
-- [ ] T45 `GeminiPlanClient` — the function-calling layer
+- [x] T45 `GeminiPlanClient` — the function-calling layer
   spec: specs/vibe_edit.md §4, §5, §6
   deps: T44
   done when:
