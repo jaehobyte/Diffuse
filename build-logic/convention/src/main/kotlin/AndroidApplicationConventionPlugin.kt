@@ -19,8 +19,8 @@ class AndroidApplicationConventionPlugin : Plugin<Project> {
                 // Bumped per release. v0.2.0 shipped an APK that still reported 0.1.0 because
                 // only the asset filename was changed by hand; the installed build should say
                 // which one it is.
-                versionCode = 10
-                versionName = "0.4.0"
+                versionCode = 11
+                versionName = "0.5.0"
             }
             buildTypes {
                 getByName("release") {
