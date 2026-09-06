@@ -3,6 +3,7 @@ package com.diffuse.core.ai
 import com.diffuse.core.ai.gemini.GeminiConfigSource
 import com.diffuse.core.ai.gemini.GeminiEraseClient
 import com.diffuse.core.ai.gemini.GeminiEraseProvider
+import com.diffuse.core.ai.gemini.GeminiFillProvider
 import com.diffuse.core.ai.gemini.GeminiPlanClient
 import com.diffuse.core.ai.gemini.GeminiPlanProvider
 import com.diffuse.core.ai.gemini.GeminiSettings
@@ -40,6 +41,9 @@ internal abstract class AiModule {
 
     @Binds
     abstract fun erase(impl: GeminiEraseProvider): EraseProvider
+
+    @Binds
+    abstract fun fill(impl: GeminiFillProvider): FillProvider
 
     @Binds
     abstract fun plan(impl: GeminiPlanProvider): EditPlanProvider

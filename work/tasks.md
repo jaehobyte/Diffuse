@@ -13,7 +13,7 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `[H]` human-only, loop must
 
 ## Queue
 
-**Phase 12, T60–T65.** T57 and T66 are `[!]` — both need a human. Pick the first `[ ]` whose deps
+**Phase 12, T61–T65.** T57 and T66 are `[!]` — both need a human. Pick the first `[ ]` whose deps
 are all `[x]`, as always.
 
 ---
@@ -192,7 +192,7 @@ design drifted — block it rather than adding one.
   core/imaging/render/Renderer.kt, core/imaging (serialization), core/imaging tests,
   core/imaging/src/test/resources/golden, core/imaging/src/test/resources/golden_manifest.txt
 
-- [ ] T60 `FillProvider`, and the instruction becomes an argument
+- [x] T60 `FillProvider`, and the instruction becomes an argument
   spec: specs/generative_fill.md §3, §4, §9; specs/ai_provider.md §3; specs/generative_erase.md §4, §5
   deps: —
   done when:

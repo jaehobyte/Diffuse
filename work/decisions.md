@@ -8,6 +8,34 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T60
+
+- **The five steps became `GeminiMaskedEdit`, shared by 지우기 and 채우기.** The spec asked the
+  fill provider to run generative_erase.md §7 "verbatim", and the only honest way to do that is
+  to run the same code. It matters most for T51's still-white threshold: two copies of that
+  number is exactly how the two erase paths drifted before T50 pulled the margin into one place.
+  `GeminiEraseProvider` is now availability plus one sentence, and so is `GeminiFillProvider`.
+
+- **The instructions moved to `GeminiEditInstructions.kt`, not into the providers.** The spec said
+  each provider would own its constant. In practice both are wire payload for the same model,
+  their tests are about text rather than about a provider, and 확대 will want a third. One file of
+  `internal` constants beside the client keeps them together and keeps `GeminiEraseClient` pure
+  transport. The three erase-instruction tests moved with them into
+  `GeminiEditInstructionsTest`; the 22 client tests kept every assertion and changed only the
+  call, which is what the spec asked for.
+
+- **`geminiAvailability(config)` is a top-level internal function.** Both providers derive
+  availability from the same key by the same probe-free rule; duplicating the `when` in each
+  would invite them to disagree about what "configured" means.
+
+- **A blank prompt is refused in the provider as well as the sheet.** The sheet disables 적용, so
+  no user reaches it — but a plan's `fill_selection` with an empty argument does, and failing
+  before the encode keeps a billed call from being spent on nothing.
+
+- **`FakeFillProvider` colours the region from the prompt's hash, capped at 200 per channel.**
+  Deterministic enough for a golden, different per prompt so a test can tell two fills apart, and
+  never near-white so it cannot trip the still-white guard by accident.
+
 ### T59
 
 - **`applyErase` became `blendResult(document, input, maskId, resultRef)`.** 지우기 and 채우기
