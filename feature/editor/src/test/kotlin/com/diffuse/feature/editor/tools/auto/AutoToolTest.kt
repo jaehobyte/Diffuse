@@ -14,6 +14,7 @@ import com.diffuse.core.ai.FakeOutpaintProvider
 import com.diffuse.core.ai.FakePlanProvider
 import com.diffuse.core.ai.FakeSegmentationProvider
 import com.diffuse.core.ai.gemini.GeminiSettings
+import com.diffuse.core.ai.monet.MonetSettings
 import com.diffuse.core.ai.sam3.Sam3Settings
 import com.diffuse.core.ai.speech.FakeSpeechInput
 import com.diffuse.core.common.AppError
@@ -57,6 +58,7 @@ class AutoToolTest {
     private lateinit var repository: RecordingRepository
     private lateinit var settings: Sam3Settings
     private lateinit var geminiSettings: GeminiSettings
+    private lateinit var monetSettings: MonetSettings
 
     @Before
     fun setUp() {
@@ -65,6 +67,7 @@ class AutoToolTest {
         settings = Sam3Settings(ApplicationProvider.getApplicationContext())
         settings.update("http://localhost:8080", "token")
         geminiSettings = GeminiSettings(ApplicationProvider.getApplicationContext())
+        monetSettings = MonetSettings(ApplicationProvider.getApplicationContext())
         geminiSettings.update("test-key")
     }
 
@@ -260,6 +263,7 @@ class AutoToolTest {
             FakeSpeechInput(),
             settings,
             geminiSettings,
+            monetSettings,
             enhancer,
             FakeMatchStyleProvider(),
         ),
