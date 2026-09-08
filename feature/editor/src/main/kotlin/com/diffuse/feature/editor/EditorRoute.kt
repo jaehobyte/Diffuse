@@ -92,7 +92,7 @@ fun EditorRoute(
             onExport = onExport,
             overlayTransform = overlayTransform(state),
             disabledTools = disabledTools(state),
-            toolLevel = ToolLevelState(toolLevel) { toolLevel = it },
+            toolLevel = toolLevelState(toolLevel, state) { toolLevel = it },
             gestureMode = if (state.selectedTool == Tool.Select) {
                 CanvasGestureMode.SelectPoint
             } else {
@@ -118,6 +118,21 @@ fun EditorRoute(
         )
     }
 }
+
+/**
+ * work/decisions.md T79: what the strip is bound to — the level the user opened, and the ordering
+ * the photograph earned.
+ *
+ * The profile only reorders, so a detection that lands while a sheet is open changes nothing the
+ * user is looking at: the sheet stays open, the selected tool stays selected, and the new order is
+ * there underneath it. A file-level function rather than four lines inline, because `EditorRoute`
+ * is at detekt's method-length limit.
+ */
+private fun toolLevelState(
+    level: ToolGroup,
+    state: EditorUiState,
+    onChange: (ToolGroup) -> Unit,
+) = ToolLevelState(level, onChange, menuProfileFor(state.portrait))
 
 /** DESIGN.md §7: the overlay's cancel button reaches whichever tool is working. */
 private fun cancelWork(viewModel: EditorViewModel) {

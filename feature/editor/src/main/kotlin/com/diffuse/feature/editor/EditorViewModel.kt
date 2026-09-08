@@ -7,6 +7,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.diffuse.core.ai.PortraitDetector
+import com.diffuse.core.ai.PortraitResult
 import com.diffuse.core.ai.speech.SpeechInput
 import com.diffuse.core.common.DispatcherProvider
 import com.diffuse.core.common.Result
@@ -89,6 +91,12 @@ data class EditorUiState(
     val maskedAdjust: Boolean = true,
     /** The applied mask, resolved for the scrim the adjust sheets show. */
     val activeMask: Bitmap? = null,
+    /**
+     * work/decisions.md T79: a menu hint, and nothing else. It is never written to the document,
+     * never persisted, and starts at [PortraitResult.Unknown] — which the menu reads as "general"
+     * — so the strip is right before the detector has answered as well as after it fails.
+     */
+    val portrait: PortraitResult = PortraitResult.Unknown,
 )
 
 /** specs/editor_shell.md: one ViewModel per screen, UI sends intents, VM reduces to state. */
@@ -128,6 +136,10 @@ class EditorViewModel @Inject constructor(
 
     /** specs/prompt_input.md §3: handed straight to the prompt bar; the VM never drives it. */
     val speech: SpeechInput = ai.speech
+
+    /** work/decisions.md T79: asked once per loaded source, and never on the user's behalf. */
+    private val portrait: PortraitDetector = ai.portrait
+    private var portraitJob: Job? = null
 
     /** specs/generative_erase.md §10, T50: one commit shape for both erase paths. */
     private val eraseCommit = EraseCommit(
@@ -356,11 +368,31 @@ class EditorViewModel @Inject constructor(
         }
     }
 
-    private suspend fun renderSource(document: EditDocument) {
+    /**
+     * work/decisions.md T79: the portrait gate rides along here rather than in a pass of its own.
+     * This is the one place that already holds the bare source at preview size, so the detector is
+     * handed a frame that exists instead of decoding the original a second time.
+     *
+     * Launched rather than awaited, so a slow or absent Play-services model cannot hold up the
+     * canvas; the previous job is cancelled and the answer is dropped unless the source it was
+     * asked about is still the one on screen.
+     *
+     * `internal` rather than private only so a test can render a second source and prove that
+     * guard: nothing outside this module calls it, and `load` remains its only caller.
+     */
+    internal suspend fun renderSource(document: EditDocument) {
         val bare = document.copy(operations = emptyList())
         val rendered = renderer.preview(bare, PREVIEW_LONG_EDGE_PX)
         if (rendered is Result.Success) {
-            _uiState.value = _uiState.value.copy(source = rendered.value.asImageBitmap())
+            val source = rendered.value
+            _uiState.value = _uiState.value.copy(source = source.asImageBitmap())
+            portraitJob?.cancel()
+            portraitJob = viewModelScope.launch {
+                val result = portrait.detect(source)
+                if (_uiState.value.source?.asAndroidBitmap() === source) {
+                    _uiState.value = _uiState.value.copy(portrait = result)
+                }
+            }
         }
     }
 

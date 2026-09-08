@@ -16,6 +16,7 @@ import androidx.compose.material.icons.rounded.OpenInFull
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.ui.graphics.vector.ImageVector
+import com.diffuse.core.ai.PortraitResult
 
 /**
  * specs/tool_groups.md §3. Which level of the strip a tool appears at.
@@ -64,13 +65,35 @@ enum class Tool(
 }
 
 /**
+ * work/decisions.md T79. Which ordering of the two levels the strip shows. Separate from
+ * [ToolGroup] on purpose: the group says *where* a tool lives, this says *what the photograph is*,
+ * and collapsing them would make a portrait re-parent tools rather than reorder them.
+ *
+ * There are two, and there is no `Unknown`: a photograph we could not read is a photograph that
+ * gets the menu everything else gets (T79, requirement 11).
+ */
+enum class ToolMenuProfile { General, Portrait }
+
+/**
+ * T79: the only thing the detector's answer is allowed to decide. `NotPortrait` and `Unknown` are
+ * the same sentence here, which is why this is a function and not an `if` at the call site.
+ */
+fun menuProfileFor(portrait: PortraitResult): ToolMenuProfile = when (portrait) {
+    PortraitResult.Portrait -> ToolMenuProfile.Portrait
+    PortraitResult.NotPortrait, PortraitResult.Unknown -> ToolMenuProfile.General
+}
+
+/**
  * specs/tool_groups.md §3. Which level the strip is bound to, and how to change it. One parameter
  * rather than two, the shape `MaskOption` and `CanvasPointTaps` already use — `EditorScreen` is at
  * detekt's method-length limit and every line of its signature counts against it.
+ *
+ * T79 adds [profile] here for the same reason, rather than as a fourth `EditorScreen` parameter.
  */
 data class ToolLevelState(
     val level: ToolGroup = ToolGroup.Root,
     val onChange: (ToolGroup) -> Unit = {},
+    val profile: ToolMenuProfile = ToolMenuProfile.General,
 )
 
 /**
@@ -88,12 +111,34 @@ sealed interface StripItem {
 }
 
 /**
+ * work/decisions.md T79. The root level a portrait gets: 자동 and 디테일 first, because a face is
+ * what those two are usually reached for, and the five adjust tools after them in their own order.
+ *
+ * Written out rather than derived. The general order is the enum's, which is a design decision
+ * (specs/tool_groups.md §8); a second design decision deserves to be readable as a list rather
+ * than reconstructed from a comparator.
+ */
+private val PortraitRoot = listOf(Tool.Auto, Tool.Detail, Tool.Light, Tool.Color, Tool.Mix, Tool.Crop)
+
+/**
  * §3: the strip binds one level's tools, so adding a tool is still one enum entry.
  *
  * Pure, so §7's "every `Tool` appears at exactly one level" is a test and not a screenshot.
+ *
+ * T79: [profile] reorders, and in one case re-levels — 자동 is promoted to the portrait root, and
+ * subtracted from the AI level in the same breath, so it can never be in both at once.
  */
-fun stripItems(level: ToolGroup): List<StripItem> {
-    val tools = Tool.entries.filter { it.group == level }.map(StripItem::OfTool)
+fun stripItems(
+    level: ToolGroup,
+    profile: ToolMenuProfile = ToolMenuProfile.General,
+): List<StripItem> {
+    val tools = when (profile) {
+        ToolMenuProfile.General -> Tool.entries.filter { it.group == level }
+        ToolMenuProfile.Portrait -> when (level) {
+            ToolGroup.Root -> PortraitRoot
+            ToolGroup.Ai -> Tool.entries.filter { it.group == level && it !in PortraitRoot }
+        }
+    }.map(StripItem::OfTool)
     return when (level) {
         ToolGroup.Root -> tools + StripItem.OpenAi
         ToolGroup.Ai -> listOf(StripItem.Back) + tools

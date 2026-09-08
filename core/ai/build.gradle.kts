@@ -56,6 +56,9 @@ dependencies {
     implementation(projects.core.imaging)
     implementation(libs.okhttp)
     implementation(libs.kotlinx.serialization.json)
+    // work/decisions.md T79: the on-device portrait gate. Play-services delivery, so the
+    // model is downloaded by Play rather than bundled into the APK.
+    implementation(libs.play.services.mlkit.face.detection)
 
     // Localhost only; CLAUDE.md forbids reaching an external host from a test.
     testImplementation(libs.okhttp.mockwebserver)

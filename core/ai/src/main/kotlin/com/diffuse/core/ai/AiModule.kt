@@ -14,6 +14,7 @@ import com.diffuse.core.ai.monet.MonetClient
 import com.diffuse.core.ai.monet.MonetConfigSource
 import com.diffuse.core.ai.monet.MonetAutoEnhanceProvider
 import com.diffuse.core.ai.monet.MonetSettings
+import com.diffuse.core.ai.mlkit.MlKitPortraitDetector
 import com.diffuse.core.ai.sam3.Sam3Client
 import com.diffuse.core.ai.sam3.Sam3ConfigSource
 import com.diffuse.core.ai.sam3.Sam3SegmentationProvider
@@ -66,6 +67,9 @@ internal abstract class AiModule {
 
     @Binds
     abstract fun matchStyle(impl: GeminiMatchStyleProvider): MatchStyleProvider
+
+    @Binds
+    abstract fun portrait(impl: MlKitPortraitDetector): PortraitDetector
 
     companion object {
         @Provides

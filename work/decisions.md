@@ -8,6 +8,26 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T79
+
+- **Portrait mode is a face-detection hint, not a persisted document property.** The requested menu
+  change is about what tools to put under the user's thumb when an image enters the editor. It does
+  not change pixels, undo, export, autosave, or project data, so the result belongs in
+  `EditorUiState` and resets with the editor screen.
+
+- **Use ML Kit Face Detection through Google Play services for the first portrait gate.** The
+  product signal is "does this photo have a usable face for retouching?", not "does it contain any
+  person-shaped object." Face detection maps directly to blemish/wrinkle-first UI, avoids a
+  segmentation pass, and the Play-services model delivery preserves the existing no-bundled-model
+  APK decision. The cost is a first-run model availability state; that state falls back to the
+  general menu instead of blocking editing.
+
+- **`자동` moves to the portrait root instead of adding placeholder retouch tools.** The repository
+  has no blemish or wrinkle operation yet. Adding labels that cannot perform the named edit would
+  be a product lie and a review trap. The portrait menu therefore reprioritizes existing behavior:
+  `자동` and `디테일` surface first, while future retouch tools can be added as real tools with their
+  own operation/provider contracts.
+
 ### T75
 
 - **§5's named source was never imported, so the maths is ours.** §5 says the local matcher "is

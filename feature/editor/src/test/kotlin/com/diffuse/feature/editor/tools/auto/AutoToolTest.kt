@@ -12,6 +12,7 @@ import com.diffuse.core.ai.FakeFillProvider
 import com.diffuse.core.ai.FakeMatchStyleProvider
 import com.diffuse.core.ai.FakeOutpaintProvider
 import com.diffuse.core.ai.FakePlanProvider
+import com.diffuse.core.ai.FakePortraitDetector
 import com.diffuse.core.ai.FakeSegmentationProvider
 import com.diffuse.core.ai.gemini.GeminiSettings
 import com.diffuse.core.ai.monet.MonetSettings
@@ -266,6 +267,7 @@ class AutoToolTest {
             monetSettings,
             enhancer,
             FakeMatchStyleProvider(),
+            FakePortraitDetector(),
         ),
         dispatchers = TestDispatchers,
         savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),
