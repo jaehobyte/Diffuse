@@ -103,7 +103,7 @@ class GeminiPlanClientTest {
     }
 
     @Test
-    fun `the body declares the seven functions and forces a call`() = runTest {
+    fun `the body declares the eight functions and forces a call`() = runTest {
         server.enqueue(calls(SELECT_CALL))
 
         client.plan(JPEG, REQUEST)
@@ -120,6 +120,7 @@ class GeminiPlanClientTest {
                 "cut_out_selection",
                 "fill_selection",
                 "crop_ratio",
+                "apply_style",
             ),
             declarations.map { it.jsonObject["name"]!!.jsonPrimitive.content },
         )
@@ -143,9 +144,14 @@ class GeminiPlanClientTest {
             .jsonObject["kind"]!!.jsonObject["enum"]!!.jsonArray
         // specs/adjust_hsl.md §8: the 24 혼합 kinds have their own function, and putting them
         // here too would be 34 values on the argument the model already gets wrong most often.
-        assertEquals(10, kinds.size)
+        // T71 added five more non-HSL kinds for a preset and the auto boost to set, and kept them
+        // off this enum for the same reason — so the list is spelled out rather than derived.
         assertEquals(
-            AdjustKind.entries.filter { it.hsl == null }.map { it.name.lowercase() },
+            listOf(
+                "exposure", "contrast", "highlights", "shadows",
+                "temperature", "tint", "saturation", "vibrance",
+                "sharpen", "vignette",
+            ),
             kinds.map { it.jsonPrimitive.content },
         )
         assertTrue(

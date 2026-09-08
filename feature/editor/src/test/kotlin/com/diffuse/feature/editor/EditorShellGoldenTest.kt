@@ -22,11 +22,17 @@ class EditorShellGoldenTest {
     val compose = createComposeRule()
 
     @Test
-    fun editorShellDefault() {
+    fun editorShellDefault() = shell("editor_shell_default", Tool.Light, ToolGroup.Root)
+
+    /** specs/tool_groups.md §7: the second level, which is the whole point of T78. */
+    @Test
+    fun editorShellAiOpen() = shell("editor_shell_ai_open", null, ToolGroup.Ai)
+
+    private fun shell(name: String, selected: Tool?, level: ToolGroup) {
         compose.setContent {
             EditorScreen(
                 preview = testImage(),
-                selectedTool = Tool.Light,
+                selectedTool = selected,
                 onToolClick = {},
                 canUndo = true,
                 canRedo = false,
@@ -37,12 +43,13 @@ class EditorShellGoldenTest {
                 onRedo = {},
                 onCompareChange = {},
                 onExport = {},
+                toolLevel = ToolLevelState(level),
             )
         }
         compose.waitForIdle()
 
         compose.onRoot().captureRoboImage(
-            filePath = ScreenshotOptions.goldenPath("editor_shell_default"),
+            filePath = ScreenshotOptions.goldenPath(name),
             roborazziOptions = ScreenshotOptions.options,
         )
     }

@@ -8,6 +8,380 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+### T75
+
+- **§5's named source was never imported, so the maths is ours.** §5 says the local matcher "is
+  `PhotoTune_v1/reference_style.py`'s `match_style_map`, and it is the same maths". That file is not
+  in the repo — only `styles.json` was handed over — so `StyleMatch.measure` is derived instead from
+  the ops themselves: every formula is the algebraic inverse of what `LightOps` and `ColorOps` do,
+  measured against a neutral photograph. Swapping the original in later changes `measure` and
+  nothing else; §9's property test is what would say whether it still holds.
+
+- **The preset side is measured, not read.** The first attempt scored `measure(reference)` against
+  `preset.params` directly and ranked 클린 브라이트's own output as 비비드 팝. A preset carries
+  parameters `measure` does not estimate — `shadows`, `vibrance`, `fade`, the HSL bands — and every
+  one of them still moves the five statistics that *are* estimated. Measuring each preset's own
+  output puts both sides in the same space, so a parameter with no estimator still counts through
+  the effect it has.
+
+- **Two per-band saturations were added because five global statistics cannot tell 시네마틱 틸 from
+  어반 힙.** What separates them is a teal-and-orange split — §5's own words, "per-colour treatment"
+  — which is invisible to a whole-frame mean. `HslOrangeSaturation` and `HslBlueSaturation`, at
+  weight 0.75, are the axis that split runs along, and adding them is what made **all twelve**
+  presets rank themselves first.
+
+- **The neutral frame's hue sweep is zero-mean in luma, not in RGB.** An offset that averages to
+  zero across the channels does not average to zero in luma, because luma weights green ten times
+  blue — and the leftover showed up as +0.06 of contrast on the frame that is supposed to measure as
+  nothing at all. Subtracting each hue's own luma fixes it exactly.
+
+- **`referenceFrame(preset)` is public.** `feature:editor` cannot reach `Ops` or the neutral frame,
+  both internal to `core:imaging`, so its test could not build a reference that is *near* a preset.
+  Rather than widen `Ops`, the matcher exposes the frame a signature is measured from — which is
+  what a match means ("this reference looks like this") and is the only thing a caller outside the
+  module cannot otherwise reproduce.
+
+- **`STYLE_MATCH_THRESHOLD = 0.2` is a first calibration.** It is a weighted RMS in the −1..1
+  parameter space — "about a fifth of a slider out, on average". Every preset's own output lands
+  inside it and a hard magenta frame lands outside; §5 expects it tuned against real references on
+  a device, and nothing here can do that.
+
+- **The matcher measures a look, and a photograph's own character is part of that look.** It cannot
+  tell a dark *grade* from a dark *scene*, and a colourless reference matches 클래식 모노 whatever
+  was applied to it. That is stated as a test rather than hidden, and it is precisely the case §5
+  step 2 earns its round trip on.
+
+- **`match_style` asks for eight kinds, not `plannableKinds`.** Reusing the planner's list would
+  have added `sharpen` and `vignette`, and §5's instruction asks for a *grade* — a grade has no
+  vignette.
+
+- **A prose answer and an all-zero answer are both failures.** §5 says a model answering in
+  sentences "has answered wrongly, and the client drops it"; an answer that changes nothing is the
+  same thing arriving as numbers. Both return `Invalid`, so the sheet can say 참조 스타일을 읽지
+  못했어요 rather than applying an empty style.
+
+- **The picker's `Uri` is decoded in the route.** It is one `ContentResolver` read of a `Uri` the
+  system picker just handed that composable, and routing it through the graph would add a
+  dependency for a bitmap that lives for one call. §10's "never stored" falls out of using the
+  system picker at all.
+
+- **`matchReference` is called from the route, not through a ViewModel function.** `EditorViewModel`
+  is at detekt's 20-function ceiling (T65, T78 both note it), and the route already holds the two
+  pieces the call needs.
+
+- **`Stats` carries `warmth` and `greenness`, not three channel means.** Seven constructor
+  parameters is detekt's ceiling, and the two differences are what the measurement actually uses —
+  the three means were only ever raw material for them.
+
+### T74
+
+- **`touches` could not reach the catalog, so two files outside it moved.** T74 lists
+  `feature/editor/tools/direct` but the ids resolve to *data* that only `EditorViewModel` can read —
+  the catalog is an asset. `StyleController` gained `presets()` (an on-demand load, because a plan
+  can name a style before the sheet has ever opened) and the ViewModel binds a `styleParams` lambda
+  onto `PlanRunner`, the shape every other thing the runner cannot know already takes. The
+  alternative was caching the catalog in a global, which is the same coupling with the seam hidden.
+
+- **`StyleId` mirrors the twelve ids in `core:ai`, and a test holds the copy honest.** §6 puts the
+  enum there and says `core:ai` does not carry the catalog; a function declaration has to name its
+  enum values, and `core:ai` cannot open an asset. `StyleId.id` is the catalog's own string —
+  dashes and all — so the join is the id rather than a second spelling, and `StyleIdCatalogTest`
+  lives in `feature:editor` because that is the only module that can see both sides.
+
+- **`intensity` is optional and clamps rather than dropping the step.** §6 writes
+  `apply_style(style, intensity)` and does not say whether the second is required. A request naming
+  a look almost never names a strength, so a missing one is 100 — and a model answering 250 meant
+  "a lot", not two and a half times, so it clamps. Only an unknown **id** drops the step, which is
+  what §6 actually asks for.
+
+- **The style step is never masked.** §6 gives no rule, and the sheet's 적용 commits unmasked
+  (`maskId = null`). A style is a look for the whole photograph; applying one inside a selection is
+  a different feature and would need §9.1's `consumesSelection` to change, which §6 says it must
+  not.
+
+- **`apply_style`'s tests are their own class.** Adding six to `GeminiPlanClientTest` pushed it past
+  detekt's `LargeClass`, and one function's tests are the cleanest seam available — the alternative
+  was splitting the other seven functions' tests on a boundary nothing else argues for.
+  `GeminiPlanStyleTest` repeats four lines of MockWebServer harness, which is cheaper than the split
+  it would otherwise force.
+
+- **The instruction rule names looks and changes, not styles.** "필름 느낌" is `apply_style`,
+  "더 따뜻하게" stays `adjust`, and it says never both for one look — the failure worth pre-empting
+  is a model that applies a style *and* nudges the sliders it already set.
+
+### T73
+
+- **`Tool.Style` is at the AI level, and that does not contradict style_match.md §4.** §4 says 스타일
+  is not an AI tool because picking a named style calls nothing; tool_groups.md §2's diagram puts it
+  at the AI level anyway, and §9's open decision 2 says why — 컬러 매칭 (T75) lives inside this
+  sheet and *is* a call. The level names where things are, not what they cost. `isAi` no longer
+  exists (T78), so the §4 clause the task's `done when` names is satisfied by construction.
+
+- **Variant chips needed names and §8's table has none.** §8 lists `style_variants` (세부) for the
+  row and one `style_name_<id>` per catalog entry, and stops there. Numbered chips — 세부 1, 2, 3 —
+  are less code and would have made the choice §3 exists for (film grain versus film colour)
+  unmakeable. So §3's rule was applied to variants as it is to styles: 41 `style_variant_*` strings,
+  joined by the derived id, and the JSON's own Korean still ignored.
+
+- **Edit mode has no `surfaceCard`.** DESIGN.md §4's "flat `surfaceCard` while loading, no skeleton
+  shimmer" is written for the Browse image tile; the dark surface scale's matching step is
+  `editSurfaceRaised`, which is what `AppColors.surfaceRaised` resolves to under `ThemeMode.Edit`.
+  The no-shimmer half is kept exactly.
+
+- **Tiles render at full intensity, always.** §7 does not say what the 강도 slider does to a tile.
+  Re-rendering twelve of them per slider frame is the obvious wrong answer; the tile answers "what
+  is this style", and 강도 is then an adjustment to the one the user picked. `StyleState` is the one
+  fold, so a tile and the canvas cannot disagree about what a preset *is*.
+
+- **A tile is `renderer.preview(document + preset)`, not the preset applied to a shared bitmap.**
+  §7 describes one 96dp bitmap that each tile transforms. `Ops` is `internal` to `core:imaging` and
+  `core/imaging/render` is not in T73's `touches`, so the preset is added to the document instead
+  and the renderer draws it. The decode is still shared — `baseCache` is keyed on source and target
+  size, and all thirteen renders ask for the same 256px — so §7's cost argument survives intact.
+  What it costs that §7 did not intend: thirteen renders evict the canvas preview from a 3-entry
+  `previewCache`, so the next document change re-renders it once.
+
+- **`EditorViewModel` now takes `@ApplicationContext`.** The catalog is an asset, so something has
+  to hold an `AssetManager`. `app/di/ImagingModule` is where a `StyleCatalog` binding would belong
+  and it is not in T73's `touches`; Hilt provides the application context with no module at all.
+  The cost is seven test constructor call sites, all mechanical.
+
+- **The controller's scope in tests is unconfined, not `runTest`'s own.** `TestScope` is a
+  `StandardTestDispatcher`, which queues `open`'s `launch` rather than running it, and every
+  assertion read an empty state. The real scope is `viewModelScope` on `Dispatchers.Main`, which the
+  suite already sets to an unconfined dispatcher, so an unconfined scope is the faithful stand-in
+  rather than a convenience.
+
+- **`style_sheet_selected` picks 내추럴, the third tile.** The first recording selected 웜 필름,
+  which is fifth and therefore behind the row's scroll: the golden showed 세부 changing and no ring
+  at all. A golden that cannot see the thing it asserts is not asserting it.
+
+- **Both goldens show tiles that have not rendered.** §7 makes the flat, image-less tile a specified
+  state, and it is the only one a golden can hold without depending on a photograph — which would
+  make these screenshots assertions about the renderer instead of about the sheet.
+
+- **`recordRoborazziDebug` also rewrote `canvas_fit`, `canvas_transparent` and `crop_overlay`,
+  and all three were reverted.** Nothing in T73 touches the canvas; the bytes differ run to run.
+  `editor_shell_ai_open` was reverted too even though 스타일 genuinely belongs in it now — CLAUDE.md
+  allows re-recording only a golden the task's `done when` names, and it names two. That golden's
+  looseness is already an open issue in `progress.md`, and this is the second task to leave it be.
+
+### T72
+
+- **`StylePreset` carries no `nameRes`, because `core:imaging` has no `res/`.** §3 draws the field
+  on the data class; the module is a plain library with `assets` and no resources, so a resource id
+  cannot be resolved there and `feature:editor`'s `R` is not visible to it either. The name is
+  attached at the `feature:editor` boundary instead — `styleNameRes(id)`, the same edge T58 drew for
+  `CropRatio → AspectPreset`. The join stays what §3 says it is: the `id`.
+
+- **A missing name fails to compile, which is stronger than the test §9 asks for.** `STYLE_NAMES` is
+  a `Map<String, Int>` of `R.string` constants, so an id with no `style_name_<id>` cannot be written
+  down. `StyleLabelsTest` covers the case a compiler cannot see — a *new* preset appearing in
+  `styles.json` with no Korean beside it — by walking the parsed catalog.
+
+- **The vignette conversion flips the sign, and that is the table's job, not a preset's.** Lightroom
+  darkens corners on a **negative** amount; `DetailOps.vignette` darkens on a **positive** one over
+  0..1 (`gain = exposureGain(-value × 0.6 × weight)`). Three presets ask for `-30` and mean "darker",
+  so the divisor is `-100`. Reading the file literally would have brightened corners in every style
+  that has one, and `AdjustKind.Vignette.range` would have rejected it — which is how it was caught.
+
+- **`EXPOSURE_STOPS = 2f` is written down twice, and a test holds the two together.** `LightOps` is
+  `internal` and its constant `private`, and `core/imaging/render` is not in T72's `touches`, so the
+  divisor could not simply reference it. `StyleParamsTest` renders mid-grey through
+  `LightOps.exposure(bitmap, 0.5f)` and asserts it doubles: if either constant moves, the test
+  fails rather than every preset quietly gaining or losing exposure.
+
+- **JSON order is kept.** `params` is a `LinkedHashMap` in the order the preset's author wrote it,
+  not sorted by `AdjustKind` ordinal. The renderer walks operations in list order (T49), so the
+  order is a decision about pixels; the author's is the only one with an argument behind it.
+
+- **A variant's id is `<styleId>-<n>`, one-based.** `styles.json` gives a variant a Korean `name`
+  and no key, and §3 makes it a first-class part of the preset. A derived id is what lets T73 join a
+  variant to a string without the JSON's own Korean reaching the UI, which §3 forbids.
+
+- **`intensity` inside `params` is ignored, not dropped.** 내추럴's 셔터 그대로 variant carries
+  `"intensity": 50` among its parameters. §3 says intensity is not a parameter — it scales the whole
+  preset — so it is neither an `AdjustKind` nor a §3.1 gap, and putting it on the drop list would
+  have recorded it as a missing feature. It is a key the table knows to skip.
+
+- **Intensity 0 returns an empty map rather than a map of zeros.** §9 asks that 0 be the identity.
+  `AdjustKind.isNeutral` already means "no operation" and edit_model.md does not store neutral
+  values, so filtering is what makes 0 the identity in the document and not only in the arithmetic.
+
+- **`hsl` was never a gap.** §3.1 lists nine unmapped keys and `hsl` is not among them, which is
+  right: `styles.json`'s nested `{band: {sat, lum, hue}}` maps onto the 24 entries T54 added, and
+  five styles use it. The dropped four are exactly §3.1's: `grain`, `color_grading`, `dehaze`,
+  `bw_filter`.
+
+### T66 (prerequisite 2 — the bench number)
+
+- **The budget is missed, and the six-HSL case is where.** gpu_render.md §1 asked for this
+  measurement specifically and `RenderBenchmarkTest` never made it: it measured Exposure +
+  Contrast, the cheap case. A second `@Test` measures six 혼합 sliders on the same
+  `huge_6000x4000.jpg` source at the same 1080px target, so the two numbers differ only in the
+  operations.
+
+  ```
+  preview p50 [2 adjusts] :  77ms
+  preview p50 [6 hsl]     : 406ms
+  ```
+
+  Six HSL passes add **329ms** — about 55ms each, more than the whole decode-and-downsample
+  baseline costs once. render.md's budget is 100ms p50, so the operations alone are 3.3× it.
+
+- **The constant is not a device number; the ratio is.** This runs on the JVM under Robolectric,
+  which is why the test prints "not a device budget" and why the earlier number was never treated
+  as a verdict. What survives the platform change is that a six-HSL document costs **5.3×** a
+  two-adjust one, and that one HSL pass outweighs decoding a 24MP JPEG. D14 (adjust_hsl.md §5)
+  refused to fold consecutive HSL adjusts into one pass because folding changes the maths; this is
+  the bill for that decision, and it is the bill AGSL would pay.
+
+- **This closes prerequisite 2 only.** T66 stays `[!]` on prerequisite 1 — minSdk 26 → 33 on a
+  frozen file, which is a product decision (it drops Android 8 through 12), not a measurement.
+  The bench is not a task, so no task is marked `[x]` for it.
+
+### T70
+
+- **The rule got one home, `tools/AdjustStack.kt`, holding both halves.** `generativeInput` (the
+  frame minus the `Adjust` ops) and `EditDocument.underTheAdjustments()` (the op placed under them)
+  are two halves of one rule, and either alone is wrong: a plain frame stored on top of the stack is
+  still overwritten, and a repositioned op carrying baked adjustments doubles them. 채우기 had
+  neither half, which is the defect. `EraseInput.kt` is gone and `EraseCommit`'s private copy of the
+  list surgery with it.
+
+- **`PlanRunner` takes the frame as a lambda, per step, not as a bitmap per run.** Each step chains
+  a new document, so the frame a generative step should see is the one *it* is editing — a single
+  snapshot taken before the run could not be right for a plan whose earlier step adjusts. The run's
+  `preview` stays, and stays the segmentation session's: a selection is made on what the user is
+  looking at, and the two frames now differ on purpose.
+
+- **The 지시 tool's `Erase` step had the same defect and was fixed with it.** T70's `found:` note
+  says `e3b00c5` fixed 지우기, but it fixed only the tool: `PlanRunner.eraseSelection` still sent the
+  adjusted `preview`, so a plan and a tap disagreed. One lambda feeds both steps, so fixing the fill
+  and leaving the erase would have been writing the disagreement down rather than removing it.
+
+- **`FakeFillProvider` gained `lastImage`**, mirroring `FakeEraseProvider`'s, because "which frame
+  was the model shown" is the assertion this task exists to make and the erase twin already makes
+  it. The alternative — digging the input's pixels out of the saved result — asserts the same thing
+  less legibly in two files.
+
+- **확대 was checked, not assumed** (`ExpandToolTest`): the request is built from the bare source and
+  `withOutpaint` inserts at index 0, so an outpaint is already under every adjustment. Nothing
+  changed there.
+
+### T77
+
+- **One `ToolTap` for all four generative tools.** `EraseTap`, `FillTap` and `ExpandTap` were three
+  spellings of the same three values, and `EditorViewModel` carried one `when` per tool to read
+  them. A fourth copy took `onGenerativeToolTapped` past detekt's complexity ceiling, which is the
+  ceiling doing its job: the four tools ask the same question — open, run, fix the settings, or
+  refuse — and now answer it in one vocabulary. `GENERATIVE_TOOLS` is the set that routes there.
+
+- **`applyCutOut()` was deleted, not kept as a wrapper.** It was one line hiding a default argument
+  on `applySelection`, and `EditorViewModel` is at detekt's function ceiling; `applySelection` is
+  public instead and `EditorRoute` passes `cutOut = true`. Nothing about the cut-out changed.
+
+- **The 강도 slider drives a live preview through a collector, not a call site.** T69's shape,
+  reused for the same reason: what the preview should show changes without the document changing.
+  One collector on `selectedTool == Tool.Auto` and the scaled plan, and `requestPreview` grew a
+  `Tool.Auto` arm beside 자르기's. `AutoState.appliedTo` is the single fold the preview and 적용
+  both use, so they cannot drift.
+
+- **적용 closes the sheet *before* it pushes.** The pending plan is what the preview is currently
+  adding on top of the document; pushing first would have rendered it twice for one frame. The
+  other tools push first because they have nothing pending to double.
+
+- **The chip's re-run uses the bitmap the first call was given**, stored in `AutoController`, not
+  `state.preview` — which by then carries the boost being replaced. A second call on a boosted
+  photograph would be compounding the model's own answer.
+
+- **`EditorAi` gained `autoEnhance`, and it is not in T77's `touches`.** The bundle is how every
+  provider reaches the ViewModel; there is no other door. Six positional call sites in tests
+  moved with it.
+
+- **`ExpandToolSheet` was extracted.** `sheetFor` landed at exactly detekt's 60-line `LongMethod`
+  limit once 자동 was a branch in it. Every other stateful tool already had a one-line branch and a
+  small `…ToolSheet` composable; 확대 was the one still inline, so it became the sixth of the shape
+  rather than 자동 becoming the second exception. No behaviour moved.
+
+- **`editor_shell_ai_open` was not re-recorded**, per CLAUDE.md — T77's `done when` names only
+  `auto_sheet_open` and `auto_sheet_result`. It passes anyway; see progress.md's open issues for
+  why that is worth a human's attention rather than a quiet re-record.
+
+### T71
+
+- **The endpoints needed their own stops factor, not just a tighter band.** The first attempt made
+  `Blacks` `Shadows` over `smoothstep(0, 0.2)` and `Whites` `Highlights` over
+  `smoothstep(0.8, 1.0)`, and the test that says an endpoint reaches deeper than its sibling
+  failed: at luma 0.03 both weights are already ~1, and `Shadows`' gentler ramp is fractionally the
+  higher of the two. `ENDPOINT_STOPS = 1.5` is what actually makes an endpoint one — it moves the
+  last few values *further*, while the tighter band keeps it out of the mid-shadows where
+  `Shadows` belongs. The failing test found this, which is the argument for having written it.
+
+- **`Fade` is symmetric.** `lift = v × 0.25`, and a negative lift pushes the floor below zero where
+  `packRgb` clamps it into deeper blacks. A fade-only-upward op would have been the literal
+  reading of the preset parameter and would have made half of a zero-centred range dead.
+
+- **`SCurve` is `c + v × (smoothstep(0,1,c) − c)`.** One curve rather than two chained adjusts, and
+  it leaves 0 and 1 exactly where they are — which is the whole difference from `Contrast`, whose
+  linear pivot clips both ends before it has bitten in the middle.
+
+- **`Clarity` shares `sharpen`'s unsharp mask** through one private `unsharpMask` taking a
+  per-pixel amount. They differ in radius (×8) and in the midtone weight `1 − |2·luma − 1|`. Two
+  copies of that loop is how the two would come to disagree about the blur.
+
+- **The five kinds are deliberately off the planner's `adjust` enum.** `plannableKinds` was
+  `entries.filter { hsl == null }`, so they would have joined it silently — a change to what the
+  model is asked for, arriving as a side effect of adding ops. `NOT_PLANNABLE` names them, and
+  widening the enum belongs to a task about the planner plus a device run that can say whether the
+  model uses them well. T56 took the same care filtering the 24 HSL kinds back out.
+
+- **No sheet offers them yet.** style_match.md §2 argues a style is worth more than a LUT because
+  the user can disagree with it one slider at a time, which wants sliders. But the 라이트 and
+  디테일 sheets' contents are spec'd by frozen files, adding them moves three goldens, and nothing
+  user-facing sets these kinds until T73 or T77 exists. They have labels, so they can already
+  appear in the 지시 step list; the sliders are T73's to add.
+
+- **Two exhaustive `when`s were split by family.** `Ops.globalAdjust` and `ToolLabels`'
+  `globalLabelRes` both went past detekt's cyclomatic ceiling at 15 branches. Both are dispatch
+  tables rather than logic, which is the shape that metric misjudges; splitting them by the spec
+  that owns each kind costs three null checks and reads as the three specs it is.
+
+- **`EditDocumentJsonTest`'s "unknown kind" was the string `"Clarity"`.** It is `"NotAnAdjustKind"`
+  now, with a comment saying why the name has to stay meaningless.
+
+### T78
+
+- **The level lives in `EditorRoute`, not in `EditorViewModel`.** tool_groups.md §3 called it
+  `EditorUiState.toolLevel`; the class is at detekt's function ceiling (T65) and a state field
+  needs a setter. `rememberSaveable` in the route satisfies everything §3 actually asked for — UI
+  state, never the document, resets on entry — and needs no VM function.
+
+- **Closing is keyed on the sheet closing, not on a tool being tapped.** `LaunchedEffect` on
+  `selectedTool == null`. That gives §4's three rules for free: committing and cancelling both
+  return to the root, opening a sheet does not, and a **disabled** child — which opens nothing —
+  leaves the level alone without a special case. 지우기 has no sheet, so it also leaves the level
+  open, which is right: the next thing after an erase is often another one.
+
+- **`StripItem` is a sealed interface, not a nullable `Tool`.** The AI parent and ← are not tools
+  and must not be selectable, disable-able, or reachable by `onToolClick`. Modelling them as
+  `Tool` entries would have put two non-tools into `Tool.entries`, which every `when` over it
+  would then have to ignore.
+
+- **`stripItems(level)` is a pure function.** §7's load-bearing test — "every `Tool` appears at
+  exactly one level" — is then arithmetic rather than a screenshot, and it is what fails the day
+  a tool is added to the enum and forgotten here.
+
+- **`ToolLevelState` bundles the level and its callback into one parameter.** Two parameters put
+  `EditorScreen` at exactly detekt's 60-line `LongMethod` limit, which counts the signature. The
+  holder is the shape `MaskOption` and `CanvasPointTaps` already use. The limit is a real
+  constraint on that function now, not a stylistic note.
+
+- **`ToolStripLevelTest` needed `@Config(Pixel6a)`.** The strip is a `LazyRow`, so an item past the
+  viewport is not composed at all — on Robolectric's default narrow screen the AI item did not
+  exist to click. A wider device is the honest fix; scrolling to it in the test would have hidden
+  that six items fit a real phone, which is the point of the task.
+
 ### T68
 
 - **Option 1: `portrait_3_4` and `landscape_4_3` were added to the closed set.** The human chose it

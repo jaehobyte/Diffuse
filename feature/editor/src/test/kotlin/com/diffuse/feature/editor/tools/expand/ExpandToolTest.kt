@@ -5,8 +5,10 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.diffuse.core.ai.Availability
+import com.diffuse.core.ai.FakeAutoEnhanceProvider
 import com.diffuse.core.ai.FakeEraseProvider
 import com.diffuse.core.ai.FakeFillProvider
+import com.diffuse.core.ai.FakeMatchStyleProvider
 import com.diffuse.core.ai.FakeOutpaintProvider
 import com.diffuse.core.ai.FakePlanProvider
 import com.diffuse.core.ai.FakeSegmentationProvider
@@ -176,6 +178,28 @@ class ExpandToolTest {
         assertNull(viewModel.uiState.value.document!!.outpaint())
     }
 
+    /**
+     * T70's fourth `done when`: 확대 needs nothing, **checked** rather than assumed. The request is
+     * built from the bare source (asserted above) and `withOutpaint` inserts at index 0, so an
+     * outpaint is already under every adjustment there could be.
+     */
+    @Test
+    fun `an outpaint lands under an adjustment that was already there`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onAdjust(com.diffuse.core.imaging.model.AdjustKind.Exposure, EXPOSURE)
+        viewModel.onAdjustFinished()
+        viewModel.onToolClick(Tool.Expand)
+        viewModel.expand.setMargins(MARGINS)
+
+        viewModel.applySheet()
+
+        val operations = viewModel.uiState.value.document!!.operations
+        assertTrue(
+            "the outpaint must be first, was $operations",
+            operations.first() is com.diffuse.core.imaging.model.Operation.Outpaint,
+        )
+    }
+
     // ---- failures --------------------------------------------------------
 
     @Test
@@ -269,6 +293,7 @@ class ExpandToolTest {
     }
 
     private fun viewModel() = EditorViewModel(
+        context = ApplicationProvider.getApplicationContext(),
         repository = repository,
         renderer = FakeRenderer(),
         ai = EditorAi(
@@ -280,6 +305,8 @@ class ExpandToolTest {
             FakeSpeechInput(),
             settings,
             geminiSettings,
+            FakeAutoEnhanceProvider(),
+            FakeMatchStyleProvider(),
         ),
         dispatchers = TestDispatchers,
         savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),
@@ -367,6 +394,7 @@ class ExpandToolTest {
         const val PREVIEW_SIZE = 32
         const val OPAQUE = 255
         const val ALPHA_SHIFT = 24
+        const val EXPOSURE = 0.4f
         val MARGINS = Margins(left = 0.25f, top = 0.1f, right = 0.25f, bottom = 0.1f)
     }
 }

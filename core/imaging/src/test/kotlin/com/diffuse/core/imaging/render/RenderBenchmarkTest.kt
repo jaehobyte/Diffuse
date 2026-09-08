@@ -35,11 +35,42 @@ class RenderBenchmarkTest {
 
     @Test
     fun previewFromA4096pxSource() {
+        val document = benchDocument()
+            .withAdjust(AdjustKind.Exposure, 0.5f)
+            .withAdjust(AdjustKind.Contrast, 0.25f)
+        measure("2 adjusts", document)
+    }
+
+    /**
+     * specs/gpu_render.md §1 names this case specifically: `HslOps` evaluates eight band weights
+     * per pixel and adjust_hsl.md §5 (D14) refused to fold consecutive HSL adjusts into one pass,
+     * so six 혼합 sliders are six full passes over the bitmap. It is the case an AGSL port would
+     * help most, and therefore the one that decides whether T66 is worth doing at all.
+     */
+    @Test
+    fun previewWithSixHslAdjusts() {
+        val document = benchDocument()
+            .withAdjust(AdjustKind.HslRedHue, 0.4f)
+            .withAdjust(AdjustKind.HslOrangeSaturation, -0.3f)
+            .withAdjust(AdjustKind.HslYellowLuminance, 0.5f)
+            .withAdjust(AdjustKind.HslGreenSaturation, 0.35f)
+            .withAdjust(AdjustKind.HslBlueHue, -0.45f)
+            .withAdjust(AdjustKind.HslMagentaLuminance, 0.2f)
+        measure("6 hsl", document)
+    }
+
+    private fun benchDocument(): EditDocument {
         assumeTrue(
             "benchmarks run via scripts/bench.sh, not scripts/check.sh",
             System.getenv("DIFFUSE_BENCHMARK") == "true",
         )
+        val source = ImageRef(
+            Fixtures.copyTo("huge_6000x4000.jpg", temp.newFolder()).absolutePath,
+        )
+        return EditDocument("bench", source, createdAt = 0L, updatedAt = 0L)
+    }
 
+    private fun measure(label: String, document: EditDocument) {
         val dispatchers = object : DispatcherProvider {
             override val default = Dispatchers.Default
             override val io = Dispatchers.IO
@@ -48,21 +79,15 @@ class RenderBenchmarkTest {
             RuntimeEnvironment.getApplication().contentResolver,
             dispatchers,
         ) { bytes, options -> BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options) }
-        val source = ImageRef(
-            Fixtures.copyTo("huge_6000x4000.jpg", temp.newFolder()).absolutePath,
-        )
-        val document = EditDocument("bench", source, createdAt = 0L, updatedAt = 0L)
-            .withAdjust(AdjustKind.Exposure, 0.5f)
-            .withAdjust(AdjustKind.Contrast, 0.25f)
 
         val samples = (1..RUNS).map { run ->
             // A fresh renderer each run, so the caches never serve the measurement.
             val renderer = CpuRenderer(loader, dispatchers)
             measureTimeMillis { runBlocking { renderer.preview(document, TARGET_LONG_EDGE_PX) } }
-                .also { println("preview run $run: ${it}ms") }
+                .also { println("preview run $run [$label]: ${it}ms") }
         }.sorted()
 
-        println("preview p50: ${samples[samples.size / 2]}ms (JVM, not a device budget)")
+        println("preview p50 [$label]: ${samples[samples.size / 2]}ms (JVM, not a device budget)")
     }
 
     private companion object {

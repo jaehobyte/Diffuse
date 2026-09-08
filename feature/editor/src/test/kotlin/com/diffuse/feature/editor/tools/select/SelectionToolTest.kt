@@ -5,8 +5,10 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.diffuse.core.ai.Availability
+import com.diffuse.core.ai.FakeAutoEnhanceProvider
 import com.diffuse.core.ai.FakeEraseProvider
 import com.diffuse.core.ai.FakeFillProvider
+import com.diffuse.core.ai.FakeMatchStyleProvider
 import com.diffuse.core.ai.FakeOutpaintProvider
 import com.diffuse.core.ai.FakePlanProvider
 import com.diffuse.core.ai.FakeSegmentationProvider
@@ -392,7 +394,7 @@ class SelectionToolTest {
         viewModel.onToolClick(Tool.Select)
         viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
 
-        viewModel.applyCutOut()
+        viewModel.applySelection(cutOut = true)
 
         val document = viewModel.uiState.value.document!!
         val maskId = document.operations.filterIsInstance<Operation.Mask>().single().id
@@ -406,7 +408,7 @@ class SelectionToolTest {
         val viewModel = viewModel()
         viewModel.onToolClick(Tool.Select)
         viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
-        viewModel.applyCutOut()
+        viewModel.applySelection(cutOut = true)
 
         viewModel.undo()
 
@@ -617,6 +619,7 @@ class SelectionToolTest {
     private fun viewModel(
         segmentation: FakeSegmentationProvider = provider,
     ) = EditorViewModel(
+        context = ApplicationProvider.getApplicationContext(),
         repository = repository,
         renderer = FakeRenderer(),
         ai = EditorAi(
@@ -628,6 +631,8 @@ class SelectionToolTest {
             FakeSpeechInput(),
             settings,
             geminiSettings,
+            FakeAutoEnhanceProvider(),
+            FakeMatchStyleProvider(),
         ),
         dispatchers = TestDispatchers,
         savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),

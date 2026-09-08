@@ -13,6 +13,7 @@ import com.diffuse.core.ui.components.EditSheet
 import com.diffuse.core.ui.theme.LocalAppColors
 import com.diffuse.core.ui.theme.Typography
 import com.diffuse.feature.editor.R
+import com.diffuse.feature.editor.tools.style.styleNameRes
 import com.diffuse.feature.editor.tools.crop.preset
 import com.diffuse.feature.editor.tools.crop.presetLabelRes
 import com.diffuse.feature.editor.tools.stepLabel
@@ -94,5 +95,10 @@ private fun stepLine(step: PlanStep): String = when (step) {
     is PlanStep.Crop -> stringResource(
         R.string.direct_step_crop,
         stringResource(presetLabelRes(step.ratio.preset)),
+    )
+    // specs/style_match.md §6: the preset's own Korean, the same string the 스타일 tile shows.
+    is PlanStep.Style -> stringResource(
+        R.string.direct_step_style,
+        stringResource(styleNameRes(step.style.id)),
     )
 }

@@ -1,10 +1,15 @@
 package com.diffuse.feature.editor
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -16,6 +21,13 @@ import com.diffuse.feature.editor.canvas.cropOverlaySlot
 import com.diffuse.feature.editor.canvas.selectionOverlaySlot
 import com.diffuse.feature.editor.tools.MaskOption
 import com.diffuse.feature.editor.tools.ToolSheetHost
+import com.diffuse.feature.editor.tools.auto.AutoSheet
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.platform.LocalContext
+import com.diffuse.feature.editor.tools.style.StyleSheet
 import com.diffuse.feature.editor.tools.crop.CropSheet
 import com.diffuse.feature.editor.tools.crop.STRAIGHTEN_MAX_DEG
 import com.diffuse.feature.editor.tools.direct.DirectSheet
@@ -42,6 +54,21 @@ fun EditorRoute(
     val scope = rememberCoroutineScope()
     val document = state.document
 
+    // specs/tool_groups.md §3: the open level is UI state, not document state, and it resets to
+    // `Root` on every entry to the screen — a user coming back to a photo sees the whole app.
+    var toolLevel by rememberSaveable { mutableStateOf(ToolGroup.Root) }
+
+    // §4: committing or cancelling a sheet returns to the root, because the next thing a user does
+    // is usually not another AI call. Keyed on the sheet **closing**, so opening one does not, and
+    // so a disabled child — which opens nothing — leaves the level alone.
+    val selectedTool = state.selectedTool
+    LaunchedEffect(selectedTool) {
+        if (selectedTool == null) toolLevel = ToolGroup.Root
+    }
+
+    // §4: system back closes the level before it leaves the screen.
+    BackHandler(enabled = toolLevel != ToolGroup.Root) { toolLevel = ToolGroup.Root }
+
     Box(modifier = modifier.fillMaxSize()) {
         EditorScreen(
             preview = state.preview,
@@ -65,6 +92,7 @@ fun EditorRoute(
             onExport = onExport,
             overlayTransform = overlayTransform(state),
             disabledTools = disabledTools(state),
+            toolLevel = ToolLevelState(toolLevel) { toolLevel = it },
             gestureMode = if (state.selectedTool == Tool.Select) {
                 CanvasGestureMode.SelectPoint
             } else {
@@ -97,6 +125,7 @@ private fun cancelWork(viewModel: EditorViewModel) {
     viewModel.erase.cancel()
     viewModel.fill.cancel()
     viewModel.expand.cancel()
+    viewModel.auto.cancel()
     viewModel.direct.cancelWork()
 }
 
@@ -106,13 +135,15 @@ private fun clearMessages(viewModel: EditorViewModel) {
     viewModel.erase.onMessageShown()
     viewModel.fill.onMessageShown()
     viewModel.expand.onMessageShown()
+    viewModel.auto.onMessageShown()
+    viewModel.style.onMessageShown()
     viewModel.direct.onMessageShown()
 }
 
 /** DESIGN.md §7: every AI call shows progress and a way out, so they share one flag. */
 private fun isBusy(state: EditorUiState): Boolean =
     state.selection.working || state.erase.busy || state.fill.busy || state.expand.busy ||
-        state.direct.working
+        state.auto.busy || state.style.matching || state.direct.working
 
 /** specs/selection_tool.md §1 and generative_erase.md §5: a tool that cannot work is greyed. */
 private fun disabledTools(state: EditorUiState): Set<Tool> = buildSet {
@@ -122,6 +153,8 @@ private fun disabledTools(state: EditorUiState): Set<Tool> = buildSet {
     if (!state.fill.enabled || state.document?.activeMaskId == null) add(Tool.Fill)
     // specs/outpaint.md §6: the key, and the document's own mask-op guard.
     if (!state.expand.enabled || state.document?.canOutpaint == false) add(Tool.Expand)
+    // specs/auto_enhance.md §6: the probe alone. 자동 needs nothing from the document.
+    if (!state.auto.enabled) add(Tool.Auto)
     // specs/vibe_edit.md §10: the key alone. A plan with no `Select` needs no SAM 3 server.
     if (!state.direct.enabled) add(Tool.Direct)
 }
@@ -133,6 +166,8 @@ private fun busyLabel(state: EditorUiState): Int = when {
     state.erase.busy -> R.string.erase_working
     state.expand.busy -> R.string.expand_working
     state.fill.busy -> R.string.fill_working
+    state.auto.busy -> R.string.auto_working
+    state.style.matching -> R.string.style_matching
     state.selection.phraseBusy -> R.string.select_prompt_working
     else -> R.string.select_preparing
 }
@@ -149,7 +184,7 @@ private fun message(state: EditorUiState): String? {
         direct != null -> stringResource(direct.res)
         else -> (
             state.selection.message ?: state.erase.message ?: state.fill.message
-                ?: state.expand.message
+                ?: state.expand.message ?: state.auto.message ?: state.style.message
             )?.let { stringResource(it) }
     }
 }
@@ -217,7 +252,7 @@ private fun sheetFor(
                     onModeChange = viewModel.selection::setMode,
                     onInvert = viewModel.selection::invert,
                     onClear = viewModel.selection::clear,
-                    onCutOut = viewModel::applyCutOut,
+                    onCutOut = { viewModel.applySelection(cutOut = true) },
                     onCancel = viewModel::cancelSheet,
                     onApply = viewModel::applySheet,
                     promptBar = {
@@ -232,13 +267,9 @@ private fun sheetFor(
                     },
                 )
                 Tool.Fill -> FillToolSheet(state = state, viewModel = viewModel)
-                // §6: no prompt bar — 확대 continues a scene the model can already see.
-                Tool.Expand -> ExpandSheet(
-                    state = state.expand,
-                    sourceAspect = sourceAspect(state),
-                    onCancel = viewModel::cancelSheet,
-                    onApply = viewModel::applySheet,
-                )
+                Tool.Expand -> ExpandToolSheet(state = state, viewModel = viewModel)
+                Tool.Auto -> AutoToolSheet(state = state, viewModel = viewModel)
+                Tool.Style -> StyleToolSheet(state = state, viewModel = viewModel)
                 Tool.Direct -> DirectToolSheet(state = state, viewModel = viewModel)
                 else -> ToolSheetHost(
                     maskOption = MaskOption(
@@ -298,6 +329,82 @@ private fun FillToolSheet(state: EditorUiState, viewModel: EditorViewModel) {
                 onMessage = viewModel.fill::showMessage,
             )
         },
+    )
+}
+
+/** specs/outpaint.md §6: no prompt bar — 확대 continues a scene the model can already see. */
+@Composable
+private fun ExpandToolSheet(state: EditorUiState, viewModel: EditorViewModel) {
+    ExpandSheet(
+        state = state.expand,
+        sourceAspect = sourceAspect(state),
+        onCancel = viewModel::cancelSheet,
+        onApply = viewModel::applySheet,
+    )
+}
+
+/**
+ * specs/style_match.md §4, §5: tiles of the user's own photograph, one 강도 slider, and the pill
+ * that hands a reference photograph in. The picker is the system one, so nothing is granted and
+ * nothing is stored — §10's rule falls out of using it.
+ */
+@Composable
+private fun StyleToolSheet(state: EditorUiState, viewModel: EditorViewModel) {
+    val context = LocalContext.current
+    val picker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        uri?.let { chosen ->
+            // The controller is called straight from here: `EditorViewModel` is at detekt's
+            // function ceiling (T65, T78), and this reads the same state the route already holds.
+            decodeReference(context, chosen)?.let { reference ->
+                viewModel.style.matchReference(
+                    reference = reference,
+                    image = state.preview?.asAndroidBitmap(),
+                    document = state.document,
+                )
+            } ?: viewModel.style.showFailure()
+        }
+    }
+    StyleSheet(
+        state = state.style,
+        onSelect = viewModel.style::select,
+        onVariantSelect = viewModel.style::selectVariant,
+        onIntensityChange = viewModel.style::setIntensity,
+        onPickReference = {
+            picker.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+            )
+        },
+        onCancel = viewModel::cancelSheet,
+        onApply = viewModel::applySheet,
+    )
+}
+
+/**
+ * Decoded here rather than in the ViewModel: it is one `ContentResolver` read of a `Uri` the
+ * picker just handed this composable, and routing it through the graph would add a dependency for
+ * a bitmap that lives for one call (§10).
+ */
+private fun decodeReference(context: android.content.Context, uri: android.net.Uri) =
+    runCatching {
+        context.contentResolver.openInputStream(uri).use {
+            android.graphics.BitmapFactory.decodeStream(it)
+        }
+    }.getOrNull()
+
+/**
+ * specs/auto_enhance.md §6: the sheet arrives **after** the call, holding the result. Changing a
+ * chip costs another call; the 강도 slider costs none, because it scales a plan already here.
+ */
+@Composable
+private fun AutoToolSheet(state: EditorUiState, viewModel: EditorViewModel) {
+    AutoSheet(
+        state = state.auto,
+        onStyleChange = viewModel.auto::setStyle,
+        onIntensityChange = viewModel.auto::setIntensity,
+        onCancel = viewModel::cancelSheet,
+        onApply = viewModel::applySheet,
     )
 }
 

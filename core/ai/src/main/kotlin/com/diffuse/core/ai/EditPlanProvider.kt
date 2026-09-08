@@ -35,6 +35,36 @@ sealed interface PlanStep {
      * afterwards so the user chooses the framing.
      */
     data class Crop(val ratio: CropRatio) : PlanStep
+
+    /**
+     * specs/style_match.md §6. The model names a **look**, never numbers: [style] is one of the
+     * catalog's twelve ids and [intensity] is how much of it, 0…100. The id resolves to a preset
+     * at the `feature:editor` boundary — `core:ai` does not carry the catalog.
+     */
+    data class Style(val style: StyleId, val intensity: Int) : PlanStep
+}
+
+/**
+ * specs/style_match.md §6's closed enum: `styles.json`'s twelve ids, mirrored here because the
+ * function declaration has to name them and the catalog is an asset `core:ai` cannot read.
+ *
+ * [StyleId.id] is the join, and it is the catalog's own string — dashes and all — so a preset and
+ * a plan step cannot drift apart over spelling. `StyleIdCatalogTest` in `feature:editor`, which
+ * can see both, is what says they still agree.
+ */
+enum class StyleId(val id: String) {
+    CleanBright("clean-bright"),
+    NaturalEnhance("natural-enhance"),
+    CrispLandscape("crisp-landscape"),
+    FilmWarm("film-warm"),
+    FadedMatte("faded-matte"),
+    CinematicTeal("cinematic-teal"),
+    MoodyDark("moody-dark"),
+    VibrantPop("vibrant-pop"),
+    PastelSoft("pastel-soft"),
+    GoldenGlow("golden-glow"),
+    UrbanHip("urban-hip"),
+    BwClassic("bw-classic"),
 }
 
 /**

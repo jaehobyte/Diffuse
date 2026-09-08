@@ -5,6 +5,7 @@ import com.diffuse.core.common.Result
 import com.diffuse.core.common.newId
 import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.core.imaging.model.ImageRef
+import com.diffuse.feature.editor.tools.underTheAdjustments
 
 /**
  * specs/generative_fill.md §5, and generative_erase.md §10's shape. A fill stores the mask it
@@ -56,7 +57,11 @@ class FillCommit(
                     // The rectangle is a reference for the fill, not a new selection: what the
                     // user chose stays active, so a following adjust or cut-out is still theirs.
                     .copy(activeMaskId = document.activeMaskId)
-                    .withGenerativeFill(maskId, saved.value, prompt, fillId),
+                    .withGenerativeFill(maskId, saved.value, prompt, fillId)
+                    // T70: a fill carries its own pixels exactly as an erase does, so it belongs
+                    // under the adjust stack for exactly the same reason. See
+                    // [underTheAdjustments].
+                    .underTheAdjustments(),
             )
         }
     }

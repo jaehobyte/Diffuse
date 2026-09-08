@@ -11,6 +11,7 @@ import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.core.imaging.model.ImageRef
 import com.diffuse.core.imaging.model.Margins
 import com.diffuse.feature.editor.R
+import com.diffuse.feature.editor.tools.ToolTap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,21 +19,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import com.diffuse.core.ai.Margins as RequestMargins
-
-/**
- * specs/outpaint.md §6. What tapping the tool should do, returned rather than acted on: the
- * 서버 설정 sheet is `SelectionController`'s, and there is one of it (generative_erase.md §9).
- */
-enum class ExpandTap {
-    /** Open the sheet and the overlay, which is where the margins come from. */
-    Open,
-
-    /** The key is blank, which only the settings sheet can fix. */
-    OpenSettings,
-
-    /** The reason is already in [ExpandState.message]; nothing more to offer. */
-    Refused,
-}
 
 /** specs/outpaint.md §6. Sheet state; nothing here reaches the document until 적용. */
 data class ExpandState(
@@ -78,23 +64,23 @@ class ExpandController(
      * §6's disabled-state table, in its order: the mask-op guard is reported before a missing
      * key, because that one is about the document rather than about the setup.
      */
-    fun onToolTapped(canOutpaint: Boolean): ExpandTap {
+    fun onToolTapped(canOutpaint: Boolean): ToolTap {
         val availability = _state.value.availability
         return when {
             !canOutpaint -> {
                 showMessage(R.string.expand_after_mask)
-                ExpandTap.Refused
+                ToolTap.Refused
             }
-            availability is Availability.Ready -> ExpandTap.Open
+            availability is Availability.Ready -> ToolTap.Open
             // §5: availability is derived from the key with no probe, so `Invalid` here is the
             // "no key" row rather than a general outage.
             (availability as? Availability.Unavailable)?.reason is AppError.Invalid -> {
                 showMessage(R.string.expand_needs_key)
-                ExpandTap.OpenSettings
+                ToolTap.OpenSettings
             }
             else -> {
                 showMessage(R.string.expand_failed)
-                ExpandTap.Refused
+                ToolTap.Refused
             }
         }
     }

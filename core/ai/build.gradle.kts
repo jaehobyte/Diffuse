@@ -31,6 +31,17 @@ android {
             "SAM3_TOKEN",
             "\"${localProperties.getProperty("sam3.token", "")}\"",
         )
+        // specs/auto_enhance.md §4: blank by default, exactly as SAM 3's is. No address ships.
+        buildConfigField(
+            "String",
+            "MONET_BASE_URL",
+            "\"${localProperties.getProperty("monet.baseUrl", "")}\"",
+        )
+        buildConfigField(
+            "String",
+            "MONET_TOKEN",
+            "\"${localProperties.getProperty("monet.token", "")}\"",
+        )
     }
 
     // specs/ai_provider.md §6. Kotlin has no testFixtures compilation under AGP 8.13

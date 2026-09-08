@@ -37,18 +37,47 @@ private fun HslChannel.labelRes(): Int = when (this) {
     HslChannel.Luminance -> R.string.mix_luminance
 }
 
+/**
+ * Split by the sheet each kind belongs to, for the reason `Ops.globalAdjust` is: T71's five took
+ * one `when` past detekt's complexity ceiling, and this is a lookup table rather than logic.
+ */
 @StringRes
-private fun AdjustKind.globalLabelRes(): Int = when (this) {
+private fun AdjustKind.globalLabelRes(): Int = lightLabelRes()
+    ?: colorLabelRes()
+    ?: detailLabelRes()
+    ?: error("$name carries an HslTarget; its label is its channel's")
+
+/**
+ * specs/adjust_light.md, and T71's four. No sheet offers those four yet — a preset and the auto
+ * boost set them — but the rule above still holds: a kind with no label cannot reach the 지시 step
+ * list either.
+ */
+@StringRes
+private fun AdjustKind.lightLabelRes(): Int? = when (this) {
     AdjustKind.Exposure -> R.string.light_exposure
     AdjustKind.Contrast -> R.string.light_contrast
     AdjustKind.Highlights -> R.string.light_highlights
     AdjustKind.Shadows -> R.string.light_shadows
+    AdjustKind.Blacks -> R.string.light_blacks
+    AdjustKind.Whites -> R.string.light_whites
+    AdjustKind.Fade -> R.string.light_fade
+    AdjustKind.SCurve -> R.string.light_s_curve
+    else -> null
+}
+
+@StringRes
+private fun AdjustKind.colorLabelRes(): Int? = when (this) {
     AdjustKind.Temperature -> R.string.color_temperature
     AdjustKind.Tint -> R.string.color_tint
     AdjustKind.Saturation -> R.string.color_saturation
     AdjustKind.Vibrance -> R.string.color_vibrance
+    else -> null
+}
+
+@StringRes
+private fun AdjustKind.detailLabelRes(): Int? = when (this) {
     AdjustKind.Sharpen -> R.string.detail_sharpen
     AdjustKind.Vignette -> R.string.detail_vignette
-
-    else -> error("$name carries an HslTarget; its label is its channel's")
+    AdjustKind.Clarity -> R.string.detail_clarity
+    else -> null
 }

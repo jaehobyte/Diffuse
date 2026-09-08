@@ -19,7 +19,11 @@
     <string name="editor_tool_erase">지우기</string>
     <string name="editor_tool_fill">채우기</string>
     <string name="editor_tool_expand">확대</string>
+    <string name="editor_tool_auto">자동</string>
     <string name="editor_tool_direct">지시</string>
+    <!-- specs/tool_groups.md §6: two Latin letters on purpose — 인공지능 is longer than 64dp -->
+    <string name="editor_tool_ai">AI</string>
+    <string name="editor_tool_back">뒤로</string>
 
     <!-- specs/generative_erase.md §5 -->
     <string name="erase_working">지우는 중</string>
@@ -49,6 +53,18 @@
     <string name="expand_blocked">이 이미지는 편집할 수 없어요</string>
     <string name="expand_failed">바깥을 그리지 못했어요</string>
 
+    <!-- specs/auto_enhance.md §7 -->
+    <string name="auto_title">자동 보정</string>
+    <string name="auto_style_balanced">균형</string>
+    <string name="auto_style_vibrant">선명</string>
+    <string name="auto_style_retro">레트로</string>
+    <string name="auto_intensity">강도</string>
+    <string name="auto_reason">지시</string>
+    <string name="auto_working">사진을 살펴보는 중</string>
+    <string name="auto_needs_server">설정에서 자동 보정 서버 주소를 입력해주세요</string>
+    <string name="auto_unreachable">자동 보정 서버에 연결하지 못했어요</string>
+    <string name="auto_failed">보정할 내용을 찾지 못했어요</string>
+
     <!-- specs/vibe_edit.md §11 -->
     <string name="direct_title">지시</string>
     <string name="direct_placeholder">무엇을 바꿀까요? 예: 나무를 더 푸르게</string>
@@ -66,6 +82,7 @@
     <string name="direct_step_cutout">배경 지우기</string>
     <string name="direct_step_fill">선택 영역에 %1$s 채우기</string>
     <string name="direct_step_crop">%1$s 비율로 자르기</string>
+    <string name="direct_step_style">%1$s 스타일</string>
 
     <!-- specs/selection_tool.md -->
     <string name="select_title">선택</string>
@@ -103,6 +120,11 @@
     <string name="light_contrast">대비</string>
     <string name="light_highlights">하이라이트</string>
     <string name="light_shadows">그림자</string>
+    <!-- specs/style_match.md §3.1, specs/auto_enhance.md §3 — T71 -->
+    <string name="light_blacks">블랙</string>
+    <string name="light_whites">화이트</string>
+    <string name="light_fade">페이드</string>
+    <string name="light_s_curve">커브</string>
 
     <string name="color_title">색</string>
     <string name="color_temperature">온도</string>
@@ -125,6 +147,7 @@
     <string name="detail_title">디테일</string>
     <string name="detail_sharpen">선명도</string>
     <string name="detail_vignette">비네트</string>
+    <string name="detail_clarity">디테일 대비</string>
 
     <!-- specs/adjust_hsl.md §9 -->
     <string name="mix_title">혼합</string>
@@ -139,4 +162,76 @@
     <string name="mix_band_blue">파랑</string>
     <string name="mix_band_purple">보라</string>
     <string name="mix_band_magenta">자홍</string>
+
+    <!-- specs/style_match.md §8 -->
+    <string name="editor_tool_style">스타일</string>
+    <string name="style_title">스타일</string>
+    <string name="style_none">원본</string>
+    <string name="style_intensity">강도</string>
+    <string name="style_variants">세부</string>
+    <string name="style_from_photo">사진에서 가져오기</string>
+    <string name="style_reference">참조</string>
+    <string name="style_reference_near">참조와 비슷한 스타일</string>
+    <string name="style_matching">참조 스타일을 읽는 중</string>
+    <string name="style_needs_key">설정에서 Gemini API 키를 입력해주세요</string>
+    <string name="style_failed">참조 스타일을 읽지 못했어요</string>
+
+    <!-- specs/style_match.md §3: styles.json is the source of the numbers, this file of the
+         names. The id is the join. -->
+    <string name="style_name_clean_bright">클린 브라이트</string>
+    <string name="style_name_natural_enhance">내추럴</string>
+    <string name="style_name_crisp_landscape">청량 크리스프</string>
+    <string name="style_name_film_warm">웜 필름</string>
+    <string name="style_name_faded_matte">페이디드 매트</string>
+    <string name="style_name_cinematic_teal">시네마틱 틸</string>
+    <string name="style_name_moody_dark">무디 다크</string>
+    <string name="style_name_vibrant_pop">비비드 팝</string>
+    <string name="style_name_pastel_soft">파스텔 소프트</string>
+    <string name="style_name_golden_glow">골든 글로우</string>
+    <string name="style_name_urban_hip">어반 힙</string>
+    <string name="style_name_bw_classic">클래식 모노</string>
+
+    <!-- §3: a variant is the same shape with its own params, so it is named the same
+         way — here, joined by the derived id. -->
+    <string name="style_variant_clean_bright_1">퓨어 화이트</string>
+    <string name="style_variant_clean_bright_2">소프트 브라이트</string>
+    <string name="style_variant_clean_bright_3">밝고 투명한 룩</string>
+    <string name="style_variant_natural_enhance_1">셔터 그대로</string>
+    <string name="style_variant_natural_enhance_2">맑은 내추럴</string>
+    <string name="style_variant_natural_enhance_3">뉴트럴 픽처</string>
+    <string name="style_variant_crisp_landscape_1">알파인 블루</string>
+    <string name="style_variant_crisp_landscape_2">포레스트 그린</string>
+    <string name="style_variant_crisp_landscape_3">랜드스케이프 픽처</string>
+    <string name="style_variant_film_warm_1">골드 네거티브</string>
+    <string name="style_variant_film_warm_2">그린 네거티브</string>
+    <string name="style_variant_film_warm_3">시네 필름</string>
+    <string name="style_variant_film_warm_4">모노 필름</string>
+    <string name="style_variant_faded_matte_1">웜 매트</string>
+    <string name="style_variant_faded_matte_2">쿨 매트</string>
+    <string name="style_variant_faded_matte_3">IN 매트 룩</string>
+    <string name="style_variant_cinematic_teal_1">딥 틸&amp;오렌지</string>
+    <string name="style_variant_cinematic_teal_2">블리치 바이패스</string>
+    <string name="style_variant_cinematic_teal_3">네오 누아르</string>
+    <string name="style_variant_cinematic_teal_4">그린 디스토피아</string>
+    <string name="style_variant_moody_dark_1">딥 포레스트</string>
+    <string name="style_variant_moody_dark_2">미드나잇 블루</string>
+    <string name="style_variant_moody_dark_3">FL 무디 룩</string>
+    <string name="style_variant_vibrant_pop_1">캔디 팝</string>
+    <string name="style_variant_vibrant_pop_2">딥 팝</string>
+    <string name="style_variant_vibrant_pop_3">비비드 픽처</string>
+    <string name="style_variant_pastel_soft_1">핑크 파스텔</string>
+    <string name="style_variant_pastel_soft_2">민트 파스텔</string>
+    <string name="style_variant_pastel_soft_3">포트레이트 소프트</string>
+    <string name="style_variant_golden_glow_1">선셋 피치</string>
+    <string name="style_variant_golden_glow_2">앰버 톤</string>
+    <string name="style_variant_urban_hip_1">콜드 크롬</string>
+    <string name="style_variant_urban_hip_2">네온 마젠타</string>
+    <string name="style_variant_urban_hip_3">세피아 스트리트</string>
+    <string name="style_variant_bw_classic_1">하이 콘트라스트 모노</string>
+    <string name="style_variant_bw_classic_2">소프트 모노</string>
+    <string name="style_variant_bw_classic_3">레드 필터 드라마</string>
+    <string name="style_variant_bw_classic_4">옐로 필터 내추럴</string>
+    <string name="style_variant_bw_classic_5">아크로스 계조</string>
+    <string name="style_variant_bw_classic_6">세피아 회고</string>
+    <string name="style_variant_bw_classic_7">셀레늄 결</string>
 </resources>

@@ -58,6 +58,18 @@ enum class AdjustKind(
     HslMagentaHue(ZERO_CENTRED, HslTarget(HslBand.Magenta, HslChannel.Hue)),
     HslMagentaSaturation(ZERO_CENTRED, HslTarget(HslBand.Magenta, HslChannel.Saturation)),
     HslMagentaLuminance(ZERO_CENTRED, HslTarget(HslBand.Magenta, HslChannel.Luminance)),
+
+    // specs/style_match.md §3.1 and auto_enhance.md §3 — T71, appended for T54's reason: 24
+    // entries arrived that way without touching the renderer's shape, the serializer or the
+    // document model, and five more do the same.
+    //
+    // Blacks and Whites are the tone curve's endpoints, the siblings of Shadows and Highlights
+    // that `AdjustKind` was missing; MonetGPT emits them in four of its six tone operations.
+    Blacks(ZERO_CENTRED),
+    Whites(ZERO_CENTRED),
+    Fade(ZERO_CENTRED),
+    SCurve(ZERO_CENTRED),
+    Clarity(ZERO_CENTRED),
     ;
 
     /** 0 is neutral for every kind, so a zero value means "no operation". */

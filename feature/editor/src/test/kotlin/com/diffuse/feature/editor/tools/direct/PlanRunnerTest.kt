@@ -8,6 +8,7 @@ import com.diffuse.core.ai.FakeEraseProvider
 import com.diffuse.core.ai.FakeFillProvider
 import com.diffuse.core.ai.FakeSegmentationProvider
 import com.diffuse.core.ai.PlanStep
+import com.diffuse.core.ai.StyleId
 import com.diffuse.core.common.AppError
 import com.diffuse.core.common.DispatcherProvider
 import com.diffuse.core.common.Result
@@ -77,6 +78,18 @@ class PlanRunnerTest {
                 Result.Success(ImageRef("/p/erase_$eraseId.png"))
             },
         ),
+        // T70: the frame a generative step is shown, which is not the run's `preview`. Colour-coded
+        // so a test can say which of the two the step actually sent.
+        generativeInput = { plainFrame() },
+        // T74: the catalog itself is `StyleCatalogTest`'s subject; what this file asserts is that
+        // a `Style` step turns whatever the lambda returns into `Adjust` ops on the document.
+        styleParams = { id, intensity ->
+            if (id == StyleId.FilmWarm) {
+                STYLE_PARAMS.mapValues { (_, value) -> value * intensity / 100f }
+            } else {
+                emptyMap()
+            }
+        },
     )
 
     // ---- §9.1 validation --------------------------------------------------
@@ -243,6 +256,23 @@ class PlanRunnerTest {
         assertEquals("a red umbrella", filler.lastPrompt)
         assertEquals(savedFills, listOf(fill.id))
         assertEquals(ImageRef("/p/fill_${fill.id}.png"), fill.resultRef)
+    }
+
+    /**
+     * T70: the two generative steps are shown `generativeInput`'s frame, not the run's `preview`
+     * — the same frame their taps send, which is what makes a plan and a tap agree. The `Select`
+     * step keeps the preview, because a selection is made on what the user is looking at.
+     */
+    @Test
+    fun `the generative steps are shown the frame without the adjustments`() = runTest {
+        val plan = EditPlan(
+            listOf(PlanStep.Select("chair"), PlanStep.Fill("a red umbrella"), PlanStep.Erase),
+        )
+
+        lastDocument(plan)
+
+        assertEquals(PLAIN, filler.lastImage!!.getPixel(0, 0))
+        assertEquals(PLAIN, eraser.lastImage!!.getPixel(0, 0))
     }
 
     @Test
@@ -501,7 +531,11 @@ class PlanRunnerTest {
         .withMask(ImageRef("/p/mask_m.png"), id = "m")
 
     private fun preview(): Bitmap =
-        Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888)
+        Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888).apply { eraseColor(ADJUSTED) }
+
+    /** T70: what `generativeInput` renders — the document minus its adjustments. */
+    private fun plainFrame(): Bitmap =
+        Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888).apply { eraseColor(PLAIN) }
 
     private suspend fun session() =
         (segmentation.open(preview()) as Result.Success).value
@@ -516,6 +550,55 @@ class PlanRunnerTest {
         return count
     }
 
+    // ---- specs/style_match.md §6 -----------------------------------------
+
+    /** §6: a style consumes no selection, so `validate` needed no new clause. */
+    @Test
+    fun `a style step needs no selection`() {
+        val step = PlanStep.Style(StyleId.FilmWarm, FULL)
+
+        assertNull(runner.validate(EditPlan(listOf(step)), document()))
+    }
+
+    /** §6: the id resolves to a preset here, and the preset becomes ordinary `Adjust` ops. */
+    @Test
+    fun `a style step commits every adjustment the preset carries`() = runTest {
+        val events = runner.run(
+            EditPlan(listOf(PlanStep.Style(StyleId.FilmWarm, FULL))),
+            document(),
+            preview(),
+            activeMask = null,
+            sourceAspect = SOURCE_ASPECT,
+        ).toList()
+
+        val committed = events.filterIsInstance<RunEvent.Committed>().single().document
+        val adjusts = committed.operations.filterIsInstance<Operation.Adjust>()
+        assertEquals(STYLE_PARAMS.size, adjusts.size)
+        STYLE_PARAMS.forEach { (kind, value) ->
+            assertEquals(value, adjusts.first { it.kind == kind }.value, TOLERANCE)
+        }
+        // §6: never masked. A style is a look for the whole photograph.
+        assertTrue(adjusts.all { it.maskId == null })
+    }
+
+    /** §6: intensity scales what the step commits, exactly as the 강도 slider does. */
+    @Test
+    fun `a style step at half intensity commits half of it`() = runTest {
+        val events = runner.run(
+            EditPlan(listOf(PlanStep.Style(StyleId.FilmWarm, FULL / 2))),
+            document(),
+            preview(),
+            activeMask = null,
+            sourceAspect = SOURCE_ASPECT,
+        ).toList()
+
+        val committed = events.filterIsInstance<RunEvent.Committed>().single().document
+        val adjusts = committed.operations.filterIsInstance<Operation.Adjust>()
+        STYLE_PARAMS.forEach { (kind, value) ->
+            assertEquals(value / 2f, adjusts.first { it.kind == kind }.value, TOLERANCE)
+        }
+    }
+
     private fun fullMask(): Bitmap =
         Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ALPHA_8).apply {
             for (pixel in 0 until SIZE * SIZE) {
@@ -528,8 +611,17 @@ class PlanRunnerTest {
         const val SOURCE_ASPECT = 2f
         const val TOLERANCE = 0.001f
 
+        const val FULL = 100
         const val SIZE = 32
         const val OPAQUE = 255
         const val ALPHA_SHIFT = 24
+        val PLAIN = android.graphics.Color.rgb(40, 50, 60)
+        val ADJUSTED = android.graphics.Color.rgb(200, 210, 220)
+
+        /** Stands in for a preset: two kinds is enough to say the fold reaches all of them. */
+        val STYLE_PARAMS = mapOf(
+            AdjustKind.Temperature to 0.2f,
+            AdjustKind.Contrast to 0.4f,
+        )
     }
 }

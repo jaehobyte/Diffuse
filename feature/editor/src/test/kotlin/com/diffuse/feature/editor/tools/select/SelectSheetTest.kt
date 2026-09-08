@@ -15,6 +15,7 @@ import com.diffuse.core.ui.theme.AppTheme
 import com.diffuse.core.ui.theme.ThemeMode
 import com.diffuse.feature.editor.EditorToolStrip
 import com.diffuse.feature.editor.Tool
+import com.diffuse.feature.editor.ToolGroup
 import com.diffuse.feature.editor.ToolStripTestTag
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -107,12 +108,13 @@ class SelectSheetTest {
                     selectedTool = null,
                     onToolClick = { clicks += it },
                     disabledTools = setOf(Tool.Select),
+                    // specs/tool_groups.md §3: 선택 calls SAM 3, so it is an AI-level tool.
+                    level = ToolGroup.Ai,
                 )
             }
         }
 
         compose.onNodeWithTag(ToolStripTestTag).assertExists()
-        // 선택 sits past the viewport now that the strip has eight tools; it is a LazyRow.
         compose.onNodeWithTag(ToolStripTestTag).performScrollToNode(hasText("선택"))
         compose.onNodeWithText("선택").performClick()
 

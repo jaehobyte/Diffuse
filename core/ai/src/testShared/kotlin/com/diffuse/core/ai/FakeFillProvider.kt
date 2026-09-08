@@ -20,6 +20,10 @@ class FakeFillProvider : FillProvider {
     var fillCount: Int = 0
         private set
 
+    /** T70: which frame the caller chose to show the model — adjusted or not. */
+    var lastImage: Bitmap? = null
+        private set
+
     /** What the caller actually handed over, so a test can assert on the mask and the words. */
     var lastMask: Bitmap? = null
         private set
@@ -44,6 +48,7 @@ class FakeFillProvider : FillProvider {
         }
         if (prompt.isBlank()) return Result.Failure(AppError.Invalid("empty prompt"))
         fillCount++
+        lastImage = image
         lastMask = mask
         lastPrompt = prompt
         val fill = colourOf(prompt)

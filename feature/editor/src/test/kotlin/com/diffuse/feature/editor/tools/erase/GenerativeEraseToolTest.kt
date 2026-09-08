@@ -6,8 +6,10 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.diffuse.core.ai.Availability
+import com.diffuse.core.ai.FakeAutoEnhanceProvider
 import com.diffuse.core.ai.FakeEraseProvider
 import com.diffuse.core.ai.FakeFillProvider
+import com.diffuse.core.ai.FakeMatchStyleProvider
 import com.diffuse.core.ai.FakeOutpaintProvider
 import com.diffuse.core.ai.FakePlanProvider
 import com.diffuse.core.ai.FakeSegmentationProvider
@@ -294,6 +296,7 @@ class GenerativeEraseToolTest {
     }
 
     private fun viewModel() = EditorViewModel(
+        context = ApplicationProvider.getApplicationContext(),
         repository = repository,
         renderer = FakeRenderer(),
         ai = EditorAi(
@@ -305,6 +308,8 @@ class GenerativeEraseToolTest {
             FakeSpeechInput(),
             settings,
             geminiSettings,
+            FakeAutoEnhanceProvider(),
+            FakeMatchStyleProvider(),
         ),
         dispatchers = TestDispatchers,
         savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),

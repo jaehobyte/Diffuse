@@ -13,8 +13,9 @@ Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `[H]` human-only, loop must
 
 ## Queue
 
-**Phase 13, T67–T70.** T67–T69 are done; T70 came out of merging `main` back in. T57 and T66 stay
-`[!]` — both need a human. Pick the first `[ ]` whose deps are all `[x]`, as always.
+**Phase 14 is done: T71–T78 are all `[x]`.** Nothing is open. T57 and T66 are `[!]`;
+T66 has one prerequisite left, not two — the bench number is in `work/decisions.md` and it says the
+budget is missed. Pick the first `[ ]` whose deps are all `[x]`, as always.
 
 ---
 
@@ -448,7 +449,7 @@ report. T68 needed one human answer — which ratios the app offers — and got 
       state as a tap on the tool
   touches: feature/editor/EditorViewModel.kt, feature/editor tests
 
-- [ ] T70 채우기 belongs under the adjust stack too
+- [x] T70 채우기 belongs under the adjust stack too
   spec: specs/generative_fill.md §5; specs/generative_erase.md §10; specs/edit_model.md
   deps: —
   found: while merging `origin/main` into `dev_outpainting`. `e3b00c5` fixed this for 지우기 —
@@ -475,11 +476,211 @@ report. T68 needed one human answer — which ratios the app offers — and got 
   feature/editor/EditorViewModel.kt, feature/editor/tools/direct/PlanRunner.kt,
   feature/editor tests
 
+---
+
+## Phase 14 — 스타일, 자동 보정, and a strip that fits
+
+Four things the user asked for after the second device run. Three of them add a tool, which is why
+the fourth exists.
+
+**Read the spec before coding.** Three are written from scratch — `specs/style_match.md`,
+`specs/auto_enhance.md`, `specs/tool_groups.md`.
+
+**T71 is the gate.** Both `styles.json` and MonetGPT speak in tone operations `AdjustKind` does not
+have, and all twelve styles use at least one of them. Nothing in T72–T77 can be honest before it.
+
+- [x] T71 The tone ops a preset needs: Blacks, Whites, Fade, SCurve, Clarity
+  spec: specs/style_match.md §3.1; specs/auto_enhance.md §3; specs/adjust_light.md;
+  specs/render.md; specs/adjust_hsl.md §5 (the ordering argument)
+  deps: —
+  why: `AdjustKind` covers exposure, contrast, highlights, shadows and the 24 HSL entries, and
+  misses the tone curve's two endpoints. MonetGPT emits `Blacks` and `Whites` in four of its six
+  tone operations; every one of `styles.json`'s twelve styles uses at least one of these five.
+  done when:
+    - five entries appended to `AdjustKind` — `Blacks`, `Whites`, `Fade`, `SCurve`, `Clarity` — and
+      appended is the word: T54 established that 24 could be added without touching the renderer,
+      the serializer or the document model, and this is the same move
+    - `Ops.kt` gains one function per kind. `Blacks`/`Whites` are the endpoints `Shadows`/
+      `Highlights` already imply, so they reuse that curve rather than introducing a second; `Fade`
+      lifts black; `SCurve` is one curve, not two chained adjusts; `Clarity` is midtone local
+      contrast
+    - **no new `Operation`.** These are `Adjust` kinds. A kind that cannot be a scalar in −1..1 is
+      not in this task
+    - `labelRes()` comes along, because five new kinds make its `when` non-exhaustive — T54's
+      precedent
+    - `grain`, `color_grading`, `dehaze` and `bw_filter` are **out of scope** and named as such in
+      `work/decisions.md`: noise synthesis, three tints rather than a scalar, a research problem,
+      and one style's private need
+    - the six plannable-kind lists (`plannableKinds`, the step templates, the adjust sheets) each
+      decide explicitly whether the new kinds belong to them. A kind that silently appears in the
+      지시 tool's function enum is a wire change nobody asked for
+    - goldens: one render golden per new kind at ±0.5, under a `# T71` heading. Every existing
+      golden passes **without re-recording** — these are new kinds, not changes to old ones
+    - property tests: 0 is the identity for all five; each is monotonic in its argument
+  touches: core/imaging/model/Operation.kt, core/imaging/render/Ops.kt, core/imaging tests,
+  core/imaging/src/test/resources/golden, core/imaging/src/test/resources/golden_manifest.txt,
+  core/ai/gemini/GeminiPlanCatalog.kt, feature/editor/tools, feature/editor strings.xml
+
+- [x] T72 The style catalog
+  spec: specs/style_match.md §2, §3, §3.1, §9
+  deps: T71
+  decided: **open decision 1** — the human confirmed `PhotoTune_v1` is their own, so this is a copy
+  within one project and `styles.json` ships. **Open decision 2** — all twelve, not the subset that
+  survives T71 intact; that fixes the enum T74 declares at twelve ids.
+  done when:
+    - `styles.json` imported as an asset and parsed into `StylePreset` per §3, with the Korean in
+      `strings.xml` and the JSON's own names ignored — `id` is the join
+    - §3.1's conversion table is **one** place, named, and the only thing that knows either scale
+    - a preset whose parameter has no `AdjustKind` after T71 drops that parameter and records it;
+      an `id` with no `style_name_<id>` string fails a test rather than rendering a raw id
+    - `intensity` scales linearly and 0 is the identity
+    - tests: §9's `StyleCatalogTest` and `StyleParamsTest` lists
+  touches: core/imaging/style, core/imaging src/main/assets, core/imaging tests,
+  feature/editor strings.xml
+
+- [x] T73 스타일 — the tool and its tiles
+  spec: specs/style_match.md §4, §7, §8, §9; DESIGN.md §2, §3, §4
+  deps: T72
+  done when:
+    - `Tool.Style`, **not** `isAi` — a named style calls nothing (§4)
+    - the tiles are the **user's own photo** at 96dp, one shared 96dp render with each preset
+      applied to it (§7), computed off the main thread and appearing in catalog order. A tile that
+      is not ready is flat `surfaceCard` — no skeleton shimmer
+    - 원본 first and always present; selecting a tile applies live; 적용 commits every `Adjust` as
+      **one** history entry; 취소 restores byte-for-byte
+    - the 강도 slider is the preset's `intensity`, `mono` value, and scales what is committed
+    - 세부 variants appear only once a style is selected
+    - goldens `style_sheet_open`, `style_sheet_selected`
+    - tests: §9's tool list
+  touches: feature/editor/tools/style, feature/editor/Tool.kt,
+  feature/editor/tools/ToolSheetHost.kt, feature/editor/EditorViewModel.kt,
+  feature/editor/EditorRoute.kt, feature/editor strings.xml, feature/editor tests,
+  feature/editor screenshot goldens
+
+- [x] T74 `apply_style` — the planner's eighth function
+  spec: specs/style_match.md §6, §9; specs/vibe_edit.md §4, §4.1, §5, §9.1
+  deps: T72, T73
+  note: T73 is a dep because the catalog's ids become this function's enum and the step list
+  renders the preset's own name.
+  done when:
+    - `apply_style(style, intensity)` declared with the catalog's ids as a **closed enum** —
+      §4.1's rule: the model names a look, it does not invent numbers
+    - `PlanStep.Style(id, intensity)` in `core:ai`; the id resolves to a preset at the
+      `feature:editor` boundary, the edge `CropRatio` already has
+    - `validate` gains **no clause**: a style consumes no selection
+    - one instruction rule — a request naming a *look* is `apply_style`, a request naming a
+      *change* stays `adjust` — and one worked example, and nothing else
+    - an unknown id drops the step; later steps survive
+    - `direct_step_style` renders the preset's Korean name
+    - tests: §12's planner list plus the recorded body declaring eight functions
+  touches: core/ai/gemini/GeminiPlanCatalog.kt, core/ai/gemini/GeminiPlanClient.kt,
+  core/ai/EditPlanProvider.kt, core/ai tests, feature/editor/tools/direct,
+  feature/editor strings.xml, feature/editor tests
+
+- [x] T75 컬러 매칭 — a reference photograph becomes a style
+  spec: specs/style_match.md §5, §9; specs/ai_provider.md §3; specs/generative_erase.md §5, §6
+  deps: T72, T73
+  done when:
+    - **the local matcher first** (§5 step 1): measure the reference, score every preset by
+      weighted distance in the normalized parameter space, and offer the nearest within
+      `STYLE_MATCH_THRESHOLD` with **no model call**. This is the step that makes the feature
+      usable offline and cheap; it is not an optimisation to add later
+    - only past the threshold does `MatchStyleProvider` send both images to **`gemini-2.5-flash`** —
+      the planner's model, not the image model — through a `match_style` function declaration.
+      §5 says why numbers rather than a graded photograph
+    - the answer clamps per kind, divides by 100, and becomes a **13th tile** labelled 참조. Never
+      applied silently
+    - the reference is never stored, never a project, never in the document (§10)
+    - error mapping is generative_erase.md §6 row for row. **No new `AppError` case**
+    - `FakeMatchStyleProvider` in `core/ai/src/testShared`
+    - tests: §9's `StyleMatchTest` — the load-bearing one is that a reference measured from a
+      preset's **own output** ranks that preset first at distance ~0 — and the provider list
+  touches: core/ai/gemini, core/ai (the provider interface file), core/ai/AiModule.kt,
+  core/ai/src/testShared, core/ai tests, core/imaging/style, feature/editor/tools/style,
+  feature/editor tests
+
+- [x] T76 `AutoEnhanceProvider` — MonetGPT on the wire
+  spec: specs/auto_enhance.md §2, §3, §4, §5, §8; specs/segmentation.md (the config pattern);
+  specs/ai_provider.md §3
+  deps: T71
+  note: auto_enhance.md **open decision 1 is still open** — somebody has to run the server. SAM 3 already
+  needs one and has no shipped address; this is a second self-hosted service, and whether it shares
+  a host is an ops decision. Until there is an address to point at, `check` can prove the client
+  and nothing else. **Open decision 3** rides along: three style chips or only `balanced`.
+  done when:
+    - `MonetClient` posting OpenAI-compatible `/v1/chat/completions`, the photo at **1280** long
+      edge as PNG, MonetGPT's own two prompts. `baseUrl`/`token` in the 서버 설정 sheet beside
+      SAM 3's, defaulting to **blank** — no address is shipped
+    - availability is a `/health` probe, **not** Gemini's "is a key present" rule (§4)
+    - the JSON is extracted from prose (a reasoning model narrates), each operation name maps to an
+      `AdjustKind`, values clamp to ±100 and divide by 100
+    - an unknown operation drops **that** entry and keeps the rest; an answer naming none is
+      `Unsupported`. Error mapping is generative_erase.md §6 row for row plus that one row
+    - **no pixels cross the wire back** (§2). A provider that returns a Bitmap is the design drifting
+    - `FakeAutoEnhanceProvider` in `core/ai/src/testShared`, deterministic enough for a golden
+    - tests: §8's client and provider lists, including the one that fails the day MonetGPT's
+      vocabulary changes
+  touches: core/ai/monet, core/ai (the provider interface file), core/ai/AiModule.kt,
+  core/ai/src/testShared, core/ai tests, feature/editor/tools/select/Sam3SettingsSheet.kt
+
+- [x] T77 자동 — the tool and its after-sheet
+  spec: specs/auto_enhance.md §6, §7, §8; DESIGN.md §3, §4
+  deps: T76
+  done when:
+    - `Tool.Auto`, `isAi`. **No sheet before the call** — tapping it runs, as 지우기 does — and a
+      sheet after it, holding the result
+    - three chips; changing one costs a call and shows the progress overlay, the 강도 slider costs
+      none and scales locally
+    - the 지시 line is the model's own English reason in `bodySm` / `editInkSecondary` — evidence,
+      not copy (§6, and open decision 2 says why it is in English)
+    - 적용 commits **one** history entry, so one undo removes the whole boost
+    - `masked=false` always; `activeMaskId` is never touched (§9)
+    - the disabled-state table of §6, including the blank address opening the 서버 설정 sheet
+    - goldens `auto_sheet_open`, `auto_sheet_result` — of a **fake** plan (§8): the golden asserts
+      the rendering, never the model's taste
+    - tests: §8's tool list
+  touches: feature/editor/tools/auto, feature/editor/Tool.kt,
+  feature/editor/tools/ToolSheetHost.kt, feature/editor/EditorViewModel.kt,
+  feature/editor/EditorRoute.kt, feature/editor strings.xml, feature/editor tests,
+  feature/editor screenshot goldens
+
+- [x] T78 The tool strip gets a second level
+  spec: specs/tool_groups.md; specs/editor_shell.md; DESIGN.md §1, §4, §5, §7, §8
+  deps: —
+  note: **do this before T73 and T77 if the strip is what you are looking at.** It has no code
+  dependency on them, and the two of them are what makes it urgent — twelve tools behind a scroll
+  gesture with no affordance. Doing it first means each new tool lands in a strip that fits.
+  done when:
+    - `ToolGroup` and `Tool.group`; **`isAi` is deleted**, because §2 moved the accent dot up to
+      the parent and two spellings of one fact is how they disagree
+    - the strip binds one level's tools; adding a tool is still one enum entry
+    - the dot is on the AI parent and on **no** child; the ← item is `editInk`
+    - **one surface, one accent** — the strip's height, item size and scrolling are unchanged and
+      no second row appears. §2 names the two designs this rejects and why each costs a rule
+    - committing or cancelling a sheet returns to the root; a **disabled child does not**; the AI
+      parent is never itself disabled even when every child is
+    - system back closes the level before it leaves the screen
+    - the level is UI state, resets to root on entry, and is not in the document
+    - `editor_shell_default` re-recorded **for one reason only** — the strip now ends at AI — plus
+      one new `editor_shell_ai_open`
+    - tests: §7's list, including "every `Tool` appears at exactly one level", which is what fails
+      when a tool is added and forgotten here
+  touches: feature/editor/Tool.kt, feature/editor/EditorToolStrip.kt,
+  feature/editor/EditorScreen.kt, feature/editor/EditorViewModel.kt, feature/editor/EditorRoute.kt,
+  feature/editor strings.xml, feature/editor tests, feature/editor screenshot goldens
+
 ## Backlog
 
 The **second device run happened on 2026-09-06** (SM-S948N, the same reverse-tunnel setup). What it
-found is Phase 13. What it has still not answered: T51 and T52 are prompt rewrites, and
-only a real model can say whether they hold.
+found is Phase 13. What it has still not answered: T51 and T52 are prompt rewrites, and only a real
+model can say whether they hold.
+
+**Phase 14 adds three more prompt questions to the next run**, and one measurement: whether the
+planner reaches for `apply_style` on "필름 느낌으로" rather than composing adjusts; whether the
+reference-match's local step (style_match.md §5) is right often enough to keep the model call rare;
+whether MonetGPT's taste is one a person recognises as "better". The measurement is T73's twelve
+tiles — style_match.md §7 argues they are two orders of magnitude under the preview budget, and
+`scripts/bench.sh` is where that gets checked rather than assumed.
 
 **Phase 11 needs that run too**: T56's rules are a prompt change, and only a real model can say
 whether the planner reaches for `adjust_color_range` instead of trying to select a colour.

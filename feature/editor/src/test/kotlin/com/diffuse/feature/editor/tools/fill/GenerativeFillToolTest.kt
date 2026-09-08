@@ -5,8 +5,10 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.diffuse.core.ai.Availability
+import com.diffuse.core.ai.FakeAutoEnhanceProvider
 import com.diffuse.core.ai.FakeEraseProvider
 import com.diffuse.core.ai.FakeFillProvider
+import com.diffuse.core.ai.FakeMatchStyleProvider
 import com.diffuse.core.ai.FakeOutpaintProvider
 import com.diffuse.core.ai.FakePlanProvider
 import com.diffuse.core.ai.FakeSegmentationProvider
@@ -18,6 +20,7 @@ import com.diffuse.core.common.Result
 import com.diffuse.core.data.ProjectRepository
 import com.diffuse.core.data.ProjectSummary
 import com.diffuse.core.imaging.load.SourceImage
+import com.diffuse.core.imaging.model.AdjustKind
 import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.core.imaging.model.ImageRef
 import com.diffuse.core.imaging.model.Operation
@@ -265,11 +268,55 @@ class GenerativeFillToolTest {
         assertTrue(viewModel.uiState.value.document!!.generativeFills().isEmpty())
     }
 
+    // ---- T70: the fill has to sit under the adjust stack ------------------
+
+    @Test
+    fun `the filler is shown the frame without the adjustments baked in`() = runTest {
+        val viewModel = withPrompt(adjustedFirst = true)
+
+        viewModel.applySheet()
+
+        assertEquals(PLAIN, filler.lastImage!!.getPixel(0, 0))
+    }
+
+    @Test
+    fun `the fill lands before an adjustment that was already there`() = runTest {
+        val viewModel = withPrompt(adjustedFirst = true)
+
+        viewModel.applySheet()
+
+        val operations = viewModel.uiState.value.document!!.operations
+        val fill = operations.indexOfFirst { it is Operation.GenerativeFill }
+        val adjust = operations.indexOfFirst { it is Operation.Adjust }
+        assertTrue(
+            "the fill must run before the adjustment, was $operations",
+            fill in 0 until adjust,
+        )
+        // Moving it puts the fill ahead of the Mask ops it names, which is only legal because
+        // masks change no pixels and are looked up by id.
+        assertTrue(viewModel.uiState.value.document!!.referencesResolve())
+    }
+
+    @Test
+    fun `with nothing adjusted yet the fill is still appended last`() = runTest {
+        val viewModel = withPrompt()
+
+        viewModel.applySheet()
+
+        assertTrue(viewModel.uiState.value.document!!.operations.last() is Operation.GenerativeFill)
+    }
+
     // ---- fixtures --------------------------------------------------------
 
     /** Applies a selection first, which is what the fill consumes. */
-    private suspend fun withSelection(): EditorViewModel {
+    private suspend fun withSelection(adjustedFirst: Boolean = false): EditorViewModel {
         val viewModel = viewModel()
+        // T70's case needs an unmasked adjustment already in the list: it is made before there is
+        // any selection, so `maskedAdjust` cannot claim it.
+        if (adjustedFirst) {
+            viewModel.onAdjust(AdjustKind.Exposure, EXPOSURE)
+            viewModel.onAdjustFinished()
+        }
         viewModel.onToolClick(Tool.Select)
         viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
         viewModel.applySheet()
@@ -277,8 +324,8 @@ class GenerativeFillToolTest {
     }
 
     /** …and then opens the sheet and types the noun, which is what 적용 sends. */
-    private suspend fun withPrompt(): EditorViewModel {
-        val viewModel = withSelection()
+    private suspend fun withPrompt(adjustedFirst: Boolean = false): EditorViewModel {
+        val viewModel = withSelection(adjustedFirst)
         viewModel.onToolClick(Tool.Fill)
         viewModel.fill.setPrompt(PROMPT)
         return viewModel
@@ -291,6 +338,7 @@ class GenerativeFillToolTest {
         (0 until width * height).count { MaskOps.isSet(this, it % width, it / width) }
 
     private fun viewModel() = EditorViewModel(
+        context = ApplicationProvider.getApplicationContext(),
         repository = repository,
         renderer = FakeRenderer(),
         ai = EditorAi(
@@ -302,18 +350,32 @@ class GenerativeFillToolTest {
             FakeSpeechInput(),
             settings,
             geminiSettings,
+            FakeAutoEnhanceProvider(),
+            FakeMatchStyleProvider(),
         ),
         dispatchers = TestDispatchers,
         savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),
     )
 
     /** Resolves any mask to a full-frame one, so the fill always has something to work on. */
+    /**
+     * T70: the frame is colour-coded by whether the document still carries adjustments, which is
+     * how a test can tell which of the two renders the filler was handed. The erase twin's
+     * renderer says the same thing.
+     */
     private class FakeRenderer : Renderer {
         override suspend fun preview(document: EditDocument, targetLongEdgePx: Int) =
-            Result.Success(Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888))
+            Result.Success(frame(document))
 
         override suspend fun full(document: EditDocument, onProgress: (Float) -> Unit) =
-            Result.Success(Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888))
+            Result.Success(frame(document))
+
+        private fun frame(document: EditDocument): Bitmap =
+            Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888).apply {
+                eraseColor(
+                    if (document.operations.any { it is Operation.Adjust }) ADJUSTED else PLAIN,
+                )
+            }
 
         override suspend fun resolveMask(document: EditDocument, maskId: String): Bitmap? =
             document.mask(maskId)?.let { blobMask() }
@@ -396,5 +458,8 @@ class GenerativeFillToolTest {
         const val BLOB_TOP = 10
         const val BLOB_RIGHT = 19
         const val BLOB_BOTTOM = 21
+        const val EXPOSURE = 0.4f
+        val PLAIN = android.graphics.Color.rgb(40, 50, 60)
+        val ADJUSTED = android.graphics.Color.rgb(200, 210, 220)
     }
 }

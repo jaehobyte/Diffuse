@@ -8,27 +8,13 @@ import com.diffuse.core.common.AppError
 import com.diffuse.core.common.Result
 import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.feature.editor.R
+import com.diffuse.feature.editor.tools.ToolTap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-
-/**
- * specs/generative_fill.md §6. What tapping the tool should do, returned rather than acted on:
- * the 서버 설정 sheet is `SelectionController`'s, and there is one of it (generative_erase.md §9).
- */
-enum class FillTap {
-    /** Open the sheet, which is where the noun comes from. */
-    Open,
-
-    /** The key is blank, which only the settings sheet can fix. */
-    OpenSettings,
-
-    /** The reason is already in [FillState.message]; nothing more to offer. */
-    Refused,
-}
 
 /** specs/generative_fill.md §6. Sheet state; nothing here reaches the document until 적용. */
 data class FillState(
@@ -73,23 +59,23 @@ class FillController(
      * specs/generative_fill.md §6, in that table's order: a missing selection is reported before
      * a missing key, because the two ask the user for completely different things.
      */
-    fun onToolTapped(hasSelection: Boolean): FillTap {
+    fun onToolTapped(hasSelection: Boolean): ToolTap {
         val availability = _state.value.availability
         return when {
             !hasSelection -> {
                 showMessage(R.string.fill_needs_selection)
-                FillTap.Refused
+                ToolTap.Refused
             }
-            availability is Availability.Ready -> FillTap.Open
+            availability is Availability.Ready -> ToolTap.Open
             // §4: availability is derived from the key with no probe, so `Invalid` here is the
             // "no key" row rather than a general outage.
             (availability as? Availability.Unavailable)?.reason is AppError.Invalid -> {
                 showMessage(R.string.fill_needs_key)
-                FillTap.OpenSettings
+                ToolTap.OpenSettings
             }
             else -> {
                 showMessage(R.string.fill_failed)
-                FillTap.Refused
+                ToolTap.Refused
             }
         }
     }

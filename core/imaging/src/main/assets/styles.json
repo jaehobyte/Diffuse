@@ -1,0 +1,1001 @@
+{
+ "_doc": "스타일 참조 DB. 근거: Flickr Style 20종(Karayev, BMVC 2014, arXiv:1311.3715)에서 톤·색 보정 가능 스타일을 추려 Image Aesthetic Space 2D 좌표(warm-cool × hard-soft, Ma et al., ICASSP 2018)에 배치. axes.warmth: -1(차가움)..1(따뜻함), axes.hardness: -1(부드러움)..1(강함). params 는 intensity 100 기준 \"확실히 느껴지는\" 강도의 프리셋(포화 가드 전제)이며 사진에 맞게 ±20% 미세조정 가능. 각 스타일의 variants = 세부 변주(필름 결·그레이딩 결 차이) — 방향 선택 후 심화 라운드에서 미리보기로 제시하는 지식.",
+ "styles": [
+  {
+   "id": "clean-bright",
+   "name": "클린 브라이트",
+   "desc": "노출을 살리고 색은 절제한 깨끗하고 화사한 느낌",
+   "axes": {
+    "warmth": 0.0,
+    "hardness": -0.3
+   },
+   "params": {
+    "exposure": 0.45,
+    "shadows": 35,
+    "whites": 15,
+    "contrast": 8,
+    "vibrance": 18,
+    "temperature": -4,
+    "clarity": 6
+   },
+   "variants": [
+    {
+     "name": "퓨어 화이트",
+     "desc": "하이키에 가까운 순백 화사함",
+     "params": {
+      "exposure": 0.6,
+      "shadows": 35,
+      "whites": 22,
+      "contrast": 4,
+      "vibrance": 18,
+      "temperature": -4,
+      "clarity": 6
+     }
+    },
+    {
+     "name": "소프트 브라이트",
+     "desc": "밝되 대비를 눌러 부드럽게",
+     "params": {
+      "exposure": 0.4,
+      "shadows": 35,
+      "whites": 15,
+      "contrast": -8,
+      "vibrance": 18,
+      "temperature": -4,
+      "clarity": 6,
+      "highlights": -8
+     }
+    },
+    {
+     "name": "밝고 투명한 룩",
+     "desc": "밝음+소프트+선명 — 소니 SH Creative Look 공식 정의의 번역",
+     "params": {
+      "exposure": 0.2,
+      "contrast": -8,
+      "clarity": -5,
+      "vibrance": 12,
+      "highlights": -5
+     }
+    }
+   ]
+  },
+  {
+   "id": "natural-enhance",
+   "name": "내추럴",
+   "desc": "원본의 인상을 유지하며 기본기만 정돈한 자연스러운 보정",
+   "axes": {
+    "warmth": 0.1,
+    "hardness": 0.0
+   },
+   "params": {
+    "exposure": 0.15,
+    "contrast": 10,
+    "shadows": 12,
+    "vibrance": 15,
+    "clarity": 8,
+    "sharpen": 20
+   },
+   "variants": [
+    {
+     "name": "셔터 그대로",
+     "desc": "정돈만 최소한으로",
+     "params": {
+      "exposure": 0.15,
+      "contrast": 10,
+      "shadows": 12,
+      "vibrance": 15,
+      "clarity": 8,
+      "sharpen": 20,
+      "intensity": 50
+     }
+    },
+    {
+     "name": "맑은 내추럴",
+     "desc": "미세하게 맑고 또렷하게",
+     "params": {
+      "exposure": 0.15,
+      "contrast": 10,
+      "shadows": 12,
+      "vibrance": 20,
+      "clarity": 14,
+      "sharpen": 20,
+      "dehaze": 8
+     }
+    },
+    {
+     "name": "뉴트럴 픽처",
+     "desc": "무가공·저대비·subdued — 캐논 Neutral/니콘 Neutral 공식 정의의 번역",
+     "params": {
+      "saturation": -8,
+      "contrast": -8,
+      "clarity": -5
+     }
+    }
+   ]
+  },
+  {
+   "id": "crisp-landscape",
+   "name": "청량 크리스프",
+   "desc": "하늘과 초록이 살아나는 시원하고 선명한 풍경 톤",
+   "axes": {
+    "warmth": -0.5,
+    "hardness": 0.3
+   },
+   "params": {
+    "temperature": -18,
+    "exposure": 0.2,
+    "contrast": 18,
+    "vibrance": 45,
+    "saturation": 10,
+    "clarity": 22,
+    "dehaze": 18,
+    "s_curve": 15,
+    "hsl": {
+     "blue": {
+      "sat": 35,
+      "lum": -10
+     },
+     "green": {
+      "sat": 20
+     }
+    }
+   },
+   "variants": [
+    {
+     "name": "알파인 블루",
+     "desc": "하늘·물빛을 깊게 미는 청량",
+     "params": {
+      "temperature": -18,
+      "exposure": 0.2,
+      "contrast": 18,
+      "vibrance": 45,
+      "saturation": 10,
+      "clarity": 22,
+      "dehaze": 18,
+      "s_curve": 15,
+      "hsl": {
+       "blue": {
+        "sat": 45,
+        "lum": -15
+       },
+       "green": {
+        "sat": 20
+       },
+       "aqua": {
+        "sat": 25
+       }
+      }
+     }
+    },
+    {
+     "name": "포레스트 그린",
+     "desc": "초목을 진하게 세우는 청량",
+     "params": {
+      "temperature": -18,
+      "exposure": 0.2,
+      "contrast": 18,
+      "vibrance": 45,
+      "saturation": 10,
+      "clarity": 22,
+      "dehaze": 24,
+      "s_curve": 15,
+      "hsl": {
+       "blue": {
+        "sat": 35,
+        "lum": -10
+       },
+       "green": {
+        "sat": 35,
+        "lum": -8
+       }
+      }
+     }
+    },
+    {
+     "name": "랜드스케이프 픽처",
+     "desc": "하늘·초목의 블루·그린 채도 강화 + 샤프니스 — 캐논 Landscape 공식 파라미터의 번역",
+     "params": {
+      "hsl": {
+       "blue": {
+        "sat": 20,
+        "lum": -5
+       },
+       "green": {
+        "sat": 15
+       },
+       "aqua": {
+        "sat": 12
+       }
+      },
+      "clarity": 12,
+      "contrast": 8
+     }
+    }
+   ]
+  },
+  {
+   "id": "film-warm",
+   "name": "웜 필름",
+   "desc": "따뜻하고 살짝 바랜, 그레인 있는 노스탤직 필름룩",
+   "axes": {
+    "warmth": 0.7,
+    "hardness": -0.5
+   },
+   "params": {
+    "temperature": 30,
+    "tint": 8,
+    "exposure": 0.15,
+    "fade": 45,
+    "contrast": -10,
+    "saturation": -20,
+    "grain": 30,
+    "color_grading": {
+     "highlights": {
+      "hue": 45,
+      "sat": 25
+     }
+    }
+   },
+   "variants": [
+    {
+     "name": "골드 네거티브",
+     "desc": "노랑·주황 빛이 도는 클래식 웜 네거티브 (코닥 골드류의 결)",
+     "params": {
+      "temperature": 35,
+      "tint": 8,
+      "exposure": 0.15,
+      "fade": 40,
+      "contrast": -10,
+      "saturation": -20,
+      "grain": 25,
+      "color_grading": {
+       "highlights": {
+        "hue": 50,
+        "sat": 30
+       }
+      },
+      "hsl": {
+       "green": {
+        "sat": 10,
+        "lum": -5
+       },
+       "yellow": {
+        "sat": 15
+       }
+      }
+     }
+    },
+    {
+     "name": "그린 네거티브",
+     "desc": "초록이 살아있고 피부가 고운 네거티브 (후지 수페리아류의 결)",
+     "params": {
+      "temperature": 10,
+      "tint": 8,
+      "exposure": 0.15,
+      "fade": 35,
+      "contrast": -10,
+      "saturation": -12,
+      "grain": 22,
+      "color_grading": {
+       "highlights": {
+        "hue": 45,
+        "sat": 25
+       },
+       "shadows": {
+        "hue": 160,
+        "sat": 20
+       }
+      },
+      "hsl": {
+       "green": {
+        "sat": 25,
+        "hue": -5
+       }
+      }
+     }
+    },
+    {
+     "name": "시네 필름",
+     "desc": "틸 그림자 + 웜 하이라이트, 네온이 사는 시네마 필름의 결",
+     "params": {
+      "temperature": 15,
+      "tint": 8,
+      "exposure": 0.15,
+      "fade": 30,
+      "contrast": -4,
+      "saturation": -20,
+      "grain": 20,
+      "color_grading": {
+       "highlights": {
+        "hue": 30,
+        "sat": 30
+       },
+       "shadows": {
+        "hue": 190,
+        "sat": 25
+       }
+      }
+     }
+    },
+    {
+     "name": "모노 필름",
+     "desc": "입자가 굵은 흑백 필름",
+     "params": {
+      "temperature": 30,
+      "tint": 8,
+      "exposure": 0.15,
+      "fade": 20,
+      "contrast": 15,
+      "saturation": -100,
+      "grain": 35,
+      "color_grading": {
+       "highlights": {
+        "hue": 45,
+        "sat": 25
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "faded-matte",
+   "name": "페이디드 매트",
+   "desc": "블랙을 들어올린 차분한 무광 파스텔 감성",
+   "axes": {
+    "warmth": 0.2,
+    "hardness": -0.8
+   },
+   "params": {
+    "fade": 55,
+    "contrast": -18,
+    "saturation": -30,
+    "exposure": 0.25,
+    "grain": 12,
+    "color_grading": {
+     "shadows": {
+      "hue": 250,
+      "sat": 15
+     }
+    }
+   },
+   "variants": [
+    {
+     "name": "웜 매트",
+     "desc": "따뜻하게 바랜 무광",
+     "params": {
+      "fade": 55,
+      "contrast": -18,
+      "saturation": -30,
+      "exposure": 0.25,
+      "grain": 12,
+      "color_grading": {
+       "shadows": {
+        "hue": 40,
+        "sat": 10
+       }
+      },
+      "temperature": 14
+     }
+    },
+    {
+     "name": "쿨 매트",
+     "desc": "차갑게 가라앉은 무광",
+     "params": {
+      "fade": 55,
+      "contrast": -18,
+      "saturation": -30,
+      "exposure": 0.25,
+      "grain": 12,
+      "color_grading": {
+       "shadows": {
+        "hue": 230,
+        "sat": 14
+       }
+      },
+      "temperature": -12
+     }
+    },
+    {
+     "name": "IN 매트 룩",
+     "desc": "대비도 채도도 내려놓은 매트 — 소니 IN 공식 정의의 번역",
+     "params": {
+      "saturation": -15,
+      "contrast": -15,
+      "fade": 15
+     }
+    }
+   ]
+  },
+  {
+   "id": "cinematic-teal",
+   "name": "시네마틱 틸",
+   "desc": "그림자는 청록, 하이라이트는 웜톤의 영화 색보정",
+   "axes": {
+    "warmth": -0.2,
+    "hardness": 0.6
+   },
+   "params": {
+    "contrast": 20,
+    "shadows": -10,
+    "fade": 12,
+    "clarity": 12,
+    "saturation": -8,
+    "temperature": -6,
+    "color_grading": {
+     "shadows": {
+      "hue": 190,
+      "sat": 40
+     },
+     "highlights": {
+      "hue": 40,
+      "sat": 22
+     }
+    }
+   },
+   "variants": [
+    {
+     "name": "딥 틸&오렌지",
+     "desc": "그림자 청록을 깊게, 피부·하이라이트는 뚜렷한 주황",
+     "params": {
+      "contrast": 22,
+      "shadows": -10,
+      "fade": 12,
+      "clarity": 12,
+      "saturation": -8,
+      "temperature": -6,
+      "color_grading": {
+       "shadows": {
+        "hue": 190,
+        "sat": 50
+       },
+       "highlights": {
+        "hue": 35,
+        "sat": 30
+       }
+      }
+     }
+    },
+    {
+     "name": "블리치 바이패스",
+     "desc": "채도를 빼고 대비를 세운 은잔류 현상의 거친 결",
+     "params": {
+      "contrast": 30,
+      "shadows": -10,
+      "fade": 12,
+      "clarity": 18,
+      "saturation": -35,
+      "temperature": -6,
+      "color_grading": {
+       "shadows": {
+        "hue": 210,
+        "sat": 15
+       },
+       "highlights": {
+        "hue": 40,
+        "sat": 22
+       }
+      },
+      "grain": 15
+     }
+    },
+    {
+     "name": "네오 누아르",
+     "desc": "초록빛이 감도는 어두운 도시 누아르",
+     "params": {
+      "contrast": 24,
+      "shadows": -10,
+      "fade": 12,
+      "clarity": 12,
+      "saturation": -8,
+      "temperature": -6,
+      "color_grading": {
+       "shadows": {
+        "hue": 150,
+        "sat": 28
+       },
+       "highlights": {
+        "hue": 60,
+        "sat": 10
+       }
+      },
+      "exposure": -0.15
+     }
+    },
+    {
+     "name": "그린 디스토피아",
+     "desc": "'가장 불쾌한 색'의 인공 세계 — 매트릭스 촬영감독 ASC 1차 증언 기반 그린 캐스트",
+     "params": {
+      "tint": -25,
+      "saturation": -8,
+      "contrast": 10,
+      "color_grading": {
+       "shadows": {
+        "hue": 120,
+        "sat": 12
+       }
+      },
+      "fade": 8
+     }
+    }
+   ]
+  },
+  {
+   "id": "moody-dark",
+   "name": "무디 다크",
+   "desc": "어둡고 밀도 있는 톤으로 무게감과 분위기를 살림",
+   "axes": {
+    "warmth": -0.3,
+    "hardness": 0.8
+   },
+   "params": {
+    "exposure": -0.35,
+    "contrast": 22,
+    "highlights": -30,
+    "fade": 12,
+    "saturation": -15,
+    "vignette": -30,
+    "color_grading": {
+     "shadows": {
+      "hue": 220,
+      "sat": 25
+     }
+    }
+   },
+   "variants": [
+    {
+     "name": "딥 포레스트",
+     "desc": "짙은 녹색 그림자의 숲 무드",
+     "params": {
+      "exposure": -0.35,
+      "contrast": 22,
+      "highlights": -30,
+      "fade": 12,
+      "saturation": -15,
+      "vignette": -30,
+      "color_grading": {
+       "shadows": {
+        "hue": 150,
+        "sat": 25
+       }
+      },
+      "hsl": {
+       "green": {
+        "lum": -15,
+        "sat": 10
+       }
+      }
+     }
+    },
+    {
+     "name": "미드나잇 블루",
+     "desc": "푸른 새벽빛의 무거운 톤",
+     "params": {
+      "exposure": -0.35,
+      "contrast": 22,
+      "highlights": -30,
+      "fade": 12,
+      "saturation": -15,
+      "vignette": -30,
+      "color_grading": {
+       "shadows": {
+        "hue": 225,
+        "sat": 30
+       }
+      },
+      "temperature": -12
+     }
+    },
+    {
+     "name": "FL 무디 룩",
+     "desc": "차분한 색 위의 강한 대비 — 소니 FL(고대비+저채도) 공식 정의의 번역",
+     "params": {
+      "saturation": -12,
+      "contrast": 20,
+      "s_curve": 10,
+      "hsl": {
+       "blue": {
+        "sat": 8
+       },
+       "green": {
+        "sat": 6
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "vibrant-pop",
+   "name": "비비드 팝",
+   "desc": "색이 또렷하게 튀는 경쾌하고 에너지 있는 느낌",
+   "axes": {
+    "warmth": 0.2,
+    "hardness": 0.5
+   },
+   "params": {
+    "exposure": 0.2,
+    "contrast": 18,
+    "vibrance": 55,
+    "saturation": 15,
+    "clarity": 15,
+    "s_curve": 15,
+    "sharpen": 25
+   },
+   "variants": [
+    {
+     "name": "캔디 팝",
+     "desc": "원색이 톡톡 튀는 가벼운 팝",
+     "params": {
+      "exposure": 0.2,
+      "contrast": 12,
+      "vibrance": 65,
+      "saturation": 15,
+      "clarity": 15,
+      "s_curve": 10,
+      "sharpen": 25
+     }
+    },
+    {
+     "name": "딥 팝",
+     "desc": "진하고 묵직한 고채도",
+     "params": {
+      "exposure": 0.05,
+      "contrast": 24,
+      "vibrance": 55,
+      "saturation": 25,
+      "clarity": 15,
+      "s_curve": 15,
+      "sharpen": 25
+     }
+    },
+    {
+     "name": "비비드 픽처",
+     "desc": "원색을 앞세운 포토프린트 효과 — 니콘 Vivid·소니 VV 공식 정의의 번역",
+     "params": {
+      "saturation": 18,
+      "contrast": 12,
+      "clarity": 8,
+      "vibrance": 10
+     }
+    }
+   ]
+  },
+  {
+   "id": "pastel-soft",
+   "name": "파스텔 소프트",
+   "desc": "밝고 뽀얀 저대비 파스텔, 부드러운 분위기",
+   "axes": {
+    "warmth": 0.3,
+    "hardness": -0.9
+   },
+   "params": {
+    "exposure": 0.4,
+    "contrast": -22,
+    "highlights": -12,
+    "fade": 35,
+    "saturation": -12,
+    "temperature": 10,
+    "clarity": -15
+   },
+   "variants": [
+    {
+     "name": "핑크 파스텔",
+     "desc": "분홍기가 도는 뽀얀 톤",
+     "params": {
+      "exposure": 0.4,
+      "contrast": -22,
+      "highlights": -12,
+      "fade": 35,
+      "saturation": -12,
+      "temperature": 10,
+      "clarity": -15,
+      "tint": 12,
+      "color_grading": {
+       "highlights": {
+        "hue": 340,
+        "sat": 14
+       }
+      }
+     }
+    },
+    {
+     "name": "민트 파스텔",
+     "desc": "민트빛이 감도는 산뜻한 파스텔",
+     "params": {
+      "exposure": 0.4,
+      "contrast": -22,
+      "highlights": -12,
+      "fade": 35,
+      "saturation": -12,
+      "temperature": -6,
+      "clarity": -15,
+      "color_grading": {
+       "highlights": {
+        "hue": 160,
+        "sat": 12
+       }
+      }
+     }
+    },
+    {
+     "name": "포트레이트 소프트",
+     "desc": "자연 피부톤·한 단계 부드럽게 — 캐논/니콘/소니 Portrait 프로파일 공통 방향의 번역",
+     "params": {
+      "clarity": -8,
+      "contrast": -4,
+      "saturation": 4,
+      "hsl": {
+       "orange": {
+        "sat": -6,
+        "lum": 6
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "golden-glow",
+   "name": "골든 글로우",
+   "desc": "노을빛처럼 따뜻한 빛이 감도는 감성 톤",
+   "axes": {
+    "warmth": 0.9,
+    "hardness": 0.0
+   },
+   "params": {
+    "temperature": 35,
+    "tint": 8,
+    "exposure": 0.2,
+    "highlights": -10,
+    "vibrance": 18,
+    "color_grading": {
+     "highlights": {
+      "hue": 38,
+      "sat": 35
+     }
+    }
+   },
+   "variants": [
+    {
+     "name": "선셋 피치",
+     "desc": "복숭아빛이 도는 부드러운 노을",
+     "params": {
+      "temperature": 35,
+      "tint": 14,
+      "exposure": 0.2,
+      "highlights": -10,
+      "vibrance": 18,
+      "color_grading": {
+       "highlights": {
+        "hue": 25,
+        "sat": 30
+       }
+      },
+      "fade": 15
+     }
+    },
+    {
+     "name": "앰버 톤",
+     "desc": "진한 호박색 황금빛",
+     "params": {
+      "temperature": 45,
+      "tint": 8,
+      "exposure": 0.2,
+      "highlights": -10,
+      "vibrance": 18,
+      "color_grading": {
+       "highlights": {
+        "hue": 45,
+        "sat": 40
+       }
+      },
+      "contrast": 8
+     }
+    }
+   ]
+  },
+  {
+   "id": "urban-hip",
+   "name": "어반 힙",
+   "desc": "저채도에 청록 그림자·그레인을 얹은 도시적인 힙한 무드",
+   "axes": {
+    "warmth": -0.6,
+    "hardness": 0.4
+   },
+   "params": {
+    "temperature": -14,
+    "saturation": -30,
+    "contrast": 15,
+    "fade": 22,
+    "grain": 25,
+    "clarity": 15,
+    "color_grading": {
+     "shadows": {
+      "hue": 200,
+      "sat": 30
+     }
+    }
+   },
+   "variants": [
+    {
+     "name": "콜드 크롬",
+     "desc": "잿빛에 가까운 저채도 금속성 쿨톤",
+     "params": {
+      "temperature": -22,
+      "saturation": -40,
+      "contrast": 15,
+      "fade": 22,
+      "grain": 25,
+      "clarity": 20,
+      "color_grading": {
+       "shadows": {
+        "hue": 215,
+        "sat": 22
+       }
+      }
+     }
+    },
+    {
+     "name": "네온 마젠타",
+     "desc": "그림자에 마젠타·보라 기운을 얹은 밤거리 무드",
+     "params": {
+      "temperature": -8,
+      "saturation": -30,
+      "contrast": 15,
+      "fade": 25,
+      "grain": 25,
+      "clarity": 15,
+      "color_grading": {
+       "shadows": {
+        "hue": 290,
+        "sat": 26
+       }
+      }
+     }
+    },
+    {
+     "name": "세피아 스트리트",
+     "desc": "빛바랜 갈색조의 빈티지 스트리트",
+     "params": {
+      "temperature": 18,
+      "saturation": -35,
+      "contrast": 15,
+      "fade": 30,
+      "grain": 25,
+      "clarity": 15,
+      "color_grading": {
+       "shadows": {
+        "hue": 200,
+        "sat": 30
+       },
+       "highlights": {
+        "hue": 42,
+        "sat": 22
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "bw-classic",
+   "name": "클래식 모노",
+   "desc": "대비가 살아있는 흑백, 형태와 빛에 집중",
+   "axes": {
+    "warmth": 0.0,
+    "hardness": 0.7
+   },
+   "params": {
+    "saturation": -100,
+    "contrast": 20,
+    "clarity": 15,
+    "s_curve": 15,
+    "grain": 15
+   },
+   "variants": [
+    {
+     "name": "하이 콘트라스트 모노",
+     "desc": "검정이 깊은 강한 흑백",
+     "params": {
+      "saturation": -100,
+      "contrast": 32,
+      "clarity": 20,
+      "s_curve": 15,
+      "grain": 15,
+      "blacks": -12
+     }
+    },
+    {
+     "name": "소프트 모노",
+     "desc": "회조가 풍부한 부드러운 흑백",
+     "params": {
+      "saturation": -100,
+      "contrast": 8,
+      "clarity": 15,
+      "s_curve": 15,
+      "grain": 10,
+      "fade": 18
+     }
+    },
+    {
+     "name": "레드 필터 드라마",
+     "desc": "파란 하늘을 검게, 구름을 극적으로 — '몰려오는 뇌우' 효과 (Ilford 레드 필터 공식)",
+     "params": {
+      "bw_filter": "red",
+      "contrast": 24,
+      "clarity": 14,
+      "s_curve": 12,
+      "grain": 12,
+      "blacks": -8
+     }
+    },
+    {
+     "name": "옐로 필터 내추럴",
+     "desc": "하늘은 온건히 어둡게, 피부는 자연스럽게 — 흑백의 클래식한 첫 필터 (Ilford 공식)",
+     "params": {
+      "bw_filter": "yellow",
+      "contrast": 14,
+      "clarity": 10,
+      "s_curve": 10,
+      "grain": 12
+     }
+    },
+    {
+     "name": "아크로스 계조",
+     "desc": "하이라이트는 단단히·섀도는 부드럽게 — 후지 ACROS 시뮬의 비대칭 커브 (공식 설계)",
+     "params": {
+      "saturation": -100,
+      "s_curve": 15,
+      "shadows": 12,
+      "highlights": -5,
+      "contrast": 8,
+      "grain": 10,
+      "clarity": 6
+     }
+    },
+    {
+     "name": "세피아 회고",
+     "desc": "부드러운 저대비 + 웜 브라운 토닝 — 온화하고 회고적인 무드 (GR 공식 블로그 시연 조합)",
+     "params": {
+      "saturation": -100,
+      "contrast": -10,
+      "exposure": 0.12,
+      "grain": 10,
+      "fade": 12,
+      "color_grading": {
+       "highlights": {
+        "hue": 40,
+        "sat": 15
+       },
+       "shadows": {
+        "hue": 35,
+        "sat": 10
+       }
+      }
+     }
+    },
+    {
+     "name": "셀레늄 결",
+     "desc": "미묘한 퍼플-브라운 시프트 + 깊어진 블랙(Dmax) — HARMAN/Ilford 셀레늄 토너 공식 사양의 번역",
+     "params": {
+      "saturation": -100,
+      "blacks": -10,
+      "contrast": 6,
+      "grain": 10,
+      "color_grading": {
+       "shadows": {
+        "hue": 300,
+        "sat": 6
+       },
+       "highlights": {
+        "hue": 25,
+        "sat": 4
+       }
+      }
+     }
+    }
+   ]
+  }
+ ]
+}

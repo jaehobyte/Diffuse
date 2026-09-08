@@ -5,7 +5,7 @@ import com.diffuse.core.common.Result
 import com.diffuse.core.common.newId
 import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.core.imaging.model.ImageRef
-import com.diffuse.core.imaging.model.Operation
+import com.diffuse.feature.editor.tools.underTheAdjustments
 
 /**
  * specs/generative_erase.md §10. An erase stores the mask it actually used — the dilated one
@@ -50,28 +50,9 @@ class EraseCommit(
                     // user chose stays active, so a following adjust or cut-out is still theirs.
                     .copy(activeMaskId = document.activeMaskId)
                     .withGenerativeErase(maskId, saved.value, eraseId)
-                    .let(::underTheAdjustments),
+                    // T70: the shared half of the rule; see [underTheAdjustments].
+                    .underTheAdjustments(),
             )
         }
-    }
-
-    /**
-     * The result pixels are generated from the frame *without* the adjustments
-     * ([eraseInput]), so they belong under every `Adjust`, not after them.
-     *
-     * Appending would leave an adjustment made before the erase pinned in front of it, where
-     * the erase result then overwrites the region it just produced: re-dragging that slider
-     * stops reaching the erased hole while the rest of the photo still moves.
-     * `EditDocument.withAdjust` keeps a slider's list position for life (edit_model.md), so the
-     * erase is what has to move.
-     */
-    private fun underTheAdjustments(document: EditDocument): EditDocument {
-        val operations = document.operations
-        val firstAdjust = operations.indexOfFirst { it is Operation.Adjust }
-        if (firstAdjust < 0) return document
-        val erase = operations.last()
-        return document.copy(
-            operations = operations.dropLast(1).toMutableList().apply { add(firstAdjust, erase) },
-        )
     }
 }

@@ -28,24 +28,46 @@ object Ops : OpRegistry {
         return globalAdjust(kind)
     }
 
-    private fun globalAdjust(kind: AdjustKind): (Bitmap, Float) -> Bitmap = when (kind) {
-        // specs/adjust_light.md
+    /**
+     * One branch per kind, split by the spec that owns it — T71 took the single `when` past
+     * detekt's complexity ceiling, and a dispatch table is exactly the shape that metric
+     * misjudges. Splitting it by family costs three null checks per adjust and reads as the
+     * three specs it actually is.
+     */
+    private fun globalAdjust(kind: AdjustKind): (Bitmap, Float) -> Bitmap =
+        lightAdjust(kind)
+            ?: colorAdjust(kind)
+            ?: detailAdjust(kind)
+            ?: error("$kind carries an HslTarget and is handled by HslOps")
+
+    /** specs/adjust_light.md, and T71's four tone controls. */
+    private fun lightAdjust(kind: AdjustKind): ((Bitmap, Float) -> Bitmap)? = when (kind) {
         AdjustKind.Exposure -> LightOps::exposure
         AdjustKind.Contrast -> LightOps::contrast
         AdjustKind.Highlights -> LightOps::highlights
         AdjustKind.Shadows -> LightOps::shadows
+        AdjustKind.Blacks -> LightOps::blacks
+        AdjustKind.Whites -> LightOps::whites
+        AdjustKind.Fade -> LightOps::fade
+        AdjustKind.SCurve -> LightOps::sCurve
+        else -> null
+    }
 
-        // specs/adjust_color.md
+    /** specs/adjust_color.md */
+    private fun colorAdjust(kind: AdjustKind): ((Bitmap, Float) -> Bitmap)? = when (kind) {
         AdjustKind.Temperature -> ColorOps::temperature
         AdjustKind.Tint -> ColorOps::tint
         AdjustKind.Saturation -> ColorOps::saturation
         AdjustKind.Vibrance -> ColorOps::vibrance
+        else -> null
+    }
 
-        // specs/adjust_detail.md
+    /** specs/adjust_detail.md, and T71's [DetailOps.clarity]. */
+    private fun detailAdjust(kind: AdjustKind): ((Bitmap, Float) -> Bitmap)? = when (kind) {
         AdjustKind.Sharpen -> DetailOps::sharpen
         AdjustKind.Vignette -> DetailOps::vignette
-
-        else -> error("$kind carries an HslTarget and is handled by HslOps")
+        AdjustKind.Clarity -> DetailOps::clarity
+        else -> null
     }
 
     override fun crop(bitmap: Bitmap, operation: Operation.Crop): Bitmap =
