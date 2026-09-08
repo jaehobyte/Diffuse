@@ -31,6 +31,13 @@ a ~24MB binary out of the repository:
   run found: a masked adjustment after a generative erase was being overwritten by it, the erase
   mask had no margin so the object left a halo, and the eraser could answer with the whitened
   input unchanged. Same credential story as v0.4.0 — no key, no server address.
+- [v0.6.0](https://github.com/jaehobyte/Diffuse/releases/tag/v0.6.0) — 스타일 and 자동 보정.
+  Twelve presets from PhotoTune_v1's `styles.json` and a reference photograph that finds the
+  closest one (ADR-014: parameters, not a LUT, so every slider stays draggable afterwards), plus
+  one-tap 자동 보정 through a self-hosted MonetGPT server that answers in numbers the device
+  renders (ADR-015). Five new tone operations — Blacks, Whites, Fade, SCurve, Clarity — were the
+  gate on both. The tool strip gained a second level so ten tools plus two still fit. Ships **no**
+  credential and **no** address, as before; 자동 보정's server goes in the same 서버 설정 sheet.
 
 v0.3.0 and v0.3.1 default to `http://10.0.2.2:8080`, the emulator's alias for its host, so the
 선택 tool cannot work on a physical device. Use v0.3.6.
@@ -48,11 +55,13 @@ Sizes, against the APK budget in specs/architecture.md §8 (**< 15MB**; ADR-008 
 | debug at v0.3.6 | 23.96 MB |
 | debug at v0.4.0 | 23.99 MB |
 | debug at v0.5.0 | 24.07 MB |
+| debug at v0.6.0 | 24.92 MB |
 | release at v0.3.0 (unsigned, `isMinifyEnabled = false`) | 17.40 MB |
 | release at v0.4.0 (unsigned, `isMinifyEnabled = false`) | 17.42 MB |
 | release at v0.5.0 (unsigned, `isMinifyEnabled = false`) | 17.46 MB |
+| release at v0.6.0 (unsigned, `isMinifyEnabled = false`) | 17.66 MB |
 
-**The release build is 2.5 MB over budget.** R8 is still off, so that is the unshrunk size:
+**The release build is 2.7 MB over budget.** R8 is still off, so that is the unshrunk size:
 material-icons-extended and unused Compose ship whole, and the Pretendard variable font is
 2.81 MB of it. Turning `isMinifyEnabled` on is the obvious first move and has not been tried.
 
