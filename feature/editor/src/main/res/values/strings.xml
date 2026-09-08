@@ -115,6 +115,10 @@
     <!-- specs/generative_erase.md §8 -->
     <string name="gemini_settings_api_key">Gemini API 키</string>
 
+    <!-- specs/auto_enhance.md §4 -->
+    <string name="monet_settings_base_url">자동 보정 서버 주소</string>
+    <string name="monet_settings_token">자동 보정 토큰</string>
+
     <string name="light_title">빛</string>
     <string name="light_exposure">노출</string>
     <string name="light_contrast">대비</string>

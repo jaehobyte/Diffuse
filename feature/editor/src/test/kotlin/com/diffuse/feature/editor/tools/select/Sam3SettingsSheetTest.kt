@@ -7,6 +7,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.diffuse.core.ai.monet.MonetConfig
 import com.diffuse.core.ai.sam3.Sam3Config
 import com.diffuse.core.ui.theme.AppTheme
 import com.diffuse.core.ui.theme.ThemeMode
@@ -17,7 +18,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.GraphicsMode
 
-/** specs/generative_erase.md §8: one 서버 설정 sheet, three fields. */
+/** specs/generative_erase.md §8 and auto_enhance.md §4: one 서버 설정 sheet, five fields. */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class Sam3SettingsSheetTest {
@@ -25,7 +26,15 @@ class Sam3SettingsSheetTest {
     @get:Rule
     val compose = createComposeRule()
 
-    private val saved = mutableListOf<Triple<String, String, String>>()
+    private data class Saved(
+        val baseUrl: String,
+        val token: String,
+        val geminiApiKey: String,
+        val monetBaseUrl: String,
+        val monetToken: String,
+    )
+
+    private val saved = mutableListOf<Saved>()
 
     @Test
     fun `save carries the base URL, the token and the Gemini key`() {
@@ -35,7 +44,39 @@ class Sam3SettingsSheetTest {
         compose.onNodeWithText("저장").performClick()
 
         assertEquals(
-            listOf(Triple("http://host:8080", "tok", "AIza-new")),
+            listOf(Saved("http://host:8080", "tok", "AIza-new", "http://monet:9090", "m-tok")),
+            saved,
+        )
+    }
+
+    /**
+     * specs/auto_enhance.md §4. Without this field 자동 보정 is unreachable in a published APK:
+     * no address ships, and `auto_needs_server` points at a sheet that had nowhere to type one.
+     */
+    @Test
+    fun `save carries the 자동 보정 server too`() {
+        showSheet()
+
+        compose.onNodeWithTag(MonetBaseUrlFieldTestTag).performTextReplacement("http://monet:1")
+        compose.onNodeWithTag(MonetTokenFieldTestTag).performTextReplacement("m-new")
+        compose.onNodeWithText("저장").performClick()
+
+        assertEquals(
+            listOf(Saved("http://host:8080", "tok", "AIza-old", "http://monet:1", "m-new")),
+            saved,
+        )
+    }
+
+    /** 자동 보정 is usable without SAM 3, so its address alone must enable 저장. */
+    @Test
+    fun `the 자동 보정 address alone enables save`() {
+        showSheet(sam3 = Sam3Config(baseUrl = "", token = ""))
+
+        compose.onNodeWithTag(MonetBaseUrlFieldTestTag).performTextReplacement("http://monet:1")
+        compose.onNodeWithText("저장").performClick()
+
+        assertEquals(
+            listOf(Saved("", "", "AIza-old", "http://monet:1", "m-tok")),
             saved,
         )
     }
@@ -46,7 +87,10 @@ class Sam3SettingsSheetTest {
 
         compose.onNodeWithText("저장").performClick()
 
-        assertEquals(listOf(Triple("http://host:8080", "tok", "AIza-old")), saved)
+        assertEquals(
+            listOf(Saved("http://host:8080", "tok", "AIza-old", "http://monet:9090", "m-tok")),
+            saved,
+        )
     }
 
     /** The key is masked, so neither a shoulder-surfer nor a screenshot reads it. */
@@ -63,13 +107,16 @@ class Sam3SettingsSheetTest {
         )
     }
 
-    private fun showSheet() {
+    private fun showSheet(sam3: Sam3Config = Sam3Config(baseUrl = "http://host:8080", token = "tok")) {
         compose.setContent {
             AppTheme(mode = ThemeMode.Edit) {
                 Sam3SettingsSheet(
-                    config = Sam3Config(baseUrl = "http://host:8080", token = "tok"),
+                    config = sam3,
                     geminiApiKey = "AIza-old",
-                    onSave = { baseUrl, token, key -> saved += Triple(baseUrl, token, key) },
+                    monetConfig = MonetConfig(baseUrl = "http://monet:9090", token = "m-tok"),
+                    onSave = { baseUrl, token, key, monetUrl, monetToken ->
+                        saved += Saved(baseUrl, token, key, monetUrl, monetToken)
+                    },
                     onCancel = {},
                 )
             }
