@@ -10,6 +10,7 @@ import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.AutoFixNormal
 import androidx.compose.material.icons.rounded.Colorize
 import androidx.compose.material.icons.rounded.Crop
+import androidx.compose.material.icons.rounded.Face
 import androidx.compose.material.icons.rounded.HighlightAlt
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.OpenInFull
@@ -40,6 +41,13 @@ enum class Tool(
     Mix(R.string.editor_tool_mix, Icons.Rounded.Colorize),
     Crop(R.string.editor_tool_crop, Icons.Rounded.Crop),
     Detail(R.string.editor_tool_detail, Icons.Rounded.Tune),
+
+    /**
+     * specs/skin_retouch.md §2, as amended by this task: a root tool only a portrait is offered.
+     * It is a [Tool] like any other — [PortraitRoot] decides where it appears and [PortraitOnly]
+     * decides where it does not, which is why nothing about 디테일 had to move.
+     */
+    SkinRetouch(R.string.editor_tool_skin_retouch, Icons.Rounded.Face),
 
     Select(R.string.editor_tool_select, Icons.Rounded.HighlightAlt, ToolGroup.Ai),
     Erase(R.string.editor_tool_erase, Icons.Rounded.AutoFixHigh, ToolGroup.Ai),
@@ -111,14 +119,24 @@ sealed interface StripItem {
 }
 
 /**
- * work/decisions.md T79. The root level a portrait gets: 자동 and 디테일 first, because a face is
- * what those two are usually reached for, and the five adjust tools after them in their own order.
+ * work/decisions.md T79. The root level a portrait gets: 자동 and 피부 보정 first, because a face is
+ * what those two are usually reached for, and the four adjust tools after them in their own order.
+ *
+ * 피부 보정 **replaces** 디테일 in this list rather than joining it, so the portrait root is no
+ * longer than T79 left it. 디테일 is still a `Tool`, and still in the general menu.
  *
  * Written out rather than derived. The general order is the enum's, which is a design decision
  * (specs/tool_groups.md §8); a second design decision deserves to be readable as a list rather
  * than reconstructed from a comparator.
  */
-private val PortraitRoot = listOf(Tool.Auto, Tool.Detail, Tool.Light, Tool.Color, Tool.Mix, Tool.Crop)
+private val PortraitRoot = listOf(Tool.Auto, Tool.SkinRetouch, Tool.Light, Tool.Color, Tool.Mix, Tool.Crop)
+
+/**
+ * The other half of that swap. 피부 보정 is offered on a face, so the general menu — which is also
+ * the menu a photograph we could not read gets — leaves it out entirely rather than showing a
+ * tool with nothing to work on.
+ */
+private val PortraitOnly = setOf(Tool.SkinRetouch)
 
 /**
  * §3: the strip binds one level's tools, so adding a tool is still one enum entry.
@@ -126,14 +144,16 @@ private val PortraitRoot = listOf(Tool.Auto, Tool.Detail, Tool.Light, Tool.Color
  * Pure, so §7's "every `Tool` appears at exactly one level" is a test and not a screenshot.
  *
  * T79: [profile] reorders, and in one case re-levels — 자동 is promoted to the portrait root, and
- * subtracted from the AI level in the same breath, so it can never be in both at once.
+ * subtracted from the AI level in the same breath, so it can never be in both at once. The two
+ * conditional tools are the profiles' only difference in *membership*: [PortraitOnly] is left out
+ * of the general menu and [PortraitRoot] leaves 디테일 out of the portrait one.
  */
 fun stripItems(
     level: ToolGroup,
     profile: ToolMenuProfile = ToolMenuProfile.General,
 ): List<StripItem> {
     val tools = when (profile) {
-        ToolMenuProfile.General -> Tool.entries.filter { it.group == level }
+        ToolMenuProfile.General -> Tool.entries.filter { it.group == level && it !in PortraitOnly }
         ToolMenuProfile.Portrait -> when (level) {
             ToolGroup.Root -> PortraitRoot
             ToolGroup.Ai -> Tool.entries.filter { it.group == level && it !in PortraitRoot }

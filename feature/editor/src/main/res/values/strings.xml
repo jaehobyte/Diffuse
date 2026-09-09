@@ -15,6 +15,8 @@
     <string name="editor_tool_mix">혼합</string>
     <string name="editor_tool_crop">자르기</string>
     <string name="editor_tool_detail">디테일</string>
+    <!-- specs/skin_retouch.md §2: shown only on a portrait, in 디테일's place -->
+    <string name="editor_tool_skin_retouch">피부 보정</string>
     <string name="editor_tool_select">선택</string>
     <string name="editor_tool_erase">지우기</string>
     <string name="editor_tool_fill">채우기</string>
@@ -147,6 +149,15 @@
     <string name="crop_straighten">수평</string>
     <string name="crop_rotate_left">왼쪽으로 90도 회전</string>
     <string name="crop_rotate_right">오른쪽으로 90도 회전</string>
+
+    <!-- specs/skin_retouch.md §1, §4 -->
+    <string name="skin_retouch_title">피부 보정</string>
+    <string name="skin_retouch_preparing">피부 보정 기능을 준비 중이에요</string>
+    <string name="skin_retouch_unsupported">미지원</string>
+    <string name="skin_retouch_blemish">잡티·여드름 제거</string>
+    <string name="skin_retouch_shine">유분광 제거</string>
+    <string name="skin_retouch_dark_circles">다크서클 완화</string>
+    <string name="skin_retouch_shaving_shadow">면도자국 완화</string>
 
     <string name="detail_title">디테일</string>
     <string name="detail_sharpen">선명도</string>

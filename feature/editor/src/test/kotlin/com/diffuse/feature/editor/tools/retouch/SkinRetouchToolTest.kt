@@ -1,4 +1,4 @@
-package com.diffuse.feature.editor
+package com.diffuse.feature.editor.tools.retouch
 
 import android.graphics.Bitmap
 import androidx.lifecycle.SavedStateHandle
@@ -12,7 +12,6 @@ import com.diffuse.core.ai.FakeOutpaintProvider
 import com.diffuse.core.ai.FakePlanProvider
 import com.diffuse.core.ai.FakePortraitDetector
 import com.diffuse.core.ai.FakeSegmentationProvider
-import com.diffuse.core.ai.PortraitDetector
 import com.diffuse.core.ai.PortraitResult
 import com.diffuse.core.ai.gemini.GeminiSettings
 import com.diffuse.core.ai.monet.MonetSettings
@@ -27,6 +26,10 @@ import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.core.imaging.model.ImageRef
 import com.diffuse.core.imaging.model.Operation
 import com.diffuse.core.imaging.render.Renderer
+import com.diffuse.feature.editor.EditorAi
+import com.diffuse.feature.editor.EditorViewModel
+import com.diffuse.feature.editor.TestDispatchers
+import com.diffuse.feature.editor.Tool
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -36,21 +39,26 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.GraphicsMode
-import kotlin.coroutines.Continuation
-import kotlin.coroutines.resume
-import kotlin.coroutines.suspendCoroutine
 
-/** work/decisions.md T79: what the editor does with the detector, on the way to the menu. */
+/**
+ * specs/skin_retouch.md §4: what 피부 보정 does to the editor while there is no engine behind it,
+ * which is nothing. Opening and closing it is the whole of the tool today, so this is the test
+ * that the whole of it is free of side effects.
+ *
+ * It says nothing about retouch quality — no pixel is corrected here, and none can be until an
+ * engine and the save/render path exist (skin_retouch_validation.md §1).
+ */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-class PortraitDetectionTest {
+class SkinRetouchToolTest {
 
-    private val detector = FakePortraitDetector()
+    private val detector = FakePortraitDetector(PortraitResult.Portrait)
     private val repository = RecordingRepository()
 
     @Before
@@ -59,109 +67,65 @@ class PortraitDetectionTest {
     @After
     fun tearDown() = Dispatchers.resetMain()
 
-    /** §5: once, on the frame the canvas already rendered — never a second decode. */
     @Test
-    fun `the source is read once, at preview size`() = runTest {
-        viewModel()
-
-        assertEquals(1, detector.detectCount)
-        assertEquals(PREVIEW_SIZE, detector.lastImageWidth)
-    }
-
-    @Test
-    fun `a portrait selects the portrait menu`() = runTest {
-        detector.result = PortraitResult.Portrait
+    fun `tapping 피부 보정 selects it and changes nothing else`() = runTest {
         val viewModel = viewModel()
 
-        assertEquals(PortraitResult.Portrait, viewModel.uiState.value.portrait)
-        assertEquals(ToolMenuProfile.Portrait, menuProfileFor(viewModel.uiState.value.portrait))
-    }
+        viewModel.onToolClick(Tool.SkinRetouch)
 
-    @Test
-    fun `anything else keeps the general menu`() = runTest {
-        detector.result = PortraitResult.NotPortrait
-        assertEquals(ToolMenuProfile.General, menuProfileFor(viewModel().uiState.value.portrait))
-
-        detector.result = PortraitResult.Unknown
-        assertEquals(ToolMenuProfile.General, menuProfileFor(viewModel().uiState.value.portrait))
-    }
-
-    /** §11: a detector that cannot answer is silent — the editor's one snackbar stays free. */
-    @Test
-    fun `an unavailable detector raises no message`() = runTest {
-        detector.result = PortraitResult.Unknown
-        val state = viewModel().uiState.value
-
-        assertTrue(
-            listOf(
-                state.selection.message, state.erase.message, state.fill.message,
-                state.expand.message, state.auto.message, state.style.message,
-            ).all { it == null },
-        )
-    }
-
-    /** T79's acceptance criterion: the hint never reaches the document. */
-    @Test
-    fun `detection adds no operation to the document`() = runTest {
-        detector.result = PortraitResult.Portrait
-        val viewModel = viewModel()
-
-        assertEquals(emptyList<Any>(), viewModel.uiState.value.document?.operations)
+        val state = viewModel.uiState.value
+        assertEquals(Tool.SkinRetouch, state.selectedTool)
+        assertEquals(emptyList<Operation>(), state.document?.operations)
+        assertNull(state.document?.activeMaskId)
+        assertFalse(state.canUndo)
         assertEquals(0, repository.saveCount)
     }
 
-    /**
-     * §6: a detection asked about an older source cannot land on a newer one, however late it
-     * answers. The gate resumes a plain `suspendCoroutine`, so the stale detection genuinely
-     * finishes and reaches the guard instead of being swallowed by the job's cancellation — what
-     * drops it is the identity check against the source now on screen.
-     */
     @Test
-    fun `a late answer about an older source is dropped`() = runTest {
-        val gated = GatedDetector()
-        val viewModel = viewModel(gated)
-        val document = requireNotNull(viewModel.uiState.value.document)
+    fun `cancelling closes the sheet and writes no history`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onToolClick(Tool.SkinRetouch)
 
-        viewModel.renderSource(document)
-        gated.answer(0, PortraitResult.Portrait)
-
-        assertEquals(PortraitResult.Unknown, viewModel.uiState.value.portrait)
-
-        gated.answer(1, PortraitResult.NotPortrait)
-
-        assertEquals(PortraitResult.NotPortrait, viewModel.uiState.value.portrait)
-    }
-
-    /**
-     * The menu is the only thing a detection is allowed to move. A 디테일 sheet the user opened
-     * before the answer arrived stays open, on the same tool, with the value they had set — the
-     * new list is simply underneath it, and 피부 보정 is reached by closing this and tapping it.
-     */
-    @Test
-    fun `a late portrait answer leaves an open 디테일 sheet alone`() = runTest {
-        val gated = GatedDetector()
-        val viewModel = viewModel(gated)
-        viewModel.onToolClick(Tool.Detail)
-        viewModel.onAdjust(AdjustKind.Sharpen, SHARPEN)
-        viewModel.onAdjustFinished()
-
-        gated.answer(0, PortraitResult.Portrait)
+        viewModel.cancelSheet()
 
         val state = viewModel.uiState.value
-        assertEquals(ToolMenuProfile.Portrait, menuProfileFor(state.portrait))
-        assertEquals(Tool.Detail, state.selectedTool)
-        assertEquals(
-            listOf(SHARPEN),
-            state.document?.operations
-                ?.filterIsInstance<Operation.Adjust>()
-                ?.filter { it.kind == AdjustKind.Sharpen }
-                ?.map { it.value },
-        )
+        assertNull(state.selectedTool)
+        assertEquals(emptyList<Operation>(), state.document?.operations)
+        assertFalse(state.canUndo)
+    }
+
+    /** specs/editor_shell.md: tapping the open tool again is the strip's own dismiss. */
+    @Test
+    fun `tapping it again closes the sheet`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onToolClick(Tool.SkinRetouch)
+
+        viewModel.onToolClick(Tool.SkinRetouch)
+
+        assertNull(viewModel.uiState.value.selectedTool)
+    }
+
+    /** Entering and leaving leaves the adjustments the user already made exactly as they were. */
+    @Test
+    fun `the existing adjustments survive a visit`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onAdjust(AdjustKind.Sharpen, SHARPEN)
+        viewModel.onAdjustFinished()
+        val before = viewModel.uiState.value.document
+
+        viewModel.onToolClick(Tool.SkinRetouch)
+        viewModel.cancelSheet()
+
+        assertEquals(before, viewModel.uiState.value.document)
+        // One undo takes the one adjustment back out, which is only true if the visit pushed
+        // nothing of its own on top of it.
+        viewModel.undo()
+        assertEquals(emptyList<Operation>(), viewModel.uiState.value.document?.operations)
     }
 
     // ---- fixtures --------------------------------------------------------
 
-    private fun viewModel(portrait: PortraitDetector = detector) = EditorViewModel(
+    private fun viewModel() = EditorViewModel(
         context = ApplicationProvider.getApplicationContext(),
         repository = repository,
         renderer = FakeRenderer(),
@@ -177,7 +141,7 @@ class PortraitDetectionTest {
             MonetSettings(ApplicationProvider.getApplicationContext()),
             FakeAutoEnhanceProvider(),
             FakeMatchStyleProvider(),
-            portrait,
+            detector,
         ),
         dispatchers = TestDispatchers,
         savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),
@@ -195,17 +159,6 @@ class PortraitDetectionTest {
             )
 
         override suspend fun resolveMask(document: EditDocument, maskId: String): Bitmap? = null
-    }
-
-    /** A detector that answers only when the test says so, one call at a time. */
-    private class GatedDetector : PortraitDetector {
-
-        private val waiting = mutableListOf<Continuation<PortraitResult>>()
-
-        override suspend fun detect(image: Bitmap): PortraitResult =
-            suspendCoroutine { waiting += it }
-
-        fun answer(call: Int, result: PortraitResult) = waiting[call].resume(result)
     }
 
     private class RecordingRepository : ProjectRepository {
@@ -259,6 +212,6 @@ class PortraitDetectionTest {
     private companion object {
         const val PROJECT_ID = "p"
         const val PREVIEW_SIZE = 32
-        const val SHARPEN = 0.4f
+        const val SHARPEN = 0.5f
     }
 }

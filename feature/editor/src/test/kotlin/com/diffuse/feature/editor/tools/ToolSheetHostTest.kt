@@ -18,6 +18,7 @@ import com.diffuse.feature.editor.Tool
 import com.diffuse.feature.editor.canvas.testImage
 import com.diffuse.core.imaging.model.HslBand
 import com.diffuse.feature.editor.tools.color.ColorKinds
+import com.diffuse.feature.editor.tools.detail.DetailKinds
 import com.diffuse.feature.editor.tools.mix.mixKinds
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
 import org.junit.Rule
@@ -103,6 +104,18 @@ class ToolSheetHostTest {
 
         compose.onNodeWithTag(EditSheetTestTag).assertExists()
         mixKinds(HslBand.Red).forEach { compose.onNodeWithTag(adjustSliderTag(it)).assertExists() }
+    }
+
+    /** 디테일 is untouched by 피부 보정 taking its place in the portrait menu (skin_retouch.md §2). */
+    @Test
+    fun `tapping 디테일 opens the detail sheet with its two sliders`() {
+        showEditor()
+
+        compose.onNodeWithTag(toolTag(Tool.Detail)).performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(EditSheetTestTag).assertExists()
+        DetailKinds.forEach { compose.onNodeWithTag(adjustSliderTag(it)).assertExists() }
     }
 
     @Test

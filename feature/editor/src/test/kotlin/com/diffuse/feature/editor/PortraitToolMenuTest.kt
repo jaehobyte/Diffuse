@@ -52,11 +52,17 @@ class PortraitToolMenuTest {
     }
 
     @Test
-    fun `the portrait root leads with 자동 and 디테일`() {
+    fun `the portrait root leads with 자동 and 피부 보정`() {
         assertEquals(
-            listOf(Tool.Auto, Tool.Detail, Tool.Light, Tool.Color, Tool.Mix, Tool.Crop),
+            listOf(Tool.Auto, Tool.SkinRetouch, Tool.Light, Tool.Color, Tool.Mix, Tool.Crop),
             tools(ToolGroup.Root, ToolMenuProfile.Portrait),
         )
+    }
+
+    /** The swap is a swap: T79's portrait root was six tools long, and it still is. */
+    @Test
+    fun `the portrait root did not grow`() {
+        assertEquals(PORTRAIT_ROOT_SIZE, tools(ToolGroup.Root, ToolMenuProfile.Portrait).size)
     }
 
     @Test
@@ -67,15 +73,40 @@ class PortraitToolMenuTest {
         )
     }
 
-    /** T79's acceptance criterion: promoting 자동 must not leave a copy behind. */
+    /**
+     * T79's acceptance criterion: promoting 자동 must not leave a copy behind.
+     *
+     * "Exactly once in each profile" is no longer "every tool in each profile" — 피부 보정 and
+     * 디테일 are the swapped pair, and each profile shows one of them. What still has to hold is
+     * that whatever a profile shows, it shows once.
+     */
     @Test
-    fun `every tool still appears exactly once in each profile`() {
+    fun `no tool appears twice in a profile`() {
         ToolMenuProfile.entries.forEach { profile ->
             val shown = ToolGroup.entries.flatMap { tools(it, profile) }
 
-            assertEquals("$profile", Tool.entries.size, shown.size)
-            assertEquals("$profile", Tool.entries.toSet(), shown.toSet())
+            assertEquals("$profile", shown.size, shown.toSet().size)
         }
+    }
+
+    /** The two exclusions are the intended pair, and nothing else is missing from either menu. */
+    @Test
+    fun `each profile leaves out exactly the tool the other one shows`() {
+        val general = ToolGroup.entries.flatMap { tools(it, ToolMenuProfile.General) }.toSet()
+        val portrait = ToolGroup.entries.flatMap { tools(it, ToolMenuProfile.Portrait) }.toSet()
+
+        assertEquals(setOf(Tool.SkinRetouch), Tool.entries.toSet() - general)
+        assertEquals(setOf(Tool.Detail), Tool.entries.toSet() - portrait)
+    }
+
+    /** And between them the two profiles still reach every tool the app has. */
+    @Test
+    fun `the profiles together show every tool`() {
+        val shown = ToolMenuProfile.entries.flatMap { profile ->
+            ToolGroup.entries.flatMap { tools(it, profile) }
+        }
+
+        assertEquals(Tool.entries.toSet(), shown.toSet())
     }
 
     /** The level items are the level's, whichever profile is bound. */
@@ -94,9 +125,17 @@ class PortraitToolMenuTest {
         show(ToolGroup.Root, ToolMenuProfile.Portrait)
 
         compose.onNodeWithText("자동").assertExists()
-        compose.onNodeWithText("디테일").assertExists()
+        compose.onNodeWithText("피부 보정").assertExists()
+        compose.onNodeWithText("디테일").assertDoesNotExist()
         compose.onNodeWithText("AI").assertExists()
         compose.onNodeWithText("뒤로").assertDoesNotExist()
+    }
+
+    /** 피부 보정 is a root tool on a face and nowhere else — not a demoted AI one. */
+    @Test
+    fun `피부 보정 is absent from every other list`() {
+        show(ToolGroup.Ai, ToolMenuProfile.Portrait)
+        compose.onNodeWithText("피부 보정").assertDoesNotExist()
     }
 
     @Test
@@ -115,6 +154,20 @@ class PortraitToolMenuTest {
 
         compose.onNodeWithText("자동").assertDoesNotExist()
         compose.onNodeWithText("라이트").assertExists()
+    }
+
+    /** A general photograph keeps 디테일 where it was, and is offered no 피부 보정. */
+    @Test
+    fun `the general root keeps 디테일 and hides 피부 보정`() {
+        show(ToolGroup.Root, ToolMenuProfile.General)
+
+        compose.onNodeWithText("디테일").assertExists()
+        compose.onNodeWithText("피부 보정").assertDoesNotExist()
+    }
+
+    private companion object {
+        /** 자동 + 피부 보정 + the four adjust tools, as T79 left it. */
+        const val PORTRAIT_ROOT_SIZE = 6
     }
 
     private fun tools(level: ToolGroup, profile: ToolMenuProfile): List<Tool> =

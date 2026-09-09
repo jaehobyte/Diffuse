@@ -9,6 +9,7 @@ import com.diffuse.feature.editor.tools.color.ColorSheet
 import com.diffuse.feature.editor.tools.detail.DetailSheet
 import com.diffuse.feature.editor.tools.light.LightSheet
 import com.diffuse.feature.editor.tools.mix.MixSheet
+import com.diffuse.feature.editor.tools.retouch.SkinRetouchSheet
 
 /**
  * Maps the selected tool to its sheet. specs/architecture.md §5.2 wants adding a tool to be
@@ -38,6 +39,10 @@ fun ToolSheetHost(
         Tool.Detail -> DetailSheet(
             document, onValueChange, onValueChangeFinished, onCancel, onApply, modifier, maskOption,
         )
+        // specs/skin_retouch.md §4: the one sheet here that is not an adjust sheet. It reads
+        // nothing from the document — there is no engine to read it for yet — but it belongs to a
+        // root tool, so it opens through the same host the other four do.
+        Tool.SkinRetouch -> SkinRetouchSheet(onCancel, onApply, modifier)
         // Crop, Select, Fill, Expand, Style, Auto and Direct carry their own state, so the route
         // hosts them alongside the editor's. Erase has no sheet at all: tapping it runs
         // (generative_erase.md §5), and 자동's sheet arrives only after its call does (§6).
