@@ -8,6 +8,54 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+## D082 - MonetGPT external test access
+
+Status: Accepted
+
+Decision:
+At the explicit user request on 2026-09-14, expose MonetGPT through a dedicated
+Caddy HTTP test proxy on public port 8093, retaining the model on loopback 8082
+and the existing bearer authentication. Use this address in private local
+configuration and the test device. Public APK defaults remain credential-free.
+
+Reason:
+The user requires SAM-style external access without a local SSH forwarding
+session. The previous phone-local URL could not reach EC2 directly.
+
+Consequences:
+This HTTP test route is not TLS encrypted. Existing TLS hostname deployment
+remains available. SAM3 and other services are unchanged. Proxy and model
+startup after logout/reboot require separate operational setup; current user
+service has Linger=no and the existing model process is unmanaged by systemd.
+
+## D081 - 자동 보정 connection recovery
+
+Status: Accepted (2026-09-14)
+
+Decision:
+The tap is the retry. A failed probe keeps its `AppError` reason; a tap re-probes the same
+settings (joining a probe already in flight), a save — including an identical one — re-probes,
+and nothing polls or re-uploads on its own. Address/token problems open 서버 설정; a loading or
+unreachable server re-checks and also opens the sheet, regardless of an earlier success (a server
+that answered once may have moved). A document change ends the auto session (input, plan, sheet).
+A saved value equal to the build default is stored as no override. The probe has its own 5 s
+limit; the generation keeps 10 s / 120 s.
+
+Reason:
+The reported "연결하지 못했어요" had two causes that no code in the app could see: the
+`install.sh` APK carried `.env`'s `http://127.0.0.1:8082` (the phone's own loopback), and the
+MonetGPT service listens on the server's loopback only with no proxy running. The app then
+turned every failure into one sentence with no way forward, and a recovered server stayed
+"unreachable" until the settings changed. Opening a public route is an operator action
+(DNS/TLS, security group, token in transit) and is not made by the app or this task.
+
+Consequences:
+`AutoEnhanceProvider` gained `checking` and `refresh()`. Generation results carry a run token so
+answers after cancel, a newer chip, a settings save or a document change are discarded, and a
+document change also drops the session's input and plan so nothing asked of the old photograph is
+re-run or committed.
+specs/auto_enhance.md §4 and §6 record the table.
+
 ## D080 - Skin retouch execution boundary
 
 Status: Accepted

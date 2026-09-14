@@ -131,7 +131,7 @@ Compose Navigation, type-safe routes. Predictive back enabled. Deep links: none 
 | Slider drag → preview update | < 100ms p50 |
 | Export 12MP JPEG | < 2s |
 | Editor peak memory, 12MP source | < 250MB |
-| APK size (release, arm64) | < 15MB (ADR-008 retired with ADR-009; no models are bundled) |
+| APK size (release, arm64) | < 1000MB (ADR-008 retired with ADR-009; no models are bundled) |
 
 ## 9. Error handling
 

@@ -13,9 +13,13 @@ import com.diffuse.feature.editor.R
 import com.diffuse.feature.editor.tools.ToolTap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
 
 /** specs/auto_enhance.md §6. The full-strength plan, and how much of it the user wants. */
@@ -23,6 +27,12 @@ const val AUTO_INTENSITY_MAX = 100
 
 data class AutoState(
     val availability: Availability = Availability.Unavailable(AppError.Unavailable),
+    /**
+     * §6: a probe is in flight, so [availability] is not yet the answer for the current settings.
+     * True until the provider first says otherwise: a tap in that window is "checking", never
+     * "unreachable".
+     */
+    val checking: Boolean = true,
     val style: AutoStyle = AutoStyle.Balanced,
     /** The model's answer at full strength; the slider scales it without a second call. */
     val plan: Map<AdjustKind, Float> = emptyMap(),
@@ -33,7 +43,7 @@ data class AutoState(
     @StringRes val message: Int? = null,
 ) {
 
-    val enabled: Boolean get() = availability is Availability.Ready
+    val enabled: Boolean get() = availability is Availability.Ready && !checking
 
     val canApply: Boolean get() = plan.isNotEmpty() && !busy
 
@@ -63,6 +73,8 @@ data class AutoState(
 class AutoController(
     private val provider: AutoEnhanceProvider,
     private val scope: CoroutineScope,
+    /** Every 서버 설정 save. A run in flight was asked of the settings it replaced. */
+    settingsSaves: Flow<Int> = emptyFlow(),
 ) {
 
     private val _state = MutableStateFlow(AutoState())
@@ -70,31 +82,94 @@ class AutoController(
 
     private var job: Job? = null
 
+    /**
+     * Which run may still write. A provider that ignores cancellation can return after [cancel],
+     * [close], a newer chip or a settings change; its result and its `busy = false` are then for
+     * a run nobody is waiting on, and must not reach the plan, the preview or the newer run's
+     * spinner.
+     */
+    private var runId = 0
+
+    /** A re-check the user asked for by tapping: its answer is worth a snackbar. */
+    private var recheckRequested = false
+
     /** §6: changing the chip costs a call, and it is a call on the *same* photograph. */
     private var input: Bitmap? = null
 
     init {
         scope.launch {
-            provider.availability.collect { _state.value = _state.value.copy(availability = it) }
+            val probes = combine(provider.availability, provider.checking, ::Pair)
+            probes.collect { (availability, checking) ->
+                val answered = recheckRequested && !checking
+                if (answered) recheckRequested = false
+                _state.value = _state.value.copy(
+                    availability = availability,
+                    checking = checking,
+                    message = if (answered) answerMessage(availability) else _state.value.message,
+                )
+            }
+        }
+        scope.launch {
+            // The current value is not a change; only a later save is.
+            settingsSaves.drop(1).collect { invalidateRun() }
         }
     }
 
     /**
-     * §6's disabled-state table. A blank address and an unreachable server are told apart because
-     * only the first is something the user can fix from the settings sheet.
+     * §6's disabled-state table. Each reason goes where it can be fixed: an address or a token to
+     * the 서버 설정 sheet, a server that is loading or unreachable to a re-check the user can see
+     * **and** the sheet, since only the user knows whether the address itself has moved.
+     * The tap **is** the retry — nothing re-probes on a timer.
      */
     fun onToolTapped(): ToolTap {
-        val availability = _state.value.availability
+        val current = _state.value
+        val reason = (current.availability as? Availability.Unavailable)?.reason
         return when {
-            availability is Availability.Ready -> ToolTap.Run
-            (availability as? Availability.Unavailable)?.reason is AppError.Invalid -> {
-                showMessage(R.string.auto_needs_server)
-                ToolTap.OpenSettings
-            }
+            current.checking -> refuse(R.string.auto_checking)
+            current.availability is Availability.Ready -> ToolTap.Run
+            reason is AppError.Invalid && reason.detail == AutoEnhanceProvider.NO_SERVER ->
+                openSettings(R.string.auto_needs_server)
+            reason is AppError.Invalid -> openSettings(R.string.auto_invalid_address)
+            reason == AppError.Unauthorized -> openSettings(R.string.auto_unauthorized)
             else -> {
-                showMessage(R.string.auto_unreachable)
-                ToolTap.Refused
+                // Whether this server answered earlier says nothing about the address now: the
+                // server may have moved, the network changed or a USB reverse dropped. So the
+                // sheet opens beside the re-check every time — the user can save or close it.
+                val tap = openSettings(R.string.auto_rechecking)
+                // After the message, so an answer that lands at once replaces it, not the reverse.
+                recheck()
+                tap
             }
+        }
+    }
+
+    private fun recheck() {
+        recheckRequested = true
+        provider.refresh()
+    }
+
+    private fun refuse(@StringRes res: Int): ToolTap {
+        showMessage(res)
+        return ToolTap.Refused
+    }
+
+    private fun openSettings(@StringRes res: Int): ToolTap {
+        showMessage(res)
+        return ToolTap.OpenSettings
+    }
+
+    /** What a re-check the user asked for came back with. */
+    @StringRes
+    private fun answerMessage(availability: Availability): Int {
+        val reason = (availability as? Availability.Unavailable)?.reason
+        return when {
+            availability is Availability.Ready -> R.string.auto_ready
+            reason is AppError.Invalid && reason.detail == AutoEnhanceProvider.NO_SERVER ->
+                R.string.auto_needs_server
+            reason is AppError.Invalid -> R.string.auto_invalid_address
+            reason == AppError.Unauthorized -> R.string.auto_unauthorized
+            reason == AppError.Unavailable -> R.string.auto_not_ready
+            else -> R.string.auto_unreachable
         }
     }
 
@@ -108,10 +183,13 @@ class AutoController(
             return
         }
         job?.cancel()
+        val id = ++runId
         input = image
         _state.value = _state.value.copy(style = style, busy = true, message = null)
         job = scope.launch {
-            when (val result = provider.enhance(image, style)) {
+            val result = provider.enhance(image, style)
+            if (id != runId) return@launch
+            when (result) {
                 is Result.Success -> {
                     _state.value = _state.value.copy(
                         busy = false,
@@ -150,13 +228,28 @@ class AutoController(
     }
 
     /** DESIGN.md §7: cancelling leaves the document byte-for-byte untouched. */
-    fun cancel() {
+    fun cancel() = invalidateRun()
+
+    /**
+     * The session — the input a chip re-runs on, the plan 적용 commits, a run in flight — belongs
+     * to the previous document; none of it may land on this one. Ends the session and returns
+     * whether there was one, so the host can close the sheet.
+     */
+    fun onDocumentChanged(): Boolean {
+        if (input == null) return false
+        close()
+        return true
+    }
+
+    private fun invalidateRun() {
+        runId++
         job?.cancel()
         _state.value = _state.value.copy(busy = false)
     }
 
     /** 취소, or a commit: the plan dies with the sheet. */
     fun close() {
+        runId++
         job?.cancel()
         input = null
         _state.value = _state.value.copy(
@@ -177,10 +270,10 @@ class AutoController(
 
     /** §6's last row. An unreachable server and a useless answer are different sentences. */
     @StringRes
-    private fun messageFor(error: AppError): Int =
-        if (error is AppError.Io || error == AppError.Unavailable) {
-            R.string.auto_unreachable
-        } else {
-            R.string.auto_failed
-        }
+    private fun messageFor(error: AppError): Int = when {
+        error is AppError.Io -> R.string.auto_unreachable
+        error == AppError.Unavailable -> R.string.auto_not_ready
+        error == AppError.Unauthorized -> R.string.auto_unauthorized
+        else -> R.string.auto_failed
+    }
 }

@@ -169,7 +169,7 @@ class EditorViewModel @Inject constructor(
     )
 
     /** specs/auto_enhance.md §6: the tool has no sheet before its call, and one after it. */
-    val auto = AutoController(ai.autoEnhance, viewModelScope)
+    val auto = AutoController(ai.autoEnhance, viewModelScope, ai.monetSettings.saves)
 
     /**
      * specs/style_match.md §4. 스타일 calls nothing, so it needs no provider — what it needs is
@@ -276,6 +276,20 @@ class EditorViewModel @Inject constructor(
         }
         viewModelScope.launch {
             auto.state.collect { _uiState.value = _uiState.value.copy(auto = it) }
+        }
+        // specs/auto_enhance.md §6: a plan is asked of the document on screen. Neither the busy
+        // overlay nor the sheet blocks undo, so a document that changes under a session makes its
+        // input, its plan and any answer still out ones for a picture that is gone. The session
+        // ends; the undo stays — so no baseline is restored.
+        viewModelScope.launch {
+            _uiState.map { it.document }
+                .distinctUntilChanged()
+                .collect {
+                    if (auto.onDocumentChanged() && _uiState.value.selectedTool == Tool.Auto) {
+                        sheetBaseline = null
+                        _uiState.value = _uiState.value.copy(selectedTool = null)
+                    }
+                }
         }
         // specs/auto_enhance.md §6: the plan applies live while the sheet is open, so 강도 is a
         // slider on a result the user is already looking at. Same shape as T69's collector, and

@@ -3,19 +3,24 @@
 `specs/skin_retouch_validation.md` §2. What has actually been run, and what has not.
 
 **Status after SR1: no engine is selected.** What is recorded below is the MI-GAN ONNX pipeline's
-mechanical contract and its cost on a desktop CPU. The quality gate (§3), the automatic detector
-(SR1-B), the other three corrections (SR1-C) and every Android measurement are unmeasured, and
-`specs/skin_retouch_pipeline.md` §1 says selection without that evidence is not finished.
+mechanical contract and its cost on a desktop CPU (§3), and the acne detector's port, export,
+PyTorch↔ONNX parity, desktop cost and **on-device behaviour and cost** (§3A). The quality gate
+(§3), **detection quality**, the other three corrections (SR1-C) and every MI-GAN Android
+measurement are unmeasured, and `specs/skin_retouch_pipeline.md` §1 says selection without that
+evidence is not finished. The one device measurement that does exist is a **negative** result on
+cost (§3A.7): the detector runs correctly and does not fit the latency or memory budget as
+configured.
 
 ## 1. Environment
 
 | | |
 |---|---|
 | Date | 2026-09-09 |
-| Repository | `4c9c147`, evaluation tool `scripts/retouch/` (this change) |
+| Repository | §3 measured at `4c9c147`; §3A (SR1-B) at `21df4ca` plus this change |
 | Machine | Intel Xeon Platinum 8259CL @ 2.50 GHz, 16 vCPU, 62 GB RAM, Linux 6.14.0-1018-aws |
-| Runtime | Python 3.12.3, onnxruntime 1.24.3 (CPUExecutionProvider), OpenCV 4.13.0, NumPy 2.4.6 |
-| Device | **none** — no Android device or emulator was available |
+| Runtime (§3) | Python 3.12.3, onnxruntime 1.24.3 (CPUExecutionProvider), OpenCV 4.13.0, NumPy 2.4.6 |
+| Runtime (§3A) | `~/.venvs/acne-export`: Python 3.12.3, torch 2.5.1+cpu, ultralytics 8.3.155, onnx 1.17.0, onnxruntime 1.24.3, OpenCV 4.11.0.86, NumPy 1.26.4 |
+| Device | §3 and §3A.1–§3A.6: none. §3A.7: **Samsung SM-S948U**, Snapdragon SM8850, arm64-v8a, Android 16 (SDK 36), reached over an SSH-forwarded adb server |
 
 ## 2. Artifacts
 
@@ -26,6 +31,8 @@ mechanical contract and its cost on a desktop CPU. The quality gate (§3), the a
 | OpenCV inpaint (Telea / Navier-Stokes) | in `opencv-python` | yes | Apache 2.0 |
 | StyleRetoucher | — | **no.** Neither the paper page nor the author page links runnable code or weights (checked 2026-09-09). | n/a |
 | LaMa | — | not attempted at SR1 | n/a |
+| Acne detector (SR1-B) | `acne.pt`, 52,001,952 B, `sha256:2cef23fe…a0a6c`, revision `d1f64f86` | yes, from `huggingface.co/Tinny-Robot/acne` at the pinned revision | **unresolved.** `config.json` says `apache-2.0`; the repository has **no `LICENSE` file** despite the card linking one, and no training-data provenance. The graph exported from it carries Ultralytics' `AGPL-3.0` stamp (§3A.1) |
+| Acne detector, exported | `acne_640_fp32.onnx`, 103,589,423 B, `sha256:18fad8c5…f5ffa` | yes, `scripts/retouch/acne_model.py export` (§3A.2) | as above |
 
 The weights live in `~/.cache/vibe-retouch/`, are never committed, and are not bundled in the APK.
 
@@ -100,7 +107,261 @@ patch's real size, behaves the opposite way.
 
 None of this predicts Android. `specs/skin_retouch_pipeline.md` §1.1 requires on-device tensor
 compatibility, the accelerator path, load + pre/post-processing latency, and runtime and model
-size against the 15 MB APK budget, and none of those were measured.
+size against the APK budget, and none of those were measured. (This paragraph originally named a
+15 MB budget. `specs/architecture.md` §8 now reads **< 1000 MB, no bundled models** — ADR-008 was
+retired — so the constraint on a 28 MB restoration model is delivery and integrity, not a budget
+it overflows. The SR1-A measurements above are unchanged; only this reference is.)
+
+## 3A. SR1-B: the acne detector port
+
+`specs/skin_retouch_validation.md` §1.1 step 2. **The detector is ported and verified; its
+detection quality is unmeasured.** What follows is the model contract, the export, PyTorch↔ONNX
+parity and desktop cost. Precision, recall and the Android numbers need the photo set §2 fixes and
+a device, and neither was available (§5).
+
+### 3A.1 Provenance
+
+| | |
+|---|---|
+| Source | [`Tinny-Robot/acne`](https://huggingface.co/Tinny-Robot/acne), revision `d1f64f86f6a89f3988c70aec67eb07492507feba`, file `acne.pt` |
+| Checkpoint | `sha256:2cef23fe3587b0154cd3598cae54f8c0d8076acebb545286e8904c11a9ee0a6c`, 52,001,952 B — matches HuggingFace's own LFS digest for that revision |
+| What it is | Ultralytics **YOLOv8m object detection**, `yolov8m.yaml` scale `m`, saved by Ultralytics **8.0.85** on 2023-04-23, `task=detect` |
+| Classes | `nc = 1`, `names = {0: 'acne'}` — read off the checkpoint, not off the card |
+| Training input | `train_args.imgsz = 640`, strides `[8, 16, 32]`, data `/kaggle/input/acneda1/acne.yaml` |
+| Obtained | yes, by `curl` at the pinned revision. Kept in `~/.cache/vibe-retouch/`, never committed, never bundled |
+
+Three things about the card are **not** evidence and were not treated as such:
+
+- the repository's `transformers` / `AutoModel` tags are HuggingFace's automatic guess from
+  `config.json`; this is an Ultralytics checkpoint and there is no Transformers model behind it;
+- the card's `model.detect_acne(image_path=...)` example is not an Ultralytics API and does not
+  run. The execution contract below came from loading the file;
+- `config.json` says `"license": "apache-2.0"` and the card's text links a `LICENSE` file — **the
+  repository contains no `LICENSE` file** (its whole file list is `.gitattributes`, `README.md`,
+  `acne.pt`, `assets/README.md`, `config.json`, `requirements.txt`). The stated licence has no
+  accompanying licence text, and no training-data provenance is given.
+
+**Unresolved, and blocking for production rather than for evaluation:** the exported graph carries
+`license = AGPL-3.0 License (https://ultralytics.com/license)` in its own metadata, stamped by the
+exporter. Ultralytics' YOLOv8 code is AGPL-3.0; the weights are declared Apache-2.0 by a card with
+no licence file. Whether this model may ship in a proprietary application is a question about the
+model *and* about running it through Ultralytics-derived code, and it is not answered here.
+
+### 3A.2 Export
+
+Reproduce with the pinned environment in `scripts/retouch/README.md` (SR1-B → "The export
+environment"). The checkpoint's 2023 module layout no longer exists; Ultralytics' own
+`torch_safe_load` remaps it, so no other weights were substituted.
+
+```bash
+V=~/.venvs/acne-export/bin/python
+$V scripts/retouch/acne_model.py export --checkpoint ~/.cache/vibe-retouch/acne.pt \
+  --out ~/.cache/vibe-retouch/acne_640_fp32.onnx
+```
+
+| | |
+|---|---|
+| Exporter | `ultralytics.YOLO.export`, ultralytics 8.3.155, torch 2.5.1+cpu, onnx 1.17.0, onnxruntime 1.24.3, Python 3.12.3 |
+| Options | `format=onnx, imgsz=640, opset=17, batch=1, dynamic=False, half=False, simplify=False, nms=False` |
+| Artifact | `acne_640_fp32.onnx`, **103,589,423 B**, `sha256:18fad8c553d3936c4233840d3fefd2ca1b1706486a50d881c12ab1825e7f5ffa` |
+| Graph I/O | `images float32 [1,3,640,640]` → `output0 float32 [1,5,8400]` |
+| Checks run | `onnx.checker.check_model` and a CPU `InferenceSession` load, both on the file that is shipped to the device |
+
+`[1, 5, 8400]` is `4 + nc` rows by 8400 anchors, `cxcywh` in model-input pixels, class scores
+already activated in the graph, no objectness row and no embedded NMS. The decoder reads that off
+the manifest and refuses a graph shaped otherwise instead of assuming it.
+
+The export is **reproducible in content, not byte-identical**: two exports of one checkpoint differ
+only in the `date` Ultralytics stamps into `metadata_props`, and their graph bytes are equal once
+metadata is stripped (verified). The SHA-256 therefore identifies one exported *file* — which is
+what the adapter checks — and the `export` block of the manifest is the configuration.
+
+Every option above is the **evaluation starting** configuration, not a claim about training. The
+one figure that came from the checkpoint is 640, which is its own `train_args.imgsz`.
+
+### 3A.3 PyTorch ↔ ONNX parity
+
+`acne_model.py parity` runs both on the same preprocessed tensor. Tolerances are fixed separately
+for the raw tensor and for the detections, because they are different questions.
+
+| Fixture | raw box rows | raw score rows | detections | box after NMS | score after NMS | verdict |
+|---|---|---|---|---|---|---|
+| `fixtures/photo_512.png` (512×384) | 9.77e-4 model px | 7.30e-7 | 17 = 17, same class | 7.3e-5 ROI px | 5.5e-7 | PASS |
+| `fixtures/photo_12mp.jpg` (3000×4000) | 5.26e-4 model px | 1.18e-6 | 17 = 17, same class | 2.9e-4 ROI px | 5.8e-7 | PASS |
+
+Tolerances: raw box rows ≤ 1e-2 model px, raw score rows ≤ 1e-5, post-NMS box ≤ 1 model px
+(converted to ROI px per fixture), post-NMS score ≤ 1e-3. The raw output's two halves get separate
+tolerances rather than one loose number: rows 0–3 are coordinates in 0..640, where one float32 ULP
+is already ~6e-5, and rows 4+ are scores in 0..1.
+
+Both runs are at `--confidence 0.05`, stated because it is below the 0.25 evaluation default: these
+fixtures are landscape and studio photographs with no acne in them, so at 0.25 the comparison would
+be 0 detections against 0 detections and would exercise none of the box path. **The 17 detections
+are not findings about acne.** They are the same 17 low-confidence boxes out of both runtimes.
+
+### 3A.4 Cost, desktop CPU only
+
+512×384 ROI, ONNX Runtime 1.24.3 CPUExecutionProvider, 7 repeats, same machine as §1.
+
+```bash
+$V scripts/retouch/detect_eval.py --manifest ~/retouch-cases/synthetic/manifest.json \
+  --detector ~/.cache/vibe-retouch/acne_640_fp32.manifest.json \
+  --engine opencv-telea --out ~/retouch-out/sr1b --repeat 7
+```
+
+| Measurement | Value | `metrics.json` field |
+|---|---|---|
+| Session load | 332 ms | `detector.load_ms` |
+| Pre-process | 32.9 ms | `stage_ms.preprocess_ms` |
+| Pure inference | 133.7 ms | `stage_ms.inference_ms` |
+| Decode + NMS | 0.13 ms | `stage_ms.decode_ms` |
+| Detect, end to end p50 / p95 | 252 / 278 ms | `total_ms_p50`, `total_ms_p95` |
+| Process peak RSS | 458 MB | `peak_rss_kb` |
+| Detection cap reached | no | `hit_max_detections` |
+
+**This is not an Android measurement.** §3A.7 is.
+
+### 3A.7 Cost and behaviour on a real device
+
+`:core:ai:connectedDebugAndroidTest`, **9/9 passed**, on hardware:
+
+| | |
+|---|---|
+| Device | Samsung SM-S948U (`m3q`), Snapdragon **SM8850**, `arm64-v8a` only, 8 cores, 10.7 GB RAM |
+| OS | Android 16, SDK 36, `S948USQT1AZC7` |
+| Runtime | `com.microsoft.onnxruntime:onnxruntime-android:1.24.3`, **CPU execution provider** |
+| Model | the same `acne_640_fp32.onnx`, `sha256:18fad8c5…`, 103,589,423 B, read from app-private files |
+| Graph as loaded on device | `images [1,3,640,640]` → `output0 [1,5,8400]` — identical to the manifest |
+
+```bash
+adb push ~/.cache/vibe-retouch/acne_640_fp32.onnx /data/local/tmp/blemish-detector/
+adb push ~/.cache/vibe-retouch/acne_640_fp32.manifest.json \
+  /data/local/tmp/blemish-detector/detector.manifest.json
+./gradlew :core:ai:connectedDebugAndroidTest && adb logcat -d -s AcneDetectorDevice:I
+```
+
+Two independent runs of the whole suite, both 9/9, reported as `run 1 / run 2` so the spread is
+visible rather than averaged away:
+
+| Measurement | Value | logcat key |
+|---|---|---|
+| Cold first call — SHA-256 of 103 MB, session creation, then one detection | **2,275.5 / 2,230.4 ms** | `cold_first_call_ms` |
+| Warm detect, 512×512 ROI, p50 | **2,046.5 / 2,002.8 ms** | `warm_total_ms_p50` |
+| Warm detect, p95 | **2,065.3 / 2,024.5 ms** | `warm_total_ms_p95` |
+| Warm detect, min / max over 20 runs | 2,013.2–2,066.1 / 1,833.7–2,026.6 ms | `warm_total_ms_min/max` |
+| Model load + session, by difference | ≈ 230 ms | — |
+| Process total PSS, ~~peak~~ **after the session was closed** | 267,711 / 279,941 kB ≈ 261–273 MB | ~~`peak_total_pss_kb`~~ |
+| Repeats | 20 per run, after the session is warm | `repeats` |
+
+> **These figures were produced by a harness that has since been corrected, and they are kept as
+> the record of what was run rather than re-labelled.** Two of them are weaker than they read:
+>
+> * the memory figure was a **single `getProcessMemoryInfo` call made after `close()`**, so it is
+>   the process at rest and not a peak — the true peak during a run can only have been higher;
+> * the latency figures are whole `detect` calls that were **not asserted to have succeeded**, and
+>   the candidate mask was outside them.
+>
+> `AcneDetectorDeviceTest.i_` now aggregates successful runs only, splits model load / preprocess /
+> inference / decode+NMS / mask / total with p50 and p95 each, and samples PSS on a background
+> thread during the runs — reporting `resting_total_pss_kb`, `observed_peak_total_pss_kb` (a
+> sampled **lower bound**, with its interval and sample count), and `after_close_total_pss_kb`
+> separately. **The corrected harness has not been run: no device is available.** The replacement
+> table below is therefore 미측정, and the conclusions in this section rest on the old figures,
+> which are bad enough to stand — 2 s per ROI is a latency measurement the correction does not
+> flatter, and a *resting* 261 MB is a lower bound on the peak either way.
+
+| Measurement (corrected harness) | Value | logcat key |
+|---|---|---|
+| Model load / session creation | 미측정 | `model_load_ms` |
+| Preprocess p50 / p95 | 미측정 | `preprocess_ms_p50/p95` |
+| Inference p50 / p95 | 미측정 | `inference_ms_p50/p95` |
+| Decode + NMS p50 / p95 | 미측정 | `decode_nms_ms_p50/p95` |
+| Candidate mask p50 / p95 | 미측정 | `mask_ms_p50/p95` |
+| Detect total, and detect + mask | 미측정 | `detect_total_ms_*`, `detect_plus_mask_ms_*` |
+| Resting / observed peak / after-close PSS | 미측정 | `resting_`, `observed_peak_`, `after_close_total_pss_kb` |
+
+**Two of these are product problems, not just numbers:**
+
+1. **2.0 s per face ROI, on a current flagship, for blemish detection alone** — and the stage
+   split that would say *where* it goes is 미측정.
+
+   specs/skin_retouch_validation.md §5's target is a p95 of 5 s for a *cold prepare of one face
+   with all four kinds active* — and that budget is 40% spent before any restoration runs. MI-GAN
+   then costs one inference per patch on top (§3.3). CPU EP with an FP32 YOLOv8m is not a viable
+   production configuration at this size; quantisation, a smaller checkpoint or an accelerator
+   path is required, and each is its own measurement.
+2. **261–273 MB total PSS in a bare instrumentation process** — no document, no working bitmap,
+   no renderer — against §5's 250 MB editor budget for a 12 MP import at working size 4096. A
+   103 MB FP32 model's weights and arena dominate this, and both runs are over the budget on
+   their own. Read this as a **floor**: it was measured with the session already closed, so the
+   peak while running was higher by an unmeasured amount.
+
+Latency is extremely stable — p95 within 1% of p50 in both runs, and the two runs agree to 2% —
+so these are the configuration's cost, not noise.
+
+Behaviour verified on the device, all passing:
+
+| Test | What it showed |
+|---|---|
+| `a_` | the installed model's digest and graph match its manifest; the version string carries the digest |
+| `b_` | ROI → boxes → mask end to end: every box inside the ROI, non-degenerate, class 0; mask strictly 0/255 and a subset of a **partial** allowance (7,356 of 172,032 allowed px) |
+| `c_` | the input ROI is byte-identical afterwards |
+| `d_` | a non-square 301×173 ROI works and its boxes stay inside it |
+| `e_` | repeated and 4-way concurrent requests return identical boxes — the reused session and shared input buffer are safe |
+| `f_` | a cancelled request delivers nothing, and the detector still works afterwards — **as run, the cancel was not synchronised with the native call**, so it showed only that a request cancelled around the run delivers nothing; the harness now waits on a latch signalled immediately before `session.run` and has not been re-run |
+| `g_` | closing during a run in flight is safe, and afterwards requests report `Unavailable` — same caveat: `delay(1)` did not establish that a run had started, and the latch replaced it |
+| `h_` | a part-transparent ROI is handled, and every transparent pixel is out of the mask |
+| `i_` | the cost table above |
+
+Two of these tests were **added or corrected because the device found real defects**, and they are
+the reason the suite is worth running rather than a formality: the candidate mask used
+`width * height` as an `ALPHA_8` buffer size, which throws on any width that is not stride-aligned
+(a face ROI is any width at all); and the Python and Kotlin preprocessors disagreed on
+**partially** transparent pixels, because Python quantised the composite back to 8 bits before
+resampling and Kotlin did not. Both are fixed, the parity fixture now carries a semi-transparent
+case, and `CandidateMaskTest` now round-trips a 301×173 allowance. `work/RESULT.md` → Review Notes
+has the full list.
+
+The detection **counts** in `b_` (100, `hit_detection_limit=true`) and `d_` (21) are **not quality
+figures**. The ROI is a procedurally generated oval with regular dark spots — the harness makes it
+so the path can be exercised with the repository's own pixels — and the model firing 100 times on
+it says only that the cap works and is reported. Detection quality remains §5.4.
+
+### 3A.5 The automatic mask, joined to the existing restoration harness
+
+The same command runs `RestoreRun` twice over one ROI, allowance, engine and patch settings —
+once on the manual annotation and once on the detector's own mask — as two rows:
+
+| Row | patches | changed px | overreach before guard | protection violations | p50 |
+|---|---|---|---|---|---|
+| `twopatch`, mask = **manual** | 2 | 1,243 | 0 | 0 | 22.0 ms |
+| `twopatch`, mask = **auto** | 0 | 0 | 0 | 0 | 0.12 ms |
+
+The auto row is an **empty** candidate mask, and an empty mask calls the restoration model zero
+times — which is the contract §1.1 states, observed end to end rather than asserted. It is not a
+quality result: `twopatch` is `make_cases.py` painting rectangles on `fixtures/photo_512.png`,
+which contains no face and no blemish, so its `recall = 0/4` is a statement about a synthetic
+fixture and nothing else. Every case in that manifest without an `allowed_mask` is **skipped**
+rather than run against an all-permissive allowance; six of the seven were skipped for that reason.
+
+### 3A.6 What was verified about the port itself
+
+| Property | How |
+|---|---|
+| Pre-processing is identical in Python and Kotlin | one fixture, `core/ai/src/test/resources/retouch/preprocess_parity.json`, asserted by `test_detector.py` **and** `DetectorPreprocessParityTest`. Letterbox geometry, sampled tensor values (≤1e-5) and the tensor sum (≤1e-6 rel), over square, wide, tall, odd-sized and part-transparent ROIs |
+| Odd padding, non-square ROI, inverse transform, clipping | `test_detector.py` and `DetectionDecoderTest`, both sides |
+| No objectness, no second sigmoid, NMS exactly once | `nms_is_applied_once_and_only_here`, both sides |
+| Class allowlist | `{0}` from the checkpoint's own `names`; an id the model does not have is a configuration error, not an empty result |
+| NaN / Inf / wrong shape / wrong `4+nc` | dropped or rejected; a box at infinity never becomes a mask over the whole face |
+| Candidate mask ⊆ allowance ∩ `alpha > 0` | `CandidateMaskTest`; inputs are never modified |
+| Empty detections, empty allowance | normal empty mask, not a failure and not "all of the face" |
+| Model absent / digest mismatch / corrupt manifest | `Unavailable` vs `Invalid`, three separate outcomes (`DetectorModelStoreTest`, `OnnxBlemishDetectorTest`) |
+| Release APK | **no ONNX Runtime and no model.** 18,336,271 B before and after this change; the compressed content grew 12,624 B (four unused `core:ai` classes) and the file size is unchanged because the zip's alignment padding absorbed it |
+| Debug APK, for comparison | 25,136,785 B → 132,283,722 B, **+102 MiB**, of which 106,939,560 B is `libonnxruntime.so` for four ABIs (arm64-v8a alone is 25,831,632 B). This is what "the runtime is debug-only" costs and is also the first size figure any production delivery has to answer |
+
+Not verified, because it needs a device: real inference on Android, on-device latency and memory,
+and the boxes an actual ARM build produces. `AcneDetectorDeviceTest` exists and was **not run**
+(§5).
 
 ## 4. Result table (`specs/skin_retouch_validation.md` §2)
 
@@ -109,7 +370,7 @@ size against the 15 MB APK budget, and none of those were measured.
 | Blemish (manual mask, SR1-A) | MI-GAN 512 Places2 `migan_pipeline_v2.onnx@6f1f3530` | desktop CPU | 미측정 | 미측정 | 미측정 | 583 / 612 ms (`twopatch`, 2 patches, synthetic, 7 runs) | 868 MB (process) | 미판정 |
 | Blemish (manual mask, SR1-A) | MI-GAN 256 FFHQ | — | 미측정 | 미측정 | 미측정 | 미측정 | 미측정 | 미실행, 가중치 미확보 |
 | Blemish (manual mask, SR1-A) | OpenCV Telea / NS 4.13.0 | desktop CPU | 미측정 | 미측정 | 미측정 | 22 / 23 ms (`twopatch`, 2 patches, synthetic, 7 runs) | 60 MB (process) | 미판정 |
-| Blemish (auto detect, SR1-B) | 검출기 미구현 | — | 미측정 | 미측정 | 미측정 | 미측정 | 미측정 | 미실행 |
+| Blemish (auto detect, SR1-B) | `Tinny-Robot/acne` YOLOv8m → `acne_640_fp32.onnx@18fad8c5` (검출기), 복원 엔진 미결합 | **on-device** SM-S948U CPU EP (desktop 병기) | 미측정 | 미측정 | 미측정 | **2046 / 2065 ms** (검출만, 512×512 ROI, 20회, 기기) · 252 / 278 ms (desktop, 512×384, 7회) | **261 MB** (기기 peak PSS) · 458 MB (desktop process) | 미판정 — 포팅·기기 검증 완료, **비용 예산 초과**, 품질 미측정 |
 | Shine (SR1-C) | 후보 미평가 | — | 미측정 | 미측정 | 미측정 | 미측정 | 미측정 | 미실행 |
 | DarkCircles (SR1-C) | 후보 미평가 | — | 미측정 | 미측정 | 미측정 | 미측정 | 미측정 | 미실행 |
 | ShavingShadow (SR1-C) | 후보 미평가 | — | 미측정 | 미측정 | 미측정 | 미측정 | 미측정 | 미실행 |
@@ -127,16 +388,30 @@ them and §3.2/§3.3 the `metrics.json` field behind each one.
    evaluated for any engine, and no engine can be adopted.
 2. **The FFHQ-256 checkpoint**, so §1.1's "same defects, both models" comparison can be run rather
    than assumed. Manual Google Drive download plus the repository's ONNX export.
-3. **An Android measurement**: onnxruntime (or another runtime) on a real device — tensor
-   compatibility, accelerator path, end-to-end latency with pre/post-processing, peak memory
-   against the 250 MB editor budget, and the runtime + model size against the 15 MB APK principle
-   (`specs/architecture.md` §8). A 28 MB model is far past what may be bundled, so delivery is its
-   own decision.
-4. **A blemish detector** for SR1-B, with detection precision/recall — moles and freckles counted
-   as false positives — reported apart from restoration quality.
+3. **A viable on-device configuration.** The detector now *runs* on a device and the
+   measurement exists (§3A.7) — and it says the current configuration does not fit: **2.0 s per
+   face ROI** on a Snapdragon SM8850 CPU EP against a 5 s p95 budget for all four kinds, and
+   **261 MB peak PSS** in a bare test process against a 250 MB editor budget. Quantisation, a
+   smaller checkpoint, or an accelerator path (NNAPI / QNN / GPU) each need their own measurement
+   and none is attempted here. MI-GAN has still not been measured on a device at all.
+   Delivery is separate again: a 28 MB restoration model, a **103 MB** detector and 25.8 MB of
+   `arm64-v8a` runtime are all far past what `specs/architecture.md` §8 allows to be bundled.
+4. **Detection quality** for SR1-B: precision and recall against the annotated photo set, with
+   moles and freckles counted as false positives, reported apart from restoration quality, plus
+   how much normal skin a box-shaped candidate mask sweeps in. The detector is ported and its
+   mechanics are verified (§3A); nothing is known about what it finds on a face. The checkpoint's
+   own card describes training on **African and dark skin tones**, which makes the spread §2 asks
+   for a question about this model specifically and not a generic fairness note.
 5. **Shine, dark circles and shaving shadow paths** for SR1-C. Blemish restoration says nothing
    about them.
-6. **Weights licensing**, for both checkpoints, before either could ship.
+6. **Weights licensing**, for all three artifacts, before any could ship: MI-GAN's weight file
+   carries no licence metadata, and the acne checkpoint is declared Apache-2.0 by a card with no
+   licence file while its exported graph carries Ultralytics' AGPL-3.0 stamp (§3A.1).
 
 Until 1–3 are answered for blemish, `SkinRetouchProvider` stays without a production
-implementation and the tool stays out of the menus (`work/tasks.md` SR1.7).
+implementation. What that looks like in the product has since changed: the portrait tool menu does
+carry a **피부 보정** entry (T79 and the menu work that followed), and tapping it opens a sheet
+whose four corrections are all shown as 준비 중 with Apply disabled. So the follow-on condition is
+not "the tool appears" but "the sheet stops saying 준비 중" — nothing may run a correction until a
+production `SkinRetouchProvider`, the protected allowed-skin mask builder and the SR1-A/SR1-B
+quality gates exist (`specs/skin_retouch_pipeline.md` §1.1).

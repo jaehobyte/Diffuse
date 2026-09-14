@@ -16,6 +16,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.diffuse.core.ai.monet.MonetConfig
+import com.diffuse.core.ai.monet.isValidMonetBaseUrl
 import com.diffuse.core.ai.sam3.Sam3Config
 import com.diffuse.core.ui.components.EditSheet
 import com.diffuse.core.ui.theme.LocalAppColors
@@ -62,7 +63,10 @@ fun Sam3SettingsSheet(
         applyLabel = stringResource(R.string.sam3_settings_save),
         // Either server is reason enough to save: 자동 보정 is usable without SAM 3, and SAM 3
         // without 자동 보정, so gating on SAM 3's address alone would lock one of them out.
-        applyEnabled = baseUrl.isNotBlank() || monetBaseUrl.isNotBlank(),
+        // specs/auto_enhance.md §4: a malformed 자동 보정 address is refused here rather than saved
+        // and discovered on the next tap.
+        applyEnabled = (baseUrl.isNotBlank() || monetBaseUrl.isNotBlank()) &&
+            isValidMonetBaseUrl(monetBaseUrl),
         modifier = modifier.testTag(Sam3SettingsSheetTestTag),
     ) {
         Sam3BaseUrlField(value = baseUrl, onValueChange = { baseUrl = it })
@@ -84,13 +88,7 @@ fun Sam3SettingsSheet(
         )
         // specs/auto_enhance.md §4: MonetGPT's own server, beside SAM 3's rather than in a
         // second sheet. Its token is a self-hosted server's, like SAM 3's, so it is not masked.
-        OutlinedTextField(
-            value = monetBaseUrl,
-            onValueChange = { monetBaseUrl = it },
-            label = { Text(stringResource(R.string.monet_settings_base_url)) },
-            singleLine = true,
-            modifier = Modifier.testTag(MonetBaseUrlFieldTestTag).fillMaxWidth(),
-        )
+        MonetBaseUrlField(value = monetBaseUrl, onValueChange = { monetBaseUrl = it })
         OutlinedTextField(
             value = monetToken,
             onValueChange = { monetToken = it },
@@ -117,6 +115,36 @@ private fun Sam3BaseUrlField(value: String, onValueChange: (String) -> Unit) {
             text = stringResource(R.string.sam3_settings_base_url_hint),
             style = Typography.bodySm,
             color = colors.inkSecondary,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+    }
+}
+
+/**
+ * specs/auto_enhance.md §4. The phone's own `127.0.0.1` is the address people paste by mistake —
+ * it is the server's loopback only over `adb reverse` — so the hint says so, and a value OkHttp
+ * could not build a request from is marked rather than saved.
+ */
+@Composable
+private fun MonetBaseUrlField(value: String, onValueChange: (String) -> Unit) {
+    val colors = LocalAppColors.current
+    val invalid = !isValidMonetBaseUrl(value)
+    Column {
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            label = { Text(stringResource(R.string.monet_settings_base_url)) },
+            singleLine = true,
+            isError = invalid,
+            modifier = Modifier.testTag(MonetBaseUrlFieldTestTag).fillMaxWidth(),
+        )
+        Text(
+            text = stringResource(
+                if (invalid) R.string.monet_settings_base_url_invalid
+                else R.string.monet_settings_base_url_hint,
+            ),
+            style = Typography.bodySm,
+            color = if (invalid) colors.error else colors.inkSecondary,
             modifier = Modifier.padding(top = 4.dp),
         )
     }

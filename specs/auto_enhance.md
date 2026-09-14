@@ -76,8 +76,18 @@ The request is MonetGPT's own two-stage shape, collapsed to what we need:
   address is shipped: generative_erase.md §2's rule, one server over.
 - Availability is a `/health` probe like SAM 3's, **not** the Gemini "is a key present" rule — this
   server is the user's own and reachability is the real question.
-- Timeouts: connect 10 s, read 120 s. Two MLLM turns on a photograph is slower than one generation,
-  and this is the call where that is expected. Cancellable.
+- The probe keeps its reason instead of collapsing to a boolean: blank address → `Invalid("no server
+  address")`; an address OkHttp cannot build a request from → `Invalid("invalid server address")`,
+  checked before any request so a saved typo never crashes; `404` → `Invalid` (something answered,
+  and it is not this service); `401`/`403` → `Unauthorized`; `429`/`5xx` → `Unavailable` (MonetGPT
+  answers `503` while its checkpoint loads); a refused, reset or timed-out connection → `Io`.
+- The base URL is the server root, **without** `/v1`. The sheet and an older saved override are
+  both read through one normal form: trimmed, no trailing `/`, a trailing `/v1` removed.
+- A value saved from the sheet that equals the build default is stored as no override, so a later
+  build's default is read. An override that differs still wins and is fixed from the sheet.
+- Timeouts: the probe has its own **5 s** connect/read/call limit. The generation keeps connect
+  10 s, read 120 s — two MLLM turns on a photograph is slower than one generation, and this is the
+  call where that is expected. Both are cancellable, and cancelling reaches the HTTP call.
 - The answer is JSON in a text part; `extract_json_from_response`'s tolerance (find the outermost
   braces) is reimplemented, because a reasoning model narrates.
 
@@ -94,6 +104,10 @@ enum class AutoStyle { Balanced, Vibrant, Retro }
 
 interface AutoEnhanceProvider {
     val availability: StateFlow<Availability>
+    /** A probe of the current settings is in flight; `availability` is not yet their answer. */
+    val checking: StateFlow<Boolean>
+    /** Probe the current settings again now (§6's retry). Joins a probe already in flight. */
+    fun refresh()
     /** The adjustments to apply, already in -1..1. Never pixels. */
     suspend fun enhance(image: Bitmap, style: AutoStyle): Result<Map<AdjustKind, Float>>
 }
@@ -127,13 +141,34 @@ it does have is an **after**: the result arrives as a preview with a three-chip 
 - 적용 commits **one history entry** holding every `Adjust`, so one undo removes the whole boost.
 - Cancelling commits nothing. A failure leaves the sheet open with the previous chip's result.
 
-Disabled states:
+Disabled states. The tool is greyed but tappable, and **the tap is the retry**: nothing re-probes on
+a timer, and a photograph is never re-uploaded on its own.
 
 | State | String | Action |
 |---|---|---|
+| a probe of the current settings is in flight (also before the first answer) | `auto_checking` | — (never reported as a failure) |
 | `baseUrl` is blank | `auto_needs_server` | opens the 서버 설정 sheet |
-| the probe failed | `auto_unreachable` | — |
+| the address is malformed, or answers `404` at `/health` | `auto_invalid_address` | opens the 서버 설정 sheet |
+| the token was rejected | `auto_unauthorized` | opens the 서버 설정 sheet |
+| the probe failed: server loading (`503`) or unreachable | `auto_rechecking` | re-probes the **same** settings **and** opens the 서버 설정 sheet, whatever answered earlier — the address may have moved; the user saves (another re-probe) or closes it |
+| a re-check the user tapped for has answered | `auto_ready` / `auto_not_ready` / `auto_unreachable` / the rows above | the next tap runs once it is Ready |
 | the answer named no operation we know | `auto_failed` | — |
+| a generation failed: connection / `503` / token | `auto_unreachable` / `auto_not_ready` / `auto_unauthorized` | the sheet keeps the previous chip's result; one re-probe |
+
+Recovery and races:
+
+- Every 서버 설정 save re-probes, **including a save of identical settings** — that is the other way
+  to say "try this server again".
+- A tap during a probe for the same settings joins it; there is at most one probe per settings.
+- A probe for settings that were since replaced is cancelled, and its answer, if it still arrives,
+  is discarded — it never overwrites the answer for the current settings.
+- A generation's answer is discarded if, before it arrived, the user cancelled, closed the sheet,
+  chose another chip, saved 서버 설정, or the document changed. A discarded run never writes the
+  plan, the preview, history or `busy`; only the newest run clears its own progress.
+- A document change (undo, redo, reset) ends the whole session, not only a run in flight: the input
+  a chip re-runs on, the plan 적용 would commit and the sheet all belonged to the previous document.
+  The sheet closes without restoring its baseline — the change is the user's. A chip that merely
+  fails on an unchanged document keeps the previous result, as above.
 
 ## 7. Strings
 | Key | Value |
@@ -147,18 +182,36 @@ Disabled states:
 | `auto_reason` | 지시 |
 | `auto_working` | 사진을 살펴보는 중 |
 | `auto_needs_server` | 설정에서 자동 보정 서버 주소를 입력해주세요 |
-| `auto_unreachable` | 자동 보정 서버에 연결하지 못했어요 |
+| `auto_unreachable` | 자동 보정 서버에 연결하지 못했어요. 다시 누르면 다시 확인해요 |
 | `auto_failed` | 보정할 내용을 찾지 못했어요 |
+| `auto_checking` | 자동 보정 서버를 확인하는 중이에요 |
+| `auto_rechecking` | 자동 보정 서버를 다시 확인하는 중이에요 |
+| `auto_ready` | 자동 보정 서버에 연결됐어요 |
+| `auto_not_ready` | 자동 보정 서버가 준비 중이에요. 잠시 후 다시 눌러주세요 |
+| `auto_unauthorized` | 자동 보정 토큰이 맞지 않아요. 서버 설정에서 확인해주세요 |
+| `auto_invalid_address` | 자동 보정 서버 주소를 확인해주세요 |
+| `monet_settings_base_url_hint` | 휴대폰에서는 서버의 외부 주소를 입력해요. 127.0.0.1은 USB(adb reverse) 연결에서만 동작해요 |
+| `monet_settings_base_url_invalid` | http:// 또는 https://로 시작하는 주소를 입력해주세요 |
 
 ## 8. Tests
 - `MonetClientTest`: the recorded body carries the downscaled PNG and the §4 instruction; a JSON
   answer wrapped in prose parses; an answer naming an unknown operation drops **that** entry and
   keeps the rest; an answer naming none is `Unsupported`; values outside ±100 clamp; error mapping
-  row for row; availability follows the probe.
+  row for row; availability follows the probe, keeping `401`/`503`/`404`/timeout/refused/malformed
+  apart; the probe times out in seconds; cancelling a plan cancels the HTTP call.
+- `MonetAutoEnhanceProviderTest`: a failed probe recovers on `refresh` with the same settings; a
+  save of identical settings re-probes; a refresh during the same probe joins it; a late answer for
+  replaced settings never overwrites the current one; clean install, malformed override, existing
+  override and build-default saves.
 - `AutoEnhanceProviderTest`: every operation name in MonetGPT's three groups maps to an
   `AdjustKind` or is on §3's recorded miss list — the test that will fail the day the model's
   vocabulary changes.
-- Tool: a blank address opens the 서버 설정 sheet; 적용 writes one history entry holding every
+- Tool: a tap during the probe says checking; a failed probe re-checks on tap and the next tap runs
+  once Ready; 401 / malformed open the sheet; 503 says not ready and offers the sheet; a server that
+  was Ready before and then fails still offers the sheet, and a new address recovers it; answers
+  after cancel, a newer chip, a settings save or a document change are discarded; undo under an
+  open result sheet ends the session, and neither a later chip nor 적용 uses the old photograph; an older run cannot clear the newer
+  run's progress; a blank address opens the 서버 설정 sheet; 적용 writes one history entry holding every
   adjustment; one undo removes all of them; 강도 scales what is committed and costs no second call;
   changing the chip costs one; cancelling commits nothing.
 - Goldens: `auto_sheet_open`, `auto_sheet_result`.
