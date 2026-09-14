@@ -15,6 +15,8 @@
     <string name="editor_tool_mix">혼합</string>
     <string name="editor_tool_crop">자르기</string>
     <string name="editor_tool_detail">디테일</string>
+    <!-- specs/skin_retouch.md §2: shown only on a portrait, in 디테일's place -->
+    <string name="editor_tool_skin_retouch">피부 보정</string>
     <string name="editor_tool_select">선택</string>
     <string name="editor_tool_erase">지우기</string>
     <string name="editor_tool_fill">채우기</string>
@@ -62,7 +64,13 @@
     <string name="auto_reason">지시</string>
     <string name="auto_working">사진을 살펴보는 중</string>
     <string name="auto_needs_server">설정에서 자동 보정 서버 주소를 입력해주세요</string>
-    <string name="auto_unreachable">자동 보정 서버에 연결하지 못했어요</string>
+    <string name="auto_unreachable">자동 보정 서버에 연결하지 못했어요. 다시 누르면 다시 확인해요</string>
+    <string name="auto_checking">자동 보정 서버를 확인하는 중이에요</string>
+    <string name="auto_rechecking">자동 보정 서버를 다시 확인하는 중이에요</string>
+    <string name="auto_ready">자동 보정 서버에 연결됐어요</string>
+    <string name="auto_not_ready">자동 보정 서버가 준비 중이에요. 잠시 후 다시 눌러주세요</string>
+    <string name="auto_unauthorized">자동 보정 토큰이 맞지 않아요. 서버 설정에서 확인해주세요</string>
+    <string name="auto_invalid_address">자동 보정 서버 주소를 확인해주세요</string>
     <string name="auto_failed">보정할 내용을 찾지 못했어요</string>
 
     <!-- specs/vibe_edit.md §11 -->
@@ -118,6 +126,8 @@
     <!-- specs/auto_enhance.md §4 -->
     <string name="monet_settings_base_url">자동 보정 서버 주소</string>
     <string name="monet_settings_token">자동 보정 토큰</string>
+    <string name="monet_settings_base_url_hint">휴대폰에서는 서버의 외부 주소를 입력해요. 127.0.0.1은 USB(adb reverse) 연결에서만 동작해요</string>
+    <string name="monet_settings_base_url_invalid">http:// 또는 https://로 시작하는 주소를 입력해주세요</string>
 
     <string name="light_title">빛</string>
     <string name="light_exposure">노출</string>
@@ -147,6 +157,15 @@
     <string name="crop_straighten">수평</string>
     <string name="crop_rotate_left">왼쪽으로 90도 회전</string>
     <string name="crop_rotate_right">오른쪽으로 90도 회전</string>
+
+    <!-- specs/skin_retouch.md §1, §4 -->
+    <string name="skin_retouch_title">피부 보정</string>
+    <string name="skin_retouch_preparing">피부 보정 기능을 준비 중이에요</string>
+    <string name="skin_retouch_unsupported">미지원</string>
+    <string name="skin_retouch_blemish">잡티·여드름 제거</string>
+    <string name="skin_retouch_shine">유분광 제거</string>
+    <string name="skin_retouch_dark_circles">다크서클 완화</string>
+    <string name="skin_retouch_shaving_shadow">면도자국 완화</string>
 
     <string name="detail_title">디테일</string>
     <string name="detail_sharpen">선명도</string>

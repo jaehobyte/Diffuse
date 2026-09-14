@@ -21,11 +21,33 @@ enum class AutoStyle { Balanced, Vibrant, Retro }
  */
 interface AutoEnhanceProvider {
 
+    /**
+     * The last answer for the current settings. While [checking] is true it is not yet the answer
+     * for them, so a tool must not report it as a failure (specs/auto_enhance.md §6).
+     */
     val availability: StateFlow<Availability>
+
+    /** True while a probe of the current settings is in flight. */
+    val checking: StateFlow<Boolean>
+
+    /**
+     * specs/auto_enhance.md §6: probe the current settings again, now — the explicit retry after a
+     * failure. A probe already in flight for the same settings is joined rather than repeated,
+     * and nothing is probed on a timer.
+     */
+    fun refresh()
 
     /** [reason] is the model's own English sentence; specs/auto_enhance.md §6 shows it as-is. */
     data class Plan(val adjustments: Map<AdjustKind, Float>, val reason: String)
 
     /** The adjustments to apply, already in −1..1. Never pixels. */
     suspend fun enhance(image: Bitmap, style: AutoStyle): Result<Plan>
+
+    companion object {
+        /**
+         * `AppError.Invalid.detail` when no address is set at all. Any other `Invalid` from
+         * [availability] is an address that is set and wrong; both are fixed in 서버 설정.
+         */
+        const val NO_SERVER = "no server address"
+    }
 }

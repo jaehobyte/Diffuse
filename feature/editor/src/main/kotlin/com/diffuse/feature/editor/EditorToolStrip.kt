@@ -58,6 +58,8 @@ fun EditorToolStrip(
     disabledTools: Set<Tool> = emptySet(),
     level: ToolGroup = ToolGroup.Root,
     onLevelChange: (ToolGroup) -> Unit = {},
+    /** work/decisions.md T79: which ordering of [level] to bind. The geometry is unchanged. */
+    profile: ToolMenuProfile = ToolMenuProfile.General,
 ) {
     val colors = LocalAppColors.current
     LazyRow(
@@ -69,7 +71,7 @@ fun EditorToolStrip(
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        items(stripItems(level)) { item ->
+        items(stripItems(level, profile)) { item ->
             StripItemView(
                 item = item,
                 selected = item is StripItem.OfTool && item.tool == selectedTool,

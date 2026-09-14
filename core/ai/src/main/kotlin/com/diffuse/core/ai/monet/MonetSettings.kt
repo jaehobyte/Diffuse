@@ -18,32 +18,61 @@ import javax.inject.Singleton
  * the version catalog has no DataStore entry and CLAUDE.md freezes it.
  */
 @Singleton
-class MonetSettings @Inject constructor(
-    @ApplicationContext context: Context,
+class MonetSettings internal constructor(
+    context: Context,
+    private val defaults: MonetConfig,
 ) : MonetConfigSource {
+
+    @Inject
+    constructor(@ApplicationContext context: Context) : this(
+        context,
+        MonetConfig.normalized(BuildConfig.MONET_BASE_URL, BuildConfig.MONET_TOKEN),
+    )
 
     private val prefs: SharedPreferences =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     private val _config = MutableStateFlow(read())
 
-    /** Emits on every override so the provider can re-probe availability. */
+    /** The current address and token. Equal saves do not emit; see [saves]. */
     val config: StateFlow<MonetConfig> = _config
+
+    private val _saves = MutableStateFlow(0)
+
+    /**
+     * specs/auto_enhance.md §6: counts every [update], including one that saves exactly what was
+     * already there. Saving the same address again is how a user asks "try that server again",
+     * and [config] alone — a `StateFlow` — would swallow it.
+     */
+    val saves: StateFlow<Int> = _saves
 
     override fun current(): MonetConfig = _config.value
 
     fun update(baseUrl: String, token: String) {
-        val normalized = MonetConfig(baseUrl.trim().trimEnd('/'), token.trim())
+        val normalized = MonetConfig.normalized(baseUrl, token)
         prefs.edit()
-            .putString(KEY_BASE_URL, normalized.baseUrl)
-            .putString(KEY_TOKEN, normalized.token)
+            .putOrDefault(KEY_BASE_URL, normalized.baseUrl, defaults.baseUrl)
+            .putOrDefault(KEY_TOKEN, normalized.token, defaults.token)
             .apply()
         _config.value = normalized
+        _saves.value += 1
     }
 
-    private fun read() = MonetConfig(
-        baseUrl = prefs.getString(KEY_BASE_URL, null) ?: BuildConfig.MONET_BASE_URL.trimEnd('/'),
-        token = prefs.getString(KEY_TOKEN, null) ?: BuildConfig.MONET_TOKEN,
+    /**
+     * A value equal to the build default is not stored as an override. The sheet saves every
+     * field it shows, so otherwise one save of an untouched field would pin that build's default
+     * forever and a later APK's corrected default would never be read.
+     */
+    private fun SharedPreferences.Editor.putOrDefault(
+        key: String,
+        value: String,
+        default: String,
+    ): SharedPreferences.Editor = if (value == default) remove(key) else putString(key, value)
+
+    /** An older override is read back through the same normal form a save uses. */
+    private fun read() = MonetConfig.normalized(
+        baseUrl = prefs.getString(KEY_BASE_URL, null) ?: defaults.baseUrl,
+        token = prefs.getString(KEY_TOKEN, null) ?: defaults.token,
     )
 
     private companion object {

@@ -108,9 +108,10 @@ class EditorShellTest {
         assertToolsReachable(ToolGroup.Ai)
     }
 
+    /** The strip's own list, not the enum's: 피부 보정 is not in the general menu these bind. */
     private fun assertToolsReachable(level: ToolGroup) {
         compose.onNodeWithTag(ToolStripTestTag).assertExists()
-        Tool.entries.filter { it.group == level }.forEach { tool ->
+        stripItems(level).filterIsInstance<StripItem.OfTool>().map { it.tool }.forEach { tool ->
             // The strip is a LazyRow (DESIGN.md §4: horizontally scrollable), so a tool past the
             // viewport is only composed once scrolled to.
             compose.onNodeWithTag(ToolStripTestTag)

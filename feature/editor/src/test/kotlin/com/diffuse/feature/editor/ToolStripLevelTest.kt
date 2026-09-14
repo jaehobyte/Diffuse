@@ -34,14 +34,20 @@ class ToolStripLevelTest {
 
     // ---- the lists, without a screenshot ---------------------------------
 
+    /**
+     * §7, for the profile these tests bind — the general one. 피부 보정 is the single tool it
+     * leaves out (specs/skin_retouch.md §2); which profile shows it, and that the two profiles
+     * together show everything, is `PortraitToolMenuTest`'s.
+     */
     @Test
-    fun `every tool appears at exactly one level`() {
+    fun `every general tool appears at exactly one level`() {
         val shown = ToolGroup.entries.flatMap { stripItems(it) }
             .filterIsInstance<StripItem.OfTool>()
             .map { it.tool }
+        val general = Tool.entries - Tool.SkinRetouch
 
-        assertEquals(Tool.entries.size, shown.size)
-        assertEquals(Tool.entries.toSet(), shown.toSet())
+        assertEquals(general.size, shown.size)
+        assertEquals(general.toSet(), shown.toSet())
     }
 
     @Test
@@ -167,8 +173,8 @@ class ToolStripLevelTest {
     fun `nothing in the strip is ever click-disabled`() {
         show(ToolGroup.Root, disabled = Tool.entries.toSet())
 
-        Tool.entries.filter { it.group == ToolGroup.Root }.forEach {
-            compose.onNodeWithText(labelOf(it)).assertIsEnabled()
+        stripItems(ToolGroup.Root).filterIsInstance<StripItem.OfTool>().forEach {
+            compose.onNodeWithText(labelOf(it.tool)).assertIsEnabled()
         }
     }
 
@@ -178,6 +184,7 @@ class ToolStripLevelTest {
         Tool.Mix -> "혼합"
         Tool.Crop -> "자르기"
         Tool.Detail -> "디테일"
+        Tool.SkinRetouch -> "피부 보정"
         Tool.Select -> "선택"
         Tool.Erase -> "지우기"
         Tool.Fill -> "채우기"

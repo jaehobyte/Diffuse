@@ -81,6 +81,22 @@ class Sam3SettingsSheetTest {
         )
     }
 
+    /** specs/auto_enhance.md §4: a typo is refused at 저장, and fixing it lets the save through. */
+    @Test
+    fun `a malformed 자동 보정 address blocks save until it is fixed`() {
+        showSheet()
+
+        compose.onNodeWithTag(MonetBaseUrlFieldTestTag).performTextReplacement("monet:9090")
+        compose.onNodeWithText("http:// 또는 https://로 시작하는 주소를 입력해주세요").assertExists()
+        compose.onNodeWithText("저장").performClick()
+        assertTrue(saved.isEmpty())
+
+        compose.onNodeWithTag(MonetBaseUrlFieldTestTag).performTextReplacement("https://monet.example")
+        compose.onNodeWithText("저장").performClick()
+
+        assertEquals("https://monet.example", saved.single().monetBaseUrl)
+    }
+
     @Test
     fun `an unedited sheet saves back what it was given`() {
         showSheet()

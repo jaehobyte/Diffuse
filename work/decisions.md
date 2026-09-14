@@ -8,6 +8,104 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+## D082 - MonetGPT external test access
+
+Status: Accepted
+
+Decision:
+At the explicit user request on 2026-09-14, expose MonetGPT through a dedicated
+Caddy HTTP test proxy on public port 8093, retaining the model on loopback 8082
+and the existing bearer authentication. Use this address in private local
+configuration and the test device. Public APK defaults remain credential-free.
+
+Reason:
+The user requires SAM-style external access without a local SSH forwarding
+session. The previous phone-local URL could not reach EC2 directly.
+
+Consequences:
+This HTTP test route is not TLS encrypted. Existing TLS hostname deployment
+remains available. SAM3 and other services are unchanged. Proxy and model
+startup after logout/reboot require separate operational setup; current user
+service has Linger=no and the existing model process is unmanaged by systemd.
+
+## D081 - 자동 보정 connection recovery
+
+Status: Accepted (2026-09-14)
+
+Decision:
+The tap is the retry. A failed probe keeps its `AppError` reason; a tap re-probes the same
+settings (joining a probe already in flight), a save — including an identical one — re-probes,
+and nothing polls or re-uploads on its own. Address/token problems open 서버 설정; a loading or
+unreachable server re-checks and also opens the sheet, regardless of an earlier success (a server
+that answered once may have moved). A document change ends the auto session (input, plan, sheet).
+A saved value equal to the build default is stored as no override. The probe has its own 5 s
+limit; the generation keeps 10 s / 120 s.
+
+Reason:
+The reported "연결하지 못했어요" had two causes that no code in the app could see: the
+`install.sh` APK carried `.env`'s `http://127.0.0.1:8082` (the phone's own loopback), and the
+MonetGPT service listens on the server's loopback only with no proxy running. The app then
+turned every failure into one sentence with no way forward, and a recovered server stayed
+"unreachable" until the settings changed. Opening a public route is an operator action
+(DNS/TLS, security group, token in transit) and is not made by the app or this task.
+
+Consequences:
+`AutoEnhanceProvider` gained `checking` and `refresh()`. Generation results carry a run token so
+answers after cancel, a newer chip, a settings save or a document change are discarded, and a
+document change also drops the session's input and plan so nothing asked of the old photograph is
+re-run or committed.
+specs/auto_enhance.md §4 and §6 record the table.
+
+## D080 - Skin retouch execution boundary
+
+Status: Accepted
+
+Decision:
+사용자 지시에 따라 피부 보정은 사진 업로드 없는 기기 내 처리를 우선한다.
+품질/성능상 필요한 경우 별도 보정 모델 서버를 사용하며 Gemini 등 범용 외부 생성
+API는 사용하지 않는다. 로컬 실패 시 자동 업로드는 없다. 모델/런타임은 SR1 평가로
+결정하며 아직 선정되지 않았다.
+
+Reason:
+T79의 얼굴 감지는 메뉴 신호일 뿐 피부 보정 엔진이 아니다. 피부 질감과 보호 영역의
+정확도는 모델 이름이나 기기 사양만으로 보장할 수 없어 실제 평가가 필요하다.
+
+Consequences:
+분석/보정은 core:ai에 두고 menu detector의 의미를 유지한다. SkinRetouch operation으로
+결과를 저장해 undo/redo/export가 추론 없이 동작한다. T70의 삽입 위치를 유지하되 해당
+prefix를 crop 없이 렌더링해 좌표를 맞춘다. 한 시트는 한 얼굴, 네 독립 강도, 한 history
+commit이다. 적용 후 재진입은 새 세션이다. 상세 계약은 specs/skin_retouch.md,
+specs/skin_retouch_pipeline.md, specs/skin_retouch_validation.md와 work/tasks.md를 따른다.
+
+Candidate evaluation update (2026-09-09):
+MI-GAN을 잡티·여드름 국소 복원의 첫 평가 후보로 둔다. 수동 정답 mask로 복원 품질을
+확인한 뒤 별도 자동 검출을 연결한다. StyleRetoucher는 피부 보정 설계/비교 참고이며
+코드·가중치·사용 조건 확보 전에는 구현 의존성이 아니다. 이는 production 모델 채택이
+아니며 네 기능의 독립 제어를 두 모델 중 하나가 기본 제공한다고 가정하지 않는다.
+유분광/다크서클의 국소 색조 보정과 면도자국의 검출/보정은 별도로 평가한다.
+MI-GAN wrapper는 이미 blending한 결과를 반환하므로 provider 후보에 영역 제한과
+feather를 한 번만 적용하고 이후 합성/저장에서는 binary support를 사용한다.
+
+### T79
+
+- **Portrait mode is a face-detection hint, not a persisted document property.** The requested menu
+  change is about what tools to put under the user's thumb when an image enters the editor. It does
+  not change pixels, undo, export, autosave, or project data, so the result belongs in
+  `EditorUiState` and resets with the editor screen.
+
+- **Use ML Kit Face Detection through Google Play services for the first portrait gate.** The
+  product signal is "does this photo have a usable face for retouching?", not "does it contain any
+  person-shaped object." Face detection maps directly to blemish/wrinkle-first UI, avoids a
+  segmentation pass, and the Play-services model delivery preserves the existing no-bundled-model
+  APK decision. The cost is a first-run model availability state; that state falls back to the
+  general menu instead of blocking editing.
+
+- **`자동` moves to the portrait root instead of adding placeholder retouch tools.** The repository
+  has no blemish or wrinkle operation yet. Adding labels that cannot perform the named edit would
+  be a product lie and a review trap. The portrait menu therefore reprioritizes existing behavior:
+  `자동` and `디테일` surface first, while future retouch tools can be added as real tools with their
+  own operation/provider contracts.
+
 ### T75
 
 - **§5's named source was never imported, so the maths is ours.** §5 says the local matcher "is

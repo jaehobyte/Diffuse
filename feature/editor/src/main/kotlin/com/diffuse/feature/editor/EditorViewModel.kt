@@ -7,6 +7,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.diffuse.core.ai.PortraitDetector
+import com.diffuse.core.ai.PortraitResult
 import com.diffuse.core.ai.speech.SpeechInput
 import com.diffuse.core.common.DispatcherProvider
 import com.diffuse.core.common.Result
@@ -89,6 +91,12 @@ data class EditorUiState(
     val maskedAdjust: Boolean = true,
     /** The applied mask, resolved for the scrim the adjust sheets show. */
     val activeMask: Bitmap? = null,
+    /**
+     * work/decisions.md T79: a menu hint, and nothing else. It is never written to the document,
+     * never persisted, and starts at [PortraitResult.Unknown] — which the menu reads as "general"
+     * — so the strip is right before the detector has answered as well as after it fails.
+     */
+    val portrait: PortraitResult = PortraitResult.Unknown,
 )
 
 /** specs/editor_shell.md: one ViewModel per screen, UI sends intents, VM reduces to state. */
@@ -129,6 +137,10 @@ class EditorViewModel @Inject constructor(
     /** specs/prompt_input.md §3: handed straight to the prompt bar; the VM never drives it. */
     val speech: SpeechInput = ai.speech
 
+    /** work/decisions.md T79: asked once per loaded source, and never on the user's behalf. */
+    private val portrait: PortraitDetector = ai.portrait
+    private var portraitJob: Job? = null
+
     /** specs/generative_erase.md §10, T50: one commit shape for both erase paths. */
     private val eraseCommit = EraseCommit(
         saveMask = { maskId, mask -> repository.saveMask(projectId, maskId, mask) },
@@ -157,7 +169,7 @@ class EditorViewModel @Inject constructor(
     )
 
     /** specs/auto_enhance.md §6: the tool has no sheet before its call, and one after it. */
-    val auto = AutoController(ai.autoEnhance, viewModelScope)
+    val auto = AutoController(ai.autoEnhance, viewModelScope, ai.monetSettings.saves)
 
     /**
      * specs/style_match.md §4. 스타일 calls nothing, so it needs no provider — what it needs is
@@ -265,6 +277,20 @@ class EditorViewModel @Inject constructor(
         viewModelScope.launch {
             auto.state.collect { _uiState.value = _uiState.value.copy(auto = it) }
         }
+        // specs/auto_enhance.md §6: a plan is asked of the document on screen. Neither the busy
+        // overlay nor the sheet blocks undo, so a document that changes under a session makes its
+        // input, its plan and any answer still out ones for a picture that is gone. The session
+        // ends; the undo stays — so no baseline is restored.
+        viewModelScope.launch {
+            _uiState.map { it.document }
+                .distinctUntilChanged()
+                .collect {
+                    if (auto.onDocumentChanged() && _uiState.value.selectedTool == Tool.Auto) {
+                        sheetBaseline = null
+                        _uiState.value = _uiState.value.copy(selectedTool = null)
+                    }
+                }
+        }
         // specs/auto_enhance.md §6: the plan applies live while the sheet is open, so 강도 is a
         // slider on a result the user is already looking at. Same shape as T69's collector, and
         // for the same reason: what the preview should show changed without the document changing.
@@ -356,11 +382,31 @@ class EditorViewModel @Inject constructor(
         }
     }
 
-    private suspend fun renderSource(document: EditDocument) {
+    /**
+     * work/decisions.md T79: the portrait gate rides along here rather than in a pass of its own.
+     * This is the one place that already holds the bare source at preview size, so the detector is
+     * handed a frame that exists instead of decoding the original a second time.
+     *
+     * Launched rather than awaited, so a slow or absent Play-services model cannot hold up the
+     * canvas; the previous job is cancelled and the answer is dropped unless the source it was
+     * asked about is still the one on screen.
+     *
+     * `internal` rather than private only so a test can render a second source and prove that
+     * guard: nothing outside this module calls it, and `load` remains its only caller.
+     */
+    internal suspend fun renderSource(document: EditDocument) {
         val bare = document.copy(operations = emptyList())
         val rendered = renderer.preview(bare, PREVIEW_LONG_EDGE_PX)
         if (rendered is Result.Success) {
-            _uiState.value = _uiState.value.copy(source = rendered.value.asImageBitmap())
+            val source = rendered.value
+            _uiState.value = _uiState.value.copy(source = source.asImageBitmap())
+            portraitJob?.cancel()
+            portraitJob = viewModelScope.launch {
+                val result = portrait.detect(source)
+                if (_uiState.value.source?.asAndroidBitmap() === source) {
+                    _uiState.value = _uiState.value.copy(portrait = result)
+                }
+            }
         }
     }
 

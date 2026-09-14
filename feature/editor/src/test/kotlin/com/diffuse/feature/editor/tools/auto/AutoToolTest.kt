@@ -12,6 +12,7 @@ import com.diffuse.core.ai.FakeFillProvider
 import com.diffuse.core.ai.FakeMatchStyleProvider
 import com.diffuse.core.ai.FakeOutpaintProvider
 import com.diffuse.core.ai.FakePlanProvider
+import com.diffuse.core.ai.FakePortraitDetector
 import com.diffuse.core.ai.FakeSegmentationProvider
 import com.diffuse.core.ai.gemini.GeminiSettings
 import com.diffuse.core.ai.monet.MonetSettings
@@ -48,6 +49,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.GraphicsMode
+import java.io.IOException
 
 /** specs/auto_enhance.md §6, §8, §9. */
 @RunWith(AndroidJUnit4::class)
@@ -105,17 +107,135 @@ class AutoToolTest {
         assertEquals(0, enhancer.enhanceCount)
     }
 
+    /** §6: a tap while the first probe is still out is "checking", never "unreachable". */
     @Test
-    fun `a failed probe says so and opens nothing`() = runTest {
-        enhancer.setAvailability(Availability.Unavailable(AppError.Unavailable))
+    fun `a tap while the probe is in flight says checking and calls nothing`() = runTest {
+        enhancer.setAvailability(Availability.Unavailable(AppError.Unavailable), checking = true)
         val viewModel = viewModel()
 
         viewModel.onToolClick(Tool.Auto)
 
-        assertEquals(R.string.auto_unreachable, viewModel.uiState.value.auto.message)
+        assertEquals(R.string.auto_checking, viewModel.uiState.value.auto.message)
         assertFalse(viewModel.uiState.value.selection.showSettings)
         assertNull(viewModel.uiState.value.selectedTool)
         assertEquals(0, enhancer.enhanceCount)
+        assertEquals(0, enhancer.refreshCount)
+    }
+
+    /**
+     * The reported bug: "연결하지 못했어요" and no way forward. The tap now re-checks the same
+     * settings, says what came back, and — once the server is back — the next tap runs.
+     */
+    @Test
+    fun `a failed probe re-checks on tap and the next tap runs once the server is back`() = runTest {
+        enhancer.setAvailability(Availability.Unavailable(AppError.Io(IOException("refused"))))
+        val viewModel = viewModel()
+
+        viewModel.onToolClick(Tool.Auto)
+
+        assertEquals(1, enhancer.refreshCount)
+        assertEquals(R.string.auto_rechecking, viewModel.uiState.value.auto.message)
+        assertTrue(viewModel.uiState.value.auto.checking)
+        assertEquals(0, enhancer.enhanceCount)
+
+        enhancer.answerRefresh(Availability.Ready)
+
+        assertEquals(R.string.auto_ready, viewModel.uiState.value.auto.message)
+        viewModel.onToolClick(Tool.Auto)
+        assertEquals(1, enhancer.enhanceCount)
+        assertEquals(Tool.Auto, viewModel.uiState.value.selectedTool)
+    }
+
+    /** A connection that has never once worked is most likely a wrong address: show the sheet. */
+    @Test
+    fun `a server never reached opens 서버 설정 beside the re-check`() = runTest {
+        enhancer.setAvailability(Availability.Unavailable(AppError.Io(IOException("refused"))))
+        val viewModel = viewModel()
+
+        viewModel.onToolClick(Tool.Auto)
+
+        assertTrue(viewModel.uiState.value.selection.showSettings)
+        assertNull(viewModel.uiState.value.selectedTool)
+    }
+
+    /**
+     * A server that answered earlier may have moved since. Having worked once must not take away
+     * the way to a new address — with SAM 3 and Gemini configured and healthy, so the sheet is
+     * not reached through another tool's error.
+     */
+    @Test
+    fun `a server that answered before still offers 서버 설정 and recovers on a new address`() =
+        runTest {
+            val viewModel = viewModel()
+            viewModel.onToolClick(Tool.Auto)
+            viewModel.cancelSheet()
+            assertTrue(viewModel.uiState.value.selection.enabled)
+            enhancer.setAvailability(Availability.Unavailable(AppError.Io(IOException("reset"))))
+
+            viewModel.onToolClick(Tool.Auto)
+
+            assertEquals(1, enhancer.refreshCount)
+            assertTrue(viewModel.uiState.value.selection.showSettings)
+            enhancer.answerRefresh(Availability.Unavailable(AppError.Io(IOException("reset"))))
+
+            monetSettings.update("https://moved.example", "t")
+            viewModel.selection.setSettingsVisible(false)
+            enhancer.answerRefresh(Availability.Ready)
+            viewModel.onToolClick(Tool.Auto)
+
+            assertEquals(2, enhancer.enhanceCount)
+            assertEquals(Tool.Auto, viewModel.uiState.value.selectedTool)
+        }
+
+    @Test
+    fun `a re-check that finds the model still loading says so and offers 서버 설정`() = runTest {
+        val viewModel = viewModel()
+        enhancer.setAvailability(Availability.Unavailable(AppError.Unavailable))
+        enhancer.nextRefreshAnswer = Availability.Unavailable(AppError.Unavailable)
+
+        viewModel.onToolClick(Tool.Auto)
+
+        assertEquals(R.string.auto_not_ready, viewModel.uiState.value.auto.message)
+        assertTrue(viewModel.uiState.value.selection.showSettings)
+        assertEquals(0, enhancer.enhanceCount)
+    }
+
+    @Test
+    fun `a rejected token opens 서버 설정 and says which field`() = runTest {
+        enhancer.setAvailability(Availability.Unavailable(AppError.Unauthorized))
+        val viewModel = viewModel()
+
+        viewModel.onToolClick(Tool.Auto)
+
+        assertEquals(R.string.auto_unauthorized, viewModel.uiState.value.auto.message)
+        assertTrue(viewModel.uiState.value.selection.showSettings)
+        assertEquals(0, enhancer.refreshCount)
+    }
+
+    @Test
+    fun `a malformed address opens 서버 설정`() = runTest {
+        enhancer.setAvailability(
+            Availability.Unavailable(AppError.Invalid("invalid server address")),
+        )
+        val viewModel = viewModel()
+
+        viewModel.onToolClick(Tool.Auto)
+
+        assertEquals(R.string.auto_invalid_address, viewModel.uiState.value.auto.message)
+        assertTrue(viewModel.uiState.value.selection.showSettings)
+    }
+
+    /** Two taps while the re-check is out: the second is "checking", not a second probe. */
+    @Test
+    fun `tapping again during a re-check does not probe twice`() = runTest {
+        enhancer.setAvailability(Availability.Unavailable(AppError.Unavailable))
+        val viewModel = viewModel()
+
+        viewModel.onToolClick(Tool.Auto)
+        viewModel.onToolClick(Tool.Auto)
+
+        assertEquals(1, enhancer.refreshCount)
+        assertEquals(R.string.auto_checking, viewModel.uiState.value.auto.message)
     }
 
     /** §6's last row: an answer we could make nothing of is a different sentence from an outage. */
@@ -228,7 +348,7 @@ class AutoToolTest {
     @Test
     fun `a failure leaves the previous chip's result on the sheet`() = runTest {
         val viewModel = withResult()
-        enhancer.failNext(AppError.Unavailable)
+        enhancer.failNext(AppError.Io(IOException("timeout")))
 
         viewModel.auto.setStyle(AutoStyle.Vibrant)
 
@@ -238,6 +358,152 @@ class AutoToolTest {
             FakeAutoEnhanceProvider.PLANS.getValue(AutoStyle.Balanced),
             viewModel.uiState.value.auto.plan,
         )
+    }
+
+    /** §6: a 503 mid-generation is a busy or loading server, not a lost connection. */
+    @Test
+    fun `a server busy during generation says not ready, not unreachable`() = runTest {
+        val viewModel = withResult()
+        enhancer.failNext(AppError.Unavailable)
+
+        viewModel.auto.setStyle(AutoStyle.Vibrant)
+
+        assertEquals(R.string.auto_not_ready, viewModel.uiState.value.auto.message)
+        assertEquals(
+            FakeAutoEnhanceProvider.PLANS.getValue(AutoStyle.Balanced),
+            viewModel.uiState.value.auto.plan,
+        )
+    }
+
+    // ---- late answers ----------------------------------------------------
+
+    /** DESIGN.md §7: cancel means unchanged, even when the provider answers anyway. */
+    @Test
+    fun `an answer that arrives after cancel changes nothing`() = runTest {
+        val viewModel = viewModel()
+        val gate = enhancer.gateNext()
+        viewModel.onToolClick(Tool.Auto)
+        assertTrue(viewModel.uiState.value.auto.busy)
+
+        viewModel.auto.cancel()
+        gate.complete(Unit)
+
+        assertNull(viewModel.uiState.value.selectedTool)
+        assertTrue(viewModel.uiState.value.auto.plan.isEmpty())
+        assertFalse(viewModel.uiState.value.auto.busy)
+        assertEquals(emptyMap<AdjustKind, Float>(), viewModel.adjustments())
+    }
+
+    /** Chips tapped in quick succession, answered in reverse: the last chip's plan stands. */
+    @Test
+    fun `an older chip answering last never replaces the newer chip's plan`() = runTest {
+        val viewModel = withResult()
+        val vibrant = enhancer.gateNext()
+        val retro = enhancer.gateNext()
+        viewModel.auto.setStyle(AutoStyle.Vibrant)
+        viewModel.auto.setStyle(AutoStyle.Retro)
+
+        retro.complete(Unit)
+        vibrant.complete(Unit)
+
+        assertEquals(AutoStyle.Retro, viewModel.uiState.value.auto.style)
+        assertEquals(
+            FakeAutoEnhanceProvider.PLANS.getValue(AutoStyle.Retro),
+            viewModel.uiState.value.auto.plan,
+        )
+        assertFalse(viewModel.uiState.value.auto.busy)
+    }
+
+    /** The older run finishing first must not clear the spinner the newer run still owns. */
+    @Test
+    fun `an older run finishing does not end the newer run's busy state`() = runTest {
+        val viewModel = withResult()
+        val vibrant = enhancer.gateNext()
+        val retro = enhancer.gateNext()
+        viewModel.auto.setStyle(AutoStyle.Vibrant)
+        viewModel.auto.setStyle(AutoStyle.Retro)
+
+        vibrant.complete(Unit)
+
+        assertTrue(viewModel.uiState.value.auto.busy)
+        assertEquals(
+            FakeAutoEnhanceProvider.PLANS.getValue(AutoStyle.Balanced),
+            viewModel.uiState.value.auto.plan,
+        )
+        retro.complete(Unit)
+        assertFalse(viewModel.uiState.value.auto.busy)
+    }
+
+    @Test
+    fun `saving 서버 설정 during a run discards that run's answer`() = runTest {
+        val viewModel = viewModel()
+        val gate = enhancer.gateNext()
+        viewModel.onToolClick(Tool.Auto)
+
+        monetSettings.update("https://other.example", "t")
+        assertFalse(viewModel.uiState.value.auto.busy)
+        gate.complete(Unit)
+
+        assertNull(viewModel.uiState.value.selectedTool)
+        assertTrue(viewModel.uiState.value.auto.plan.isEmpty())
+    }
+
+    /** The overlay does not block undo; a plan asked of the old document must not open on the new. */
+    @Test
+    fun `a document change during a run discards that run's answer`() = runTest {
+        val viewModel = viewModel()
+        val gate = enhancer.gateNext()
+        viewModel.onToolClick(Tool.Auto)
+
+        viewModel.onAdjust(AdjustKind.Exposure, EDITED_EXPOSURE)
+        gate.complete(Unit)
+
+        assertNull(viewModel.uiState.value.selectedTool)
+        assertTrue(viewModel.uiState.value.auto.plan.isEmpty())
+        assertEquals(1, viewModel.uiState.value.document!!.adjusts().size)
+    }
+
+    /**
+     * Undo under an open result sheet with a chip still out: the session was the old photograph's.
+     * Nothing asked of it — the chip in flight, a newer chip, the plan on the sheet — may run
+     * again or reach the undone document.
+     */
+    @Test
+    fun `undo under an open result sheet ends the session`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onAdjust(AdjustKind.Exposure, EDITED_EXPOSURE)
+        viewModel.onAdjustFinished()
+        viewModel.onToolClick(Tool.Auto)
+        assertEquals(Tool.Auto, viewModel.uiState.value.selectedTool)
+        val vibrant = enhancer.gateNext()
+        viewModel.auto.setStyle(AutoStyle.Vibrant)
+
+        viewModel.undo()
+
+        assertNull(viewModel.uiState.value.selectedTool)
+        assertFalse(viewModel.uiState.value.auto.busy)
+        assertTrue(viewModel.uiState.value.auto.plan.isEmpty())
+        viewModel.auto.setStyle(AutoStyle.Retro)
+        viewModel.applySheet()
+        vibrant.complete(Unit)
+
+        assertEquals(2, enhancer.enhanceCount)
+        assertTrue(viewModel.uiState.value.auto.plan.isEmpty())
+        assertEquals(emptyMap<AdjustKind, Float>(), viewModel.adjustments())
+        // Cancel after the session ended restores nothing: the undo is the user's.
+        viewModel.cancelSheet()
+        assertEquals(emptyMap<AdjustKind, Float>(), viewModel.adjustments())
+    }
+
+    @Test
+    fun `apply twice commits one history entry`() = runTest {
+        val viewModel = withResult()
+
+        viewModel.applySheet()
+        viewModel.applySheet()
+        viewModel.undo()
+
+        assertEquals(emptyMap<AdjustKind, Float>(), viewModel.adjustments())
     }
 
     // ---- fixtures --------------------------------------------------------
@@ -266,6 +532,7 @@ class AutoToolTest {
             monetSettings,
             enhancer,
             FakeMatchStyleProvider(),
+            FakePortraitDetector(),
         ),
         dispatchers = TestDispatchers,
         savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),
@@ -333,5 +600,6 @@ class AutoToolTest {
         const val PROJECT_ID = "p"
         const val PREVIEW_SIZE = 32
         const val HALF = AUTO_INTENSITY_MAX / 2
+        const val EDITED_EXPOSURE = 0.2f
     }
 }

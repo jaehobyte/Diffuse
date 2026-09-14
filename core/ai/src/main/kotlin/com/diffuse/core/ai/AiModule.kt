@@ -14,6 +14,8 @@ import com.diffuse.core.ai.monet.MonetClient
 import com.diffuse.core.ai.monet.MonetConfigSource
 import com.diffuse.core.ai.monet.MonetAutoEnhanceProvider
 import com.diffuse.core.ai.monet.MonetSettings
+import com.diffuse.core.ai.mlkit.MlKitFaceRegionAnalyzer
+import com.diffuse.core.ai.mlkit.MlKitPortraitDetector
 import com.diffuse.core.ai.sam3.Sam3Client
 import com.diffuse.core.ai.sam3.Sam3ConfigSource
 import com.diffuse.core.ai.sam3.Sam3SegmentationProvider
@@ -66,6 +68,19 @@ internal abstract class AiModule {
 
     @Binds
     abstract fun matchStyle(impl: GeminiMatchStyleProvider): MatchStyleProvider
+
+    @Binds
+    abstract fun portrait(impl: MlKitPortraitDetector): PortraitDetector
+
+    /**
+     * specs/skin_retouch_pipeline.md §1. Separate from the portrait hint above on purpose: one
+     * decides a menu, the other decides which pixels may be corrected.
+     *
+     * `SkinRetouchProvider` has no binding yet — SR1 has not selected an engine, and binding the
+     * fake would make an unfinished tool look finished (skin_retouch_validation.md §1).
+     */
+    @Binds
+    abstract fun faceRegions(impl: MlKitFaceRegionAnalyzer): FaceRegionAnalyzer
 
     companion object {
         @Provides

@@ -2,6 +2,7 @@ package com.diffuse.core.ai.monet
 
 import android.graphics.Bitmap
 import android.util.Base64
+import com.diffuse.core.ai.AutoEnhanceProvider
 import com.diffuse.core.ai.AutoStyle
 import com.diffuse.core.ai.gemini.await
 import com.diffuse.core.common.AppError
@@ -52,25 +53,48 @@ internal class MonetClient(
         .build()
 
     /**
+     * §4: a short, finite probe of its own. The 120 s read above is for a generation; a server
+     * that has not answered `/health` in a few seconds is not one the user should wait on.
+     */
+    private val probeHttp: OkHttpClient = okHttp.newBuilder()
+        .connectTimeout(HEALTH_TIMEOUT_S, TimeUnit.SECONDS)
+        .readTimeout(HEALTH_TIMEOUT_S, TimeUnit.SECONDS)
+        .callTimeout(HEALTH_TIMEOUT_S, TimeUnit.SECONDS)
+        .build()
+
+    /**
      * §4: availability is a probe, **not** Gemini's "is a key present" rule. This server is the
      * user's own, so reachability is the real question and it is free to ask.
+     *
+     * §6: the answer keeps its reason, because each one sends the user somewhere different — a
+     * blank or malformed address and a rejected token to the 서버 설정 sheet, a `503` (the model
+     * is still loading) to "try again shortly", a refused or timed-out connection to a re-check.
+     * [config] is the one being probed, so a late answer can be matched to the settings it was for.
      */
-    suspend fun health(): Boolean = withContext(dispatchers.io) {
-        val config = configSource.current()
-        if (!config.isConfigured) return@withContext false
-        try {
-            http.newCall(get(config, HEALTH_PATH)).await().use { it.isSuccessful }
-        } catch (e: IOException) {
-            logger?.warn(TAG, "GET $HEALTH_PATH unreachable", e)
-            false
+    suspend fun health(config: MonetConfig = configSource.current()): Result<Unit> =
+        withContext(dispatchers.io) {
+            addressError(config)?.let { return@withContext Result.Failure(it) }
+            try {
+                probeHttp.newCall(get(config, HEALTH_PATH)).await().use { response ->
+                    when {
+                        response.isSuccessful -> Result.Success(Unit)
+                        // Something answered, and it is not this service: a wrong address.
+                        response.code == HTTP_NOT_FOUND ->
+                            Result.Failure(AppError.Invalid(NOT_A_MONET_SERVER))
+                        else -> Result.Failure(
+                            monetStatusError(response.code, response.body?.string().orEmpty()),
+                        )
+                    }
+                }
+            } catch (e: IOException) {
+                logger?.warn(TAG, "GET $HEALTH_PATH unreachable", e)
+                Result.Failure(AppError.Io(e))
+            }
         }
-    }
 
     suspend fun plan(image: Bitmap, style: AutoStyle): Result<Plan> = withContext(dispatchers.io) {
         val config = configSource.current()
-        if (!config.isConfigured) {
-            return@withContext Result.Failure(AppError.Invalid("no server address"))
-        }
+        addressError(config)?.let { return@withContext Result.Failure(it) }
         val encoded = encode(image) ?: return@withContext Result.Failure(AppError.TooLarge)
         coroutineContext.ensureActive()
 
@@ -84,6 +108,13 @@ internal class MonetClient(
             logger?.warn(TAG, "POST $CHAT_PATH unreachable", e)
             Result.Failure(AppError.Io(e))
         }
+    }
+
+    /** Checked before a request is built: `Request.Builder.url` throws on a malformed address. */
+    private fun addressError(config: MonetConfig): AppError? = when {
+        !config.isConfigured -> AppError.Invalid(NO_SERVER_ADDRESS)
+        !config.hasValidBaseUrl -> AppError.Invalid(INVALID_SERVER_ADDRESS)
+        else -> null
     }
 
     private fun get(config: MonetConfig, path: String): Request =
@@ -202,23 +233,32 @@ internal class MonetClient(
         return Result.Failure(monetStatusError(code, body))
     }
 
-    private companion object {
-        const val TAG = "MonetClient"
-        const val CHAT_PATH = "/v1/chat/completions"
-        const val HEALTH_PATH = "/health"
+    internal companion object {
+        /** `AppError.Invalid` details the tool tells apart; see `MonetAutoEnhanceProvider`. */
+        const val NO_SERVER_ADDRESS = AutoEnhanceProvider.NO_SERVER
+        const val INVALID_SERVER_ADDRESS = "invalid server address"
+        const val NOT_A_MONET_SERVER = "no MonetGPT service at this address"
+
+        private const val TAG = "MonetClient"
+        private const val CHAT_PATH = "/v1/chat/completions"
+        private const val HEALTH_PATH = "/health"
+        private const val HTTP_NOT_FOUND = 404
 
         /** `configs/inference_config.yaml`'s own values. */
-        const val MODEL = "test"
-        const val TEMPERATURE = 0.3f
-        const val MAX_LONG_EDGE = 1280
+        private const val MODEL = "test"
+        private const val TEMPERATURE = 0.3f
+        private const val MAX_LONG_EDGE = 1280
 
         /** §4: generation is slow and this is the one call where a long read is expected. */
-        const val CONNECT_TIMEOUT_S = 10L
-        const val READ_TIMEOUT_S = 120L
+        private const val CONNECT_TIMEOUT_S = 10L
+        private const val READ_TIMEOUT_S = 120L
 
-        const val JSON_MEDIA_TYPE = "application/json; charset=utf-8"
-        const val PNG_QUALITY = 100
-        const val MAX_UPLOAD_BYTES = 20 * 1024 * 1024
-        const val ERROR_LOG_CHARS = 200
+        /** Connect, read and the whole call: a probe never outlives this. */
+        private const val HEALTH_TIMEOUT_S = 5L
+
+        private const val JSON_MEDIA_TYPE = "application/json; charset=utf-8"
+        private const val PNG_QUALITY = 100
+        private const val MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+        private const val ERROR_LOG_CHARS = 200
     }
 }

@@ -8,17 +8,25 @@ import com.diffuse.core.common.AppError
 import com.diffuse.core.common.DispatcherProvider
 import com.diffuse.core.common.Result
 import com.diffuse.core.imaging.model.AdjustKind
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import okhttp3.Call
+import okhttp3.EventListener
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.SocketPolicy
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -28,6 +36,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import java.util.concurrent.TimeUnit
 
 /** specs/auto_enhance.md §3, §4, §8. MockWebServer binds localhost only. */
 @RunWith(RobolectricTestRunner::class)
@@ -244,19 +253,111 @@ class MonetClientTest {
     @Test
     fun `health follows the probe`() = runTest {
         server.enqueue(MockResponse().setResponseCode(200))
-        assertTrue(client.health())
-        assertEquals("/health", server.takeRequest().requestUrl?.encodedPath)
+        assertEquals(Result.Success(Unit), client.health())
+        val probe = server.takeRequest()
+        assertEquals("/health", probe.requestUrl?.encodedPath)
+        assertEquals("Bearer $TOKEN", probe.getHeader("Authorization"))
 
         server.enqueue(MockResponse().setResponseCode(HTTP_SERVER_ERROR))
-        assertFalse(client.health())
+        assertEquals(Result.Failure(AppError.Unavailable), client.health())
     }
 
     @Test
     fun `a blank address never probes`() = runTest {
         config = MonetConfig("")
 
-        assertFalse(client.health())
+        assertEquals(
+            Result.Failure(AppError.Invalid(MonetClient.NO_SERVER_ADDRESS)),
+            client.health(),
+        )
         assertEquals(0, server.requestCount)
+    }
+
+    // ---- §6: a failed probe keeps its reason ------------------------------
+
+    /** The token is wrong: fixable in 서버 설정, and not the same thing as an outage. */
+    @Test
+    fun `a rejected token on the probe is Unauthorized`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(HTTP_UNAUTHORIZED))
+
+        assertEquals(Result.Failure(AppError.Unauthorized), client.health())
+    }
+
+    /** MonetGPT answers 503 while the checkpoint is still loading. */
+    @Test
+    fun `a server still loading its model is Unavailable, not unreachable`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(HTTP_UNAVAILABLE))
+
+        assertEquals(Result.Failure(AppError.Unavailable), client.health())
+    }
+
+    @Test
+    fun `something answering 404 at health is the wrong address`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(HTTP_NOT_FOUND))
+
+        assertEquals(
+            Result.Failure(AppError.Invalid(MonetClient.NOT_A_MONET_SERVER)),
+            client.health(),
+        )
+    }
+
+    @Test
+    fun `a refused connection is Io`() = runTest {
+        val gone = MockWebServer().apply { start() }
+        val closed = gone.url("/").toString().trimEnd('/')
+        gone.shutdown()
+        config = MonetConfig(closed, TOKEN)
+
+        val outcome = client.health()
+
+        assertTrue((outcome as Result.Failure).error is AppError.Io)
+    }
+
+    /** §4: the probe has its own short timeout; the 120 s read is the generation's alone. */
+    @Test
+    fun `a probe that never answers times out in seconds`() = runTest {
+        server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+
+        val started = System.nanoTime()
+        val outcome = client.health()
+        val elapsedS = (System.nanoTime() - started) / NANOS_PER_SECOND
+
+        assertTrue((outcome as Result.Failure).error is AppError.Io)
+        assertTrue("took $elapsedS s", elapsedS < PROBE_CEILING_S)
+    }
+
+    /** A typo saved before validation existed must not crash the request builder. */
+    @Test
+    fun `a malformed address is Invalid on both calls and never crashes`() = runTest {
+        config = MonetConfig("htp:/ not a url", TOKEN)
+
+        val invalid = Result.Failure(AppError.Invalid(MonetClient.INVALID_SERVER_ADDRESS))
+        assertEquals(invalid, client.health())
+        assertEquals(invalid, client.plan(image(), AutoStyle.Balanced))
+    }
+
+    /** §6: cancelling a generation reaches the socket, not just the coroutine. */
+    @Test
+    fun `cancelling a plan cancels the HTTP call`() = runBlocking<Unit> {
+        val cancelled = CompletableDeferred<Unit>()
+        client = MonetClient(
+            { config },
+            dispatchers,
+            OkHttpClient.Builder()
+                .eventListener(object : EventListener() {
+                    override fun canceled(call: Call) {
+                        cancelled.complete(Unit)
+                    }
+                })
+                .build(),
+        )
+        server.enqueue(answer(BALANCED_JSON).setHeadersDelay(SLOW_S, TimeUnit.SECONDS))
+
+        val job = launch(Dispatchers.IO) { client.plan(image(), AutoStyle.Balanced) }
+        server.takeRequest()
+        job.cancelAndJoin()
+
+        withTimeout(CANCEL_WAIT_MS) { cancelled.await() }
     }
 
     // ---- fixtures --------------------------------------------------------
@@ -294,6 +395,12 @@ class MonetClientTest {
         const val HTTP_UNAUTHORIZED = 401
         const val HTTP_SERVER_ERROR = 500
         const val HTTP_TOO_MANY = 429
+        const val HTTP_UNAVAILABLE = 503
+        const val HTTP_NOT_FOUND = 404
+        const val NANOS_PER_SECOND = 1_000_000_000L
+        const val PROBE_CEILING_S = 9L
+        const val SLOW_S = 2L
+        const val CANCEL_WAIT_MS = 5_000L
         const val BALANCED_JSON = """{"Exposure": 10}"""
     }
 }

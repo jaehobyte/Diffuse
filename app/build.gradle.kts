@@ -10,6 +10,14 @@ android {
 
     defaultConfig {
         applicationId = "com.diffuse"
+
+        // The APK that scripts/install.sh builds carries the working server addresses out of
+        // `.env` (core/ai/build.gradle.kts). Say so in the version name, so a build that is
+        // carrying credentials is recognisable on the device and never mistaken for a
+        // publishable one.
+        if (providers.gradleProperty("diffuse.localCreds").isPresent) {
+            versionNameSuffix = "-local"
+        }
     }
 }
 

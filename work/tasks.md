@@ -1,723 +1,115 @@
-# tasks.md — Ralph loop task queue
+# Task
 
-T01–T56 are done. What each one built is in `progress.md` under `## Done`, why it was built that
-way is in `work/decisions.md`, and the `done when` checklists are in git history. None of it is
-repeated here: this file is read on every loop iteration, so it holds only what is still open.
+## Goal
 
-Rules for the agent: unchanged — see CLAUDE.md "Ralph loop rules". One task per iteration,
-`scripts/check.sh` is the only verdict, only edit checkboxes in this file.
+다운로드한 앱의 피부 보정을 실제 사용 가능하게 구현하고, AI → 자동의 서버 연결 실패를 해결하여 수정 APK에서 보정·미리보기·적용·저장까지 검증한다.
 
-Legend: `[ ]` todo · `[x]` done · `[!]` blocked · `[H]` human-only, loop must skip
+## Background
 
----
+사용자 보고(2026-09-14): 피부 보정에 들어가도 기능을 사용할 수 없고, AI → 자동은 “자동 보정 서버에 연결하지 못했어요”를 표시한다. 문구 변경이나 메뉴 숨김만으로 해결한 것으로 판정하지 않는다.
 
-## Queue
+저장소 확인 결과:
 
-**Phase 14 is done: T71–T78 are all `[x]`.** Nothing is open. T57 and T66 are `[!]`;
-T66 has one prerequisite left, not two — the bench number is in `work/decisions.md` and it says the
-budget is missed. Pick the first `[ ]` whose deps are all `[x]`, as always.
+- `SkinRetouchSheet.kt`는 준비 중 안내와 네 항목 미지원, `applyEnabled = false`인 placeholder다. `AiModule.kt`에 production `SkinRetouchProvider` binding이 없다. 클릭 이벤트만 수정해서 해결할 수 없다.
+- 얼굴 분석 계약과 미커밋 잡티 검출기 평가 구현은 있지만 검출기는 복원 엔진이 아니다. 기존 `work/RESULT.md`는 PARTIAL이며 보호 피부 mask, 실제 복원 provider, SR1 품질 gate, 편집·저장 연결이 남았다고 명시한다. ONNX 실행은 debug 평가 경로이고 일반 배포 모델 준비 경로가 없다.
+- `MonetAutoEnhanceProvider`는 settings Flow 방출 시에만 health를 확인한다. 최초 실패 후 같은 설정에서 서버가 복구돼도 재확인 경로가 없다. `health()`는 HTTP 실패를 Boolean으로 축약하고 `AutoController.onToolTapped()`는 실패 메시지만 표시하며 진입을 거부한다. controller 초기값도 연결 실패여서 확인 중 tap을 실패로 안내할 수 있다.
+- `MonetSettings`의 저장 override가 빌드 기본값보다 우선한다. `scripts/install.sh`는 `-Pdiffuse.localCreds`로 개인 설정을 사용하는 반면 일반 다운로드 APK가 동일 설정을 가진다고 보장할 수 없다.
+- `/home/jaeho/monetGPT/work/RESULT.md`에는 실제 모델 추론과 2026-09-14 smoke 성공이 기록돼 있지만 휴대폰 연동은 미검증이다. 같은 T4에서 SAM3와 동시 상주가 실패했다고 기록돼 있다. 이는 현재 기기 연결 실패 원인의 확정 증거가 아니다.
+- 실제 설치 APK 버전, 현재 서버 접근성은 아직 확인하지 않았다. 작업서 작성 중 기기 재현·서버 호출·빌드·테스트는 실행하지 않았다.
 
----
+이전 서버 작업서는 `work/tasks_monet_server_2026-09-10.md`, 검출기 작업서는 `work/tasks_acne_detector_2026-09-09.md`에 보존한다. 작업 시작 시 기존 미커밋 변경과 RESULT/REVIEW를 확인하고 보존한다. 이전 결과 문서는 새 결과로 덮어쓰기 전에 별도 보관한다.
 
-## Already built — do not re-open
+## Scope
 
-**Mask-scoped local editing is finished** (T29–T33, specs/selection_tool.md §8.1). A SAM 3 selection
-is `Operation.Mask` + `activeMaskId`; `Operation.Adjust` carries a `maskId`; the renderer does
-`out = lerp(in, op(in), maskAlpha)`; all three adjust sheets show the "선택 영역에만" toggle through
-`MaskOption`; and the render golden `exposure_+0.5_masked` plus `MaskedAdjustToggleTest` cover it.
+### Modify
 
-**지시 is finished** (Phase 9, T44–T48, specs/vibe_edit.md). One sentence becomes a plan of
-`PlanStep`s that `PlanRunner` executes against the providers the manual tools already use.
-
-**Phase 10's three device defects are fixed** (T49–T53): the renderer walks operations in list
-order, the erase mask carries a margin, and both prompts were rewritten. T53 proved the
-generative + adjust combinations against the real renderer without adding production code.
-
-**혼합 is finished** (Phase 11, T54–T56, specs/adjust_hsl.md): eight hue bands × 색조/채도/휘도 as
-24 appended `AdjustKind` entries, the `Tool.Mix` sheet, and the planner's fifth function
-`adjust_color_range`.
-
-None of it is verified on a device beyond the 2026-09-06 run — see `progress.md` "Open issues for a
-human". That is a human's job, not a task.
-
----
-
-## Prerequisites (human work, not a task — the loop must never pick this up)
-
-- [H] **minSdk 26 → 33 in `gradle/libs.versions.toml`.** T66 (the AGSL backend) cannot start
-  without it: `RuntimeShader` arrives at API 33. CLAUDE.md freezes that file, and this is a product
-  decision as much as a technical one — it drops Android 8 through 12. The same change must correct
-  `specs/architecture.md` §2 and imaging.md's "minSdk is 26 and HEIF decoding only arrives at
-  API 28", which becomes wrong rather than merely stale. See gpu_render.md §1.
-- [H] **A `scripts/bench.sh` number showing the render budget is missed.** Also T66. Porting a
-  renderer that already meets its budget is work with no user-visible result. Measure the six-HSL-
-  adjust case specifically (gpu_render.md §1). If the budget is met, T66 closes as "not needed" and
-  the numbers go in `work/decisions.md` — that is a good outcome, not a failure.
-
-Nothing runs for real without this either: **a human must paste a Gemini API
-key into the 서버 설정 sheet on the device**, and point `sam3.baseUrl` / `sam3.token` at a running
-service. No key is shipped, committed, or read from `.env` at build time — see generative_erase.md
-§2. Every test uses `FakePlanProvider`, `FakeSegmentationProvider`, `FakeEraseProvider` or
-`MockWebServer`, so `check` is green with no key and no server at all.
-
-If a task hits a missing prerequisite, mark it `[!]` and write the reason in `blocked.md`. Do not
-add the dependency yourself.
-
----
-
-## Open decisions — a human answers these, the loop must not
-
-### From Phase 10
-
-Both come out of the same device finding: **SAM 3's text endpoint understands English concepts, not
-Korean.** T52 fixed it for the 지시 tool, where the model writes the phrase. These are what to do
-next if the answers differ from the defaults T52 took.
-
-1. **The 선택 tool's own prompt bar is still Korean.** There the *user* types the phrase, and
-   "나무" reaches `byText` unchanged and finds nothing. The options are a translation call before
-   every `byText` (a second model round trip on a path that is currently one), an English
-   placeholder and a hint line, or leaving it. Each needs a different amendment to
-   prompt_input.md §4, so the loop cannot choose.
-
-2. **English nouns in the 지시 step list.** T52 renders "bus 선택", which is honest and costs
-   nothing. The alternative is a second `label` argument on `select_region` carrying Korean for
-   display — better reading, but it puts a model-authored string on screen, which vibe_edit.md §3
-   currently forbids. That is a spec amendment to §4 and §11, not a task.
-
-### From Phase 11
-
-3. ~~**render.md line 54**~~ — **resolved.** The sentence now points at adjust_hsl.md §10 for the
-   HSL kinds. Done outside the loop, since `specs/*.md` is frozen for it.
-4. **adjust_hsl.md §7's two rulings** — the selected chip is an `editInk` ring rather than the
-   accent, and 색조 labels both `color_tint` and `mix_hue` — were taken on DESIGN.md's behalf and
-   are now recorded in T55's goldens. Overruling them from here means re-recording those goldens.
-
----
-
-## Phase 12 — 자르기를 시킬 수 있게, 만들 수 있게, 넓힐 수 있게
-
-Five things the user asked for after the first device run: a sheet-cancel bug, a sixth planner
-function, a generative tool that takes a noun, a tool that draws past the frame, and the AGSL port
-that has been Deferred since T01.
-
-**Read the spec before coding.** Three of these have specs written from scratch —
-`specs/generative_fill.md`, `specs/outpaint.md`, `specs/gpu_render.md` — and the rest amend existing
-ones. The `spec:` line on each task is not optional reading.
-
-The one thing genuinely new to the architecture is `Operation.Outpaint`: it is the **only** op that
-makes the canvas bigger. outpaint.md §2–§3 is the whole reason it has the shape it does, and it
-names the two designs it rejects. If a task there looks like it needs a second coordinate space, the
-design drifted — block it rather than adding one.
-
-- [!] T57 A sheet's 취소 must not tap the tool underneath it
-  spec: specs/editor_shell.md ("Sheets slide up over the tool strip"), DESIGN.md §4 (Bottom sheet)
-  deps: —
-  report: "종종 디테일 탭 눌렀다가 취소하면 그 다음에 빛 탭이 뜨는데 이건 누른적이 없는데 왜
-  뜨는거지" — cancelling a sheet opens a tool the user never tapped.
-  blocked: not reproducible off-device; the fall-through hypothesis is **disproven**. See
-  `blocked.md`. Three reproduction attempts are committed as `SheetCancelTest` and pass.
-  done when:
-    - **a failing test first.** `EditSheet`'s `[취소 | 적용]` row is the last row of a bottom-aligned
-      sheet, so 취소 sits directly over the tool strip's leftmost item, 빛 — `EditorScreen.kt`'s
-      `SheetOverlay` is a plain `Box` at `Alignment.BottomCenter` over `EditorBody`, with no scrim
-      and no animation. Reproduce **that**: a click on 취소 leaves `selectedTool` null and opens no
-      second sheet
-    - if it cannot be reproduced within the attempt budget, **mark the task `[!]` and write what was
-      tried in `blocked.md`.** Do not "fix" an unreproduced bug — the geometry above is a hypothesis,
-      and a speculative change here is untestable and unreviewable
-    - the fix makes the sheet consume pointer input so nothing beneath it is hit-testable while it is
-      open. **A full-screen scrim is not an acceptable fix**: DESIGN.md §4 gives these sheets no
-      scrim, and adding one is a design change wearing a bug fix's clothes
-    - companion cleanup, same task because it is the same defect's other half:
-      `EditorRoute.sheetFor()` returns a non-null lambda whenever `document != null`, **even with
-      `selectedTool == null`**, so `EditorScreen`'s `sheet != null` no longer means "a sheet is open"
-      and `canvasInset` is computed from that. It must return null when no sheet is open
-    - every existing sheet golden passes **without re-recording**. This changes input handling, not
-      layout; a golden that moves means the fix reached too far
-    - one test covers 빛, 색, 혼합 and 디테일 at once, since all four share `EditSheet`
-  touches: feature/editor/EditorScreen.kt, feature/editor/EditorRoute.kt, feature/editor tests
-
-- [x] T58 `crop_ratio` — the planner's sixth function
-  spec: specs/vibe_edit.md §4, §4.1, §5, §7, §9.1, §9.2, §11; specs/crop.md
-  deps: —
-  done when:
-    - `crop_ratio(ratio: enum{square, portrait_4_5, story_9_16, landscape_16_9})` declared in
-      `GeminiPlanCatalog` per §4.1, as English `internal` constants beside the other five. Wire
-      payload, so **not** in `strings.xml`. `Free` is not a wire value — a model choosing 자유 is
-      choosing nothing
-    - `PlanStep.Crop(ratio)` and `enum class CropRatio` in `core:ai` (ai_provider.md §3). `CropRatio`
-      maps to `AspectPreset` at the `feature:editor` boundary — **`core:ai` does not reach for crop
-      geometry**, and the module edge stays "`AdjustKind`, and now `CropRatio`"
-    - `GeminiPlanClient` normalizes per §5: **keep the last `crop_ratio`, move it to the end** of the
-      step list, whatever order the model emitted. No other step is reordered. An unknown `ratio`
-      drops the step and later steps survive
-    - `PlanRunner`'s `Crop` step commits
-      `CropState.from(document, sourceAspect).withPreset(preset).applyTo(document)` — **no new
-      geometry.** `CropGeometry.applyPreset` already computes the centred rect the chips use; writing
-      a centred-rect helper here means the existing one was not found
-    - `validate` gains **no clause**: a `Crop` consumes no selection. Needing a new rule in §9.1
-      means the step is carrying more than a ratio
-    - the hand-off is `EditorViewModel`'s, not the runner's: when the run ends, if the plan's last
-      step was a `Crop`, call `onToolClick(Tool.Crop)` once the sheet has closed. `RunEvent` and the
-      runner's constructor are **unchanged**
-    - `PLAN_SYSTEM_INSTRUCTION` gains §4's two new rules (crop at most once; never to "improve"
-      framing the user did not ask to reframe) and one worked example, and nothing else
-    - `direct_step_crop` in `feature/editor` `strings.xml`, rendering the preset's own chip label
-    - tests: §12's planner list, plus the recorded body declaring six functions; a `crop_ratio` sent
-      first still decodes last; two of them decode to one; `[Select, Adjust, Crop]` leaves the `Crop`
-      last in `document.operations`; the ViewModel opens 자르기 after such a run
-  touches: core/ai/gemini/GeminiPlanCatalog.kt, core/ai/gemini/GeminiPlanClient.kt,
-  core/ai/EditPlanProvider.kt, core/ai tests, feature/editor/tools/direct,
-  feature/editor/EditorViewModel.kt, feature/editor strings.xml, feature/editor tests
-
-- [x] T59 `Operation.GenerativeFill` — the op, the blend, the round trip
-  spec: specs/generative_fill.md §5, §9; specs/edit_model.md; specs/render.md
-  deps: —
-  done when:
-    - `Operation.GenerativeFill(id, maskId, resultRef, prompt)` in `core/imaging/model`, and
-      `document.withGenerativeFill(...)` beside `withGenerativeErase`
-    - the renderer dispatches it from T49's **existing** in-order walk with one new `when` branch and
-      the **same** `lerp(in, result, maskAlpha)` composite. **No new renderer path.** If the blend
-      looks like it needs changing, stop and re-read render.md
-    - `maskId` validation, file lifetime (`fill_<id>.png`) and history reuse `GenerativeErase`'s
-      rules with no special case anywhere
-    - the JSON root `v` stays **1**: only an op type was added, and an older build drops it and still
-      loads the document (edit_model.md Serialization)
-    - `prompt` round-trips. edit_model.md now records why this op stores one and `Mask` does not
-    - render golden `generative_fill_render`, listed in `golden_manifest.txt` under a `# T59`
-      heading. Nothing else in that manifest moves
-    - order test: `[Mask, GenerativeFill, Adjust(masked)]` leaves the adjustment visible **inside**
-      the filled region — T49's rule, re-checked for the new op
-    - the existing render goldens pass **without re-recording**
-  touches: core/imaging/model/Operation.kt, core/imaging/model (document helpers),
-  core/imaging/render/Renderer.kt, core/imaging (serialization), core/imaging tests,
-  core/imaging/src/test/resources/golden, core/imaging/src/test/resources/golden_manifest.txt
-
-- [x] T60 `FillProvider`, and the instruction becomes an argument
-  spec: specs/generative_fill.md §3, §4, §9; specs/ai_provider.md §3; specs/generative_erase.md §4, §5
-  deps: —
-  done when:
-    - `GeminiEraseClient` exposes `edit(image, instruction)`. **The class is not renamed** and
-      `GeminiEraseProvider` keeps `ERASE_INSTRUCTION`. Every `GeminiEraseClientTest` case passes
-      unchanged apart from supplying the instruction; needing to edit one means the parameter landed
-      in the wrong place
-    - `FillProvider` in `core:ai` beside `EraseProvider` (ai_provider.md §3), and `GeminiFillProvider`
-      running generative_erase.md §7's five steps verbatim, plus a blank-prompt guard before any
-      encoding
-    - `WhiteFill` and `GeminiImageCodec` are **reused unchanged**. A second white-fill is the signal
-      the design drifted
-    - `FILL_INSTRUCTION` per §3, an English `internal` constant, including the fallback sentence that
-      degrades an unfillable prompt into a continuation rather than a failure
-    - T51's still-white guard applies here too, at the **same** threshold constant — not a second one
-    - error mapping is generative_erase.md §6 row for row. **No new `AppError` case**
-    - `AiModule` gains `@Binds fun fill(impl: GeminiFillProvider): FillProvider`. No existing binding
-      changes
-    - `FakeFillProvider` in `core/ai/src/testShared` beside the other three, deterministic enough for
-      a golden to depend on
-    - tests: §9's client and provider lists, including the load-bearing one — decode the recorded
-      body, assert a masked pixel is white and the prompt is in the instruction verbatim
-  touches: core/ai/gemini, core/ai (the provider interface file), core/ai/AiModule.kt,
-  core/ai/src/testShared, core/ai tests
-
-- [x] T61 채우기 — the tool and its sheet
-  spec: specs/generative_fill.md §6, §7, §9; specs/prompt_input.md §2–§3; specs/editor_shell.md; DESIGN.md §4
-  deps: T59, T60
-  done when:
-    - `Tool.Fill(editor_tool_fill, …, isAi = true)` inserted **after `Tool.Erase`**, so the two
-      generative region tools sit together. `Tool` is not serialized anywhere, so nothing migrates
-    - `FillSheet`: title, `VoicePromptBar` with the §7 placeholder through T48's `placeholder`
-      parameter, pinned [취소 | 적용]. **The three prompt-bar goldens pass without re-recording**
-    - 적용 is disabled while the prompt is blank, through `EditSheet.applyEnabled` — an existing
-      parameter, not a new one. The send icon stays `editInk`: **the sheet's one accent is 적용**
-      (DESIGN.md §4 prompt bar), so this sheet commits the way every other one does
-    - `FillController` owns the call and the state, shaped like `EraseController`, including the
-      controller-returns-an-intent pattern for a blank key opening the 서버 설정 sheet. One settings
-      sheet, one owner
-    - on failure the sheet stays open with the prompt intact; cancelling commits nothing
-    - the §7 strings in `feature/editor` `strings.xml`; nothing hardcoded in a Composable
-    - goldens `fill_sheet_open` and `fill_sheet_typed`; `editor_shell_default` re-recorded **for one
-      reason only** — the strip gains a ninth item — and the commit message says so
-    - tests: §9's tool list
-  touches: feature/editor/tools/fill, feature/editor/Tool.kt,
-  feature/editor/tools/ToolSheetHost.kt, feature/editor/EditorViewModel.kt,
-  feature/editor/EditorRoute.kt, feature/editor strings.xml, feature/editor tests,
-  feature/editor screenshot goldens
-
-- [x] T62 `fill_selection` — the planner's seventh function
-  spec: specs/generative_fill.md §8, §9; specs/vibe_edit.md §4, §5, §9.1, §9.2, §11
-  deps: T58, T60, T61
-  note: T58 is a dep only because both tasks add to the same catalog and this one's test asserts
-  the count. Running them the other way round would make that assertion read six, not seven.
-  done when:
-    - `fill_selection(prompt: string)` declared in `GeminiPlanCatalog` per §8, English `internal`
-      constants beside the other six
-    - `PlanStep.Fill(prompt)` in `core:ai`; `PlanRunner` gains the `FillProvider` and a
-      `saveFillResult` lambda (vibe_edit.md §9), and the `Fill` row of §9.2
-    - `validate` needs **no new rule** — `Fill` consumes a selection, which §9.1 already covers.
-      Adding a clause means the step is carrying more than a prompt
-    - `PLAN_SYSTEM_INSTRUCTION` gains §8's one rule — 채우기 replaces, 지우기 removes — and one
-      worked example, and nothing else
-    - the model writes `prompt` in English, per T52's existing rule. `direct_step_fill` renders it
-      through the §11 template: the same open question `direct_step_select` already carries, and not
-      a new one to solve here
-    - a blank or absent `prompt` **drops the step**; later steps survive
-    - tests: §9's planner list, including the recorded body declaring seven functions
-  touches: core/ai/gemini/GeminiPlanCatalog.kt, core/ai/gemini/GeminiPlanClient.kt,
-  core/ai/EditPlanProvider.kt, core/ai tests, feature/editor/tools/direct,
-  feature/editor/EditorViewModel.kt, feature/editor strings.xml, feature/editor tests
-
-- [x] T63 `Operation.Outpaint` — the one op that makes the canvas bigger
-  spec: specs/outpaint.md §2, §3, §4, §8; specs/edit_model.md; specs/render.md; specs/crop.md
-  deps: —
-  done when:
-    - **read outpaint.md §2 and §3 before writing a line.** The coordinate-space decision is the
-      whole design, and the two rejected alternatives are named there so they are not re-invented
-    - `Margins` and `Operation.Outpaint(id, margins, resultRef)` in `core/imaging/model`;
-      `MAX_MARGIN_FRACTION = 0.5f` is one named constant with §3's sentence as its KDoc
-    - `withOutpaint` **inserts at index 0** and replaces an existing one. A document holds at most one
-    - `withOutpaint` **refuses** while any `Mask`, `CutOut`, `GenerativeErase` or `GenerativeFill` op
-      exists, and **re-normalizes an existing `Crop.rect`** with §3's arithmetic. Both are
-      model-layer rules, not tool-layer ones, so neither the tool nor a future planner can bypass them
-    - the renderer gains render.md's Pipeline step 2 and nothing else: the expanded canvas,
-      `resultRef` scaled to fill it, the decoded source drawn into the interior with an
-      `OUTPAINT_BLEND_PX = 8` alpha ramp. §4 records why this departs from generative_erase.md §11's
-      hard edge
-    - `Renderer.full` composes the stored PNG rather than dropping it, and the interior is the
-      **full-resolution source**, not the model's upscaled version — that is the entire reason §3
-      chose this shape over flattening. A golden samples well inside the ramp and proves it
-    - `onProgress` still reaches exactly 1f and never goes backwards
-    - the JSON root `v` stays **1**
-    - goldens `outpaint_render` and the interior-fidelity case, under a `# T63` heading in
-      `golden_manifest.txt`. Every existing render golden passes **without re-recording**
-    - tests: §8's geometry and document lists — the crop re-normalization is the identity at zero
-      margins and round-trips through 0.25
-  touches: core/imaging/model/Operation.kt, core/imaging/model (document helpers),
-  core/imaging/render/Renderer.kt, core/imaging tests,
-  core/imaging/src/test/resources/golden, core/imaging/src/test/resources/golden_manifest.txt
-
-- [x] T64 `WhitePad` and `OutpaintProvider`
-  spec: specs/outpaint.md §5, §8; specs/ai_provider.md §3; specs/generative_erase.md §4
-  deps: —
-  done when:
-    - `WhitePad.apply(image, margins)` beside `WhiteFill` in `core/ai/gemini`: a new ARGB_8888 canvas
-      with the new border opaque `#FFFFFF`, the interior copied verbatim, the input untouched
-    - `OutpaintProvider` and `Margins` in `core:ai` (ai_provider.md §3); `GeminiOutpaintProvider`
-      posting through the **same** `GeminiEraseClient.edit` seam T60 adds, with its own English
-      `internal` instruction constant
-    - **the aspect guard of §5**: an answer whose aspect differs from the request by more than 2%
-      fails with `Unsupported` rather than being scaled into place. generative_erase.md §11 accepted
-      that risk without a guard because nothing outside its mask could move; here the whole frame is
-      at stake, so the guard is written
-    - T51's still-white guard applies, measured over the **border** rather than a mask, at the same
-      threshold constant
-    - error mapping is generative_erase.md §6 row for row. **No new `AppError` case**
-    - `AiModule` gains one `@Binds`; no existing binding changes. `FakeOutpaintProvider` in
-      `core/ai/src/testShared`
-    - tests: §8's `WhitePadTest` and provider list, including decoding the recorded body and sampling
-      a **border** pixel white
-  touches: core/ai/gemini, core/ai (the provider interface file), core/ai/AiModule.kt,
-  core/ai/src/testShared, core/ai tests
-
-- [x] T65 확대 — the overlay and the sheet
-  spec: specs/outpaint.md §6, §7, §8; specs/canvas.md; specs/crop.md; DESIGN.md §2, §4, §5
-  deps: T63, T64
-  done when:
-    - `Tool.Expand(editor_tool_expand, …, isAi = true)` inserted after `Tool.Fill`
-    - the overlay claims canvas.md's **single** overlay slot the way 자르기 does: the pending margins
-      drawn with the 8dp `canvasCheckerA`/`canvasCheckerB` pattern DESIGN.md §2 already defines for "no pixels here",
-      and four 24dp edge handles with 48dp hit areas that **drag outward only**, clamping at
-      `MAX_MARGIN_FRACTION`. No rubber-band, no snap. A drag outside a handle pans the canvas
-    - `ExpandSheet` per §6: title, the ratio readout in `mono` (DESIGN.md §3's role for computed
-      numbers), pinned [취소 | 적용] with 적용 the sheet's one accent. **No prompt bar** — §6 says why
-    - 적용 disabled while every margin is 0; the mask-op guard greys the tool with
-      `expand_after_mask`; a blank key opens the 서버 설정 sheet through the same intent shape
-    - cancelling leaves the document byte-for-byte untouched; a failure leaves the sheet open with
-      the margins intact
-    - the §7 strings in `feature/editor` `strings.xml`; nothing hardcoded in a Composable
-    - goldens `expand_overlay` and `expand_sheet_open`; `editor_shell_default` re-recorded **for one
-      reason only** — the strip gains a tenth item
-    - tests: §8's tool list
-  touches: feature/editor/tools/expand, feature/editor/Tool.kt,
-  feature/editor/tools/ToolSheetHost.kt, feature/editor/EditorViewModel.kt,
-  feature/editor/EditorRoute.kt, feature/editor strings.xml, feature/editor tests,
-  feature/editor screenshot goldens
-
-- [!] T66 The AGSL render backend (was D03)
-  spec: specs/gpu_render.md; specs/render.md; specs/adjust_hsl.md §10
-  deps: both `[H]` prerequisites above
-  blocked: a human must bump minSdk to 33 on a frozen file, **and** produce a `scripts/bench.sh`
-  number showing the render budget is actually missed. See `blocked.md`.
-  done when:
-    - `scripts/check.sh` green with `golden_manifest.txt` **untouched** and the 2/255 · 99.9%
-      tolerance **untouched**. That is the whole success criterion
-    - no golden re-recorded. Not one. A kind whose shader cannot match its golden stays on the CPU
-      implementation — partial adoption is an acceptable outcome, a re-recorded golden is not
-    - `Renderer`'s interface and `Ops.kt`'s signatures unchanged; the port replaces internals
-    - **no `Build.VERSION` check anywhere.** With minSdk 33 there is one implementation or none
-      (gpu_render.md §2); a version branch means the prerequisite was skipped
-    - the masked composite, `GenerativeErase`, `GenerativeFill`, `Outpaint` and `Crop` stay on the
-      Canvas path — they composite, they do not compute
-    - bench numbers before and after, in the commit message **and** in `work/decisions.md`
-    - shader chaining (gpu_render.md §4 step 3) is **out of scope** and becomes its own task if the
-      numbers still ask for it
-
----
-
----
-
-## Phase 13 — what the second device run found
-
-The 2026-09-06 evening run, on a second device (SM-S948N). Three defects, two of them in the same
-report. T68 needed one human answer — which ratios the app offers — and got option 1.
-
-- [x] T67 채우기 sends a rectangle, not the silhouette
-  spec: specs/generative_fill.md §2, §4, §6, §9; specs/generative_erase.md §4, §10; specs/vibe_edit.md §9.2
-  deps: —
-  report: "채우기 할때는 segmask를 그대로 이용하면 안되고 mask top x, y, bottom x, y를 이용한
-  바운딩 박스에 마진을 30퍼 정도 준 직사각형 마스크로 해서 생성해야돼."
-  why: a silhouette tells `gemini-2.5-flash-image` to paint the requested thing **into the shape of
-  the thing that was there**. 지우기 wants exactly that (T50's margin only widens it); 채우기 does
-  not — a red umbrella asked for in the shape of a chair comes back as a chair-shaped smear.
-  done when:
-    - `FillMask` in `feature/editor/tools/fill`: the bounding box of the mask's set pixels, each
-      side moved outward by `MARGIN_FRACTION`, clamped to the bitmap, returned as a **binary
-      rectangle** at the mask's size. An empty mask returns null rather than a full-frame rectangle
-    - the rectangle is what the **document stores**, not only what goes on the wire. The renderer
-      composes `lerp(in, result, maskAlpha)`, so a result composited through the silhouette would
-      throw away everything the model painted outside it — T50's argument, re-made for the fill
-    - `FillCommit` beside `EraseCommit`, storing the rectangle as its own `Operation.Mask` and
-      naming it from the `GenerativeFill`. `activeMaskId` **stays on the user's own selection**, so
-      a following adjust or cut-out is still theirs
-    - both fill paths go through it: the 채우기 tool and `PlanRunner`'s `Fill` step. Two copies of
-      "which mask did we fill through" is how the two paths drift apart
-    - `FakeFillProvider` still fills what it is given, so a test asserting the mask is a rectangle
-      asserts it about the real argument
-    - tests: the box of an off-centre blob; the margin; clamping at every edge; an empty mask; the
-      op names the rectangle and not `activeMaskId`; the plan path and the tool path agree
-  touches: feature/editor/tools/fill, feature/editor/tools/direct/PlanRunner.kt,
-  feature/editor/EditorViewModel.kt, feature/editor tests
-
-- [x] T68 "인스타그램 용으로" must not crop to 1:1
-  spec: specs/vibe_edit.md §4, §4.1, §5; specs/crop.md; specs/ai_provider.md §3
-  deps: —
-  report: "바이브로 인스타그램 용으로 만든다고 하면 왜 1:1로 크롭되지? 인스타용은 3:4나 4:3
-  이어야해."
-  resolved: the human chose **option 1**. `CropRatio` has no 3:4 and no 4:3, so: The closed set is {square, portrait_4_5,
-  story_9_16, landscape_16_9}, and vibe_edit.md §4.1's whole argument for closing it is that the
-  model contributes no geometry. Adding the two the report names is not a prompt fix: it changes
-  `CropRatio` (ai_provider.md §3) *and* `AspectPreset`, which drives the 자르기 chip row — five
-  chips become seven, and `CropSheet` lays them out in a plain non-scrolling `Row`. So it is a
-  spec amendment plus a layout change plus a re-recorded `crop_sheet_open`, and which ratios the
-  app offers is a product decision. A human picks one:
-    1. **Add `portrait_3_4` and `landscape_4_3`**, make the chip row scroll, re-record the golden.
-       What the report literally asks for.
-    2. **Point Instagram at the existing `portrait_4_5`** — a prompt-only fix. 4:5 is Instagram's
-       own feed portrait standard, and 0.8 against 3:4's 0.75 is a 6% difference. Cheapest, and
-       nothing in the closed set moves.
-    3. Add only `portrait_3_4`, replacing `portrait_4_5`. Keeps the chip count, breaks any
-       document already cropped to 4:5 only in the sense that its `AspectPreset` no longer exists.
-  done when (whichever option is chosen):
-    - `PLAN_SYSTEM_INSTRUCTION` gains the rule that a bare platform name ("인스타", "인스타그램")
-      is a **feed** request and not a square one, plus one worked example. §4's "call it at most
-      once, it always runs last" is unchanged
-    - the existing `"인스타 스토리에 올리게 잘라줘" -> story_9_16` example still holds: a story is
-      still 9:16, and only the bare-feed case moves
-    - tests: §12's planner list, plus a bare "인스타그램에 올릴거야" decoding to the chosen ratio
-  touches: core/ai/gemini/GeminiPlanCatalog.kt, core/ai tests, and — for option 1 or 3 —
-  core/ai/EditPlanProvider.kt, feature/editor/tools/crop, feature/editor screenshot goldens
-
-- [x] T69 자르기 opens on the cropped image instead of the source
-  spec: specs/crop.md ("opening 자르기 refits to the un-cropped source"); specs/render.md
-  deps: —
-  report: "1:1로 안내되긴 하는데 크롭 사각형이 1:1이 아니라 원본 이미지가 1:1로 변하고 거기에
-  크롭 직사각형이 뜨네..?"
-  why: this is the open issue `progress.md` has carried since T24, made visible by T58. A plan that
-  ends in `crop_ratio` commits the `Crop` and *then* opens 자르기, so the preview the overlay sits
-  on is already cropped — the photo looks squished to the new ratio and the rect sits on top of it.
-  Nothing is wrong with the rect; it is the image underneath.
-  done when:
-    - while 자르기 is open the preview renders the document **minus its `Crop`**. Nothing else is
-      dropped: an outpaint, an erase and every adjust still show, because the user is framing the
-      photo they actually have
-    - the transition is driven from **one** place, not from each of `onToolClick`, `cancelSheet`
-      and `applySheet` — three call sites is how one of them gets forgotten
-    - `CropState.from(document, sourceAspect)` is untouched: the rect was always right
-    - committing 적용 leaves the preview cropped again, and 취소 leaves it exactly as it was
-    - `EditorViewModel` gains **no function**: it is at detekt's ceiling (T65)
-    - tests: opening 자르기 on a document that already has a `Crop` renders the un-cropped
-      document; closing it renders the cropped one; a plan ending in `crop_ratio` lands in the same
-      state as a tap on the tool
-  touches: feature/editor/EditorViewModel.kt, feature/editor tests
-
-- [x] T70 채우기 belongs under the adjust stack too
-  spec: specs/generative_fill.md §5; specs/generative_erase.md §10; specs/edit_model.md
-  deps: —
-  found: while merging `origin/main` into `dev_outpainting`. `e3b00c5` fixed this for 지우기 —
-  `EraseInput` renders the frame without the `Adjust` ops and `EraseCommit.underTheAdjustments`
-  places the result under them — and 채우기 has the identical defect, because T59 appends
-  `GenerativeFill` and `FillController` is handed `state.preview`, which is adjusted.
-  why: the result carries its own pixels, so whatever is baked into them can never be
-  re-adjusted. An `Adjust` made *before* the fill stays pinned in front of it and the fill result
-  then overwrites the region it just produced: re-dragging that slider moves the rest of the photo
-  and stops reaching the filled region. Exactly the argument `e3b00c5` makes, one op over.
-  done when:
-    - `eraseInput` is reused, not copied — it is already "the frame minus the adjustments" and
-      names nothing erase-specific except its own name. Rename it or leave it; do not write a
-      second one
-    - `FillCommit` places the `GenerativeFill` under the adjust stack the way `EraseCommit` does.
-      If both need the same list surgery, it moves to one place rather than being written twice
-    - the 지시 tool's `Fill` step gets the same frame, so a plan and a tap still agree (T53's
-      property)
-    - **확대 needs nothing**: `ExpandController` already sends the bare source and `withOutpaint`
-      already inserts at index 0, which is under everything. Check this rather than assuming it
-    - tests: an `[Adjust, Fill]` document re-renders the filled region when the adjust changes;
-      the fill's input carries no adjustment; the plan path and the tool path agree
-  touches: feature/editor/tools/fill, feature/editor/tools/erase/EraseInput.kt,
-  feature/editor/EditorViewModel.kt, feature/editor/tools/direct/PlanRunner.kt,
-  feature/editor tests
-
----
-
-## Phase 14 — 스타일, 자동 보정, and a strip that fits
-
-Four things the user asked for after the second device run. Three of them add a tool, which is why
-the fourth exists.
-
-**Read the spec before coding.** Three are written from scratch — `specs/style_match.md`,
-`specs/auto_enhance.md`, `specs/tool_groups.md`.
-
-**T71 is the gate.** Both `styles.json` and MonetGPT speak in tone operations `AdjustKind` does not
-have, and all twelve styles use at least one of them. Nothing in T72–T77 can be honest before it.
-
-- [x] T71 The tone ops a preset needs: Blacks, Whites, Fade, SCurve, Clarity
-  spec: specs/style_match.md §3.1; specs/auto_enhance.md §3; specs/adjust_light.md;
-  specs/render.md; specs/adjust_hsl.md §5 (the ordering argument)
-  deps: —
-  why: `AdjustKind` covers exposure, contrast, highlights, shadows and the 24 HSL entries, and
-  misses the tone curve's two endpoints. MonetGPT emits `Blacks` and `Whites` in four of its six
-  tone operations; every one of `styles.json`'s twelve styles uses at least one of these five.
-  done when:
-    - five entries appended to `AdjustKind` — `Blacks`, `Whites`, `Fade`, `SCurve`, `Clarity` — and
-      appended is the word: T54 established that 24 could be added without touching the renderer,
-      the serializer or the document model, and this is the same move
-    - `Ops.kt` gains one function per kind. `Blacks`/`Whites` are the endpoints `Shadows`/
-      `Highlights` already imply, so they reuse that curve rather than introducing a second; `Fade`
-      lifts black; `SCurve` is one curve, not two chained adjusts; `Clarity` is midtone local
-      contrast
-    - **no new `Operation`.** These are `Adjust` kinds. A kind that cannot be a scalar in −1..1 is
-      not in this task
-    - `labelRes()` comes along, because five new kinds make its `when` non-exhaustive — T54's
-      precedent
-    - `grain`, `color_grading`, `dehaze` and `bw_filter` are **out of scope** and named as such in
-      `work/decisions.md`: noise synthesis, three tints rather than a scalar, a research problem,
-      and one style's private need
-    - the six plannable-kind lists (`plannableKinds`, the step templates, the adjust sheets) each
-      decide explicitly whether the new kinds belong to them. A kind that silently appears in the
-      지시 tool's function enum is a wire change nobody asked for
-    - goldens: one render golden per new kind at ±0.5, under a `# T71` heading. Every existing
-      golden passes **without re-recording** — these are new kinds, not changes to old ones
-    - property tests: 0 is the identity for all five; each is monotonic in its argument
-  touches: core/imaging/model/Operation.kt, core/imaging/render/Ops.kt, core/imaging tests,
-  core/imaging/src/test/resources/golden, core/imaging/src/test/resources/golden_manifest.txt,
-  core/ai/gemini/GeminiPlanCatalog.kt, feature/editor/tools, feature/editor strings.xml
-
-- [x] T72 The style catalog
-  spec: specs/style_match.md §2, §3, §3.1, §9
-  deps: T71
-  decided: **open decision 1** — the human confirmed `PhotoTune_v1` is their own, so this is a copy
-  within one project and `styles.json` ships. **Open decision 2** — all twelve, not the subset that
-  survives T71 intact; that fixes the enum T74 declares at twelve ids.
-  done when:
-    - `styles.json` imported as an asset and parsed into `StylePreset` per §3, with the Korean in
-      `strings.xml` and the JSON's own names ignored — `id` is the join
-    - §3.1's conversion table is **one** place, named, and the only thing that knows either scale
-    - a preset whose parameter has no `AdjustKind` after T71 drops that parameter and records it;
-      an `id` with no `style_name_<id>` string fails a test rather than rendering a raw id
-    - `intensity` scales linearly and 0 is the identity
-    - tests: §9's `StyleCatalogTest` and `StyleParamsTest` lists
-  touches: core/imaging/style, core/imaging src/main/assets, core/imaging tests,
-  feature/editor strings.xml
-
-- [x] T73 스타일 — the tool and its tiles
-  spec: specs/style_match.md §4, §7, §8, §9; DESIGN.md §2, §3, §4
-  deps: T72
-  done when:
-    - `Tool.Style`, **not** `isAi` — a named style calls nothing (§4)
-    - the tiles are the **user's own photo** at 96dp, one shared 96dp render with each preset
-      applied to it (§7), computed off the main thread and appearing in catalog order. A tile that
-      is not ready is flat `surfaceCard` — no skeleton shimmer
-    - 원본 first and always present; selecting a tile applies live; 적용 commits every `Adjust` as
-      **one** history entry; 취소 restores byte-for-byte
-    - the 강도 slider is the preset's `intensity`, `mono` value, and scales what is committed
-    - 세부 variants appear only once a style is selected
-    - goldens `style_sheet_open`, `style_sheet_selected`
-    - tests: §9's tool list
-  touches: feature/editor/tools/style, feature/editor/Tool.kt,
-  feature/editor/tools/ToolSheetHost.kt, feature/editor/EditorViewModel.kt,
-  feature/editor/EditorRoute.kt, feature/editor strings.xml, feature/editor tests,
-  feature/editor screenshot goldens
-
-- [x] T74 `apply_style` — the planner's eighth function
-  spec: specs/style_match.md §6, §9; specs/vibe_edit.md §4, §4.1, §5, §9.1
-  deps: T72, T73
-  note: T73 is a dep because the catalog's ids become this function's enum and the step list
-  renders the preset's own name.
-  done when:
-    - `apply_style(style, intensity)` declared with the catalog's ids as a **closed enum** —
-      §4.1's rule: the model names a look, it does not invent numbers
-    - `PlanStep.Style(id, intensity)` in `core:ai`; the id resolves to a preset at the
-      `feature:editor` boundary, the edge `CropRatio` already has
-    - `validate` gains **no clause**: a style consumes no selection
-    - one instruction rule — a request naming a *look* is `apply_style`, a request naming a
-      *change* stays `adjust` — and one worked example, and nothing else
-    - an unknown id drops the step; later steps survive
-    - `direct_step_style` renders the preset's Korean name
-    - tests: §12's planner list plus the recorded body declaring eight functions
-  touches: core/ai/gemini/GeminiPlanCatalog.kt, core/ai/gemini/GeminiPlanClient.kt,
-  core/ai/EditPlanProvider.kt, core/ai tests, feature/editor/tools/direct,
-  feature/editor strings.xml, feature/editor tests
-
-- [x] T75 컬러 매칭 — a reference photograph becomes a style
-  spec: specs/style_match.md §5, §9; specs/ai_provider.md §3; specs/generative_erase.md §5, §6
-  deps: T72, T73
-  done when:
-    - **the local matcher first** (§5 step 1): measure the reference, score every preset by
-      weighted distance in the normalized parameter space, and offer the nearest within
-      `STYLE_MATCH_THRESHOLD` with **no model call**. This is the step that makes the feature
-      usable offline and cheap; it is not an optimisation to add later
-    - only past the threshold does `MatchStyleProvider` send both images to **`gemini-2.5-flash`** —
-      the planner's model, not the image model — through a `match_style` function declaration.
-      §5 says why numbers rather than a graded photograph
-    - the answer clamps per kind, divides by 100, and becomes a **13th tile** labelled 참조. Never
-      applied silently
-    - the reference is never stored, never a project, never in the document (§10)
-    - error mapping is generative_erase.md §6 row for row. **No new `AppError` case**
-    - `FakeMatchStyleProvider` in `core/ai/src/testShared`
-    - tests: §9's `StyleMatchTest` — the load-bearing one is that a reference measured from a
-      preset's **own output** ranks that preset first at distance ~0 — and the provider list
-  touches: core/ai/gemini, core/ai (the provider interface file), core/ai/AiModule.kt,
-  core/ai/src/testShared, core/ai tests, core/imaging/style, feature/editor/tools/style,
-  feature/editor tests
-
-- [x] T76 `AutoEnhanceProvider` — MonetGPT on the wire
-  spec: specs/auto_enhance.md §2, §3, §4, §5, §8; specs/segmentation.md (the config pattern);
-  specs/ai_provider.md §3
-  deps: T71
-  note: auto_enhance.md **open decision 1 is still open** — somebody has to run the server. SAM 3 already
-  needs one and has no shipped address; this is a second self-hosted service, and whether it shares
-  a host is an ops decision. Until there is an address to point at, `check` can prove the client
-  and nothing else. **Open decision 3** rides along: three style chips or only `balanced`.
-  done when:
-    - `MonetClient` posting OpenAI-compatible `/v1/chat/completions`, the photo at **1280** long
-      edge as PNG, MonetGPT's own two prompts. `baseUrl`/`token` in the 서버 설정 sheet beside
-      SAM 3's, defaulting to **blank** — no address is shipped
-    - availability is a `/health` probe, **not** Gemini's "is a key present" rule (§4)
-    - the JSON is extracted from prose (a reasoning model narrates), each operation name maps to an
-      `AdjustKind`, values clamp to ±100 and divide by 100
-    - an unknown operation drops **that** entry and keeps the rest; an answer naming none is
-      `Unsupported`. Error mapping is generative_erase.md §6 row for row plus that one row
-    - **no pixels cross the wire back** (§2). A provider that returns a Bitmap is the design drifting
-    - `FakeAutoEnhanceProvider` in `core/ai/src/testShared`, deterministic enough for a golden
-    - tests: §8's client and provider lists, including the one that fails the day MonetGPT's
-      vocabulary changes
-  touches: core/ai/monet, core/ai (the provider interface file), core/ai/AiModule.kt,
-  core/ai/src/testShared, core/ai tests, feature/editor/tools/select/Sam3SettingsSheet.kt
-
-- [x] T77 자동 — the tool and its after-sheet
-  spec: specs/auto_enhance.md §6, §7, §8; DESIGN.md §3, §4
-  deps: T76
-  done when:
-    - `Tool.Auto`, `isAi`. **No sheet before the call** — tapping it runs, as 지우기 does — and a
-      sheet after it, holding the result
-    - three chips; changing one costs a call and shows the progress overlay, the 강도 slider costs
-      none and scales locally
-    - the 지시 line is the model's own English reason in `bodySm` / `editInkSecondary` — evidence,
-      not copy (§6, and open decision 2 says why it is in English)
-    - 적용 commits **one** history entry, so one undo removes the whole boost
-    - `masked=false` always; `activeMaskId` is never touched (§9)
-    - the disabled-state table of §6, including the blank address opening the 서버 설정 sheet
-    - goldens `auto_sheet_open`, `auto_sheet_result` — of a **fake** plan (§8): the golden asserts
-      the rendering, never the model's taste
-    - tests: §8's tool list
-  touches: feature/editor/tools/auto, feature/editor/Tool.kt,
-  feature/editor/tools/ToolSheetHost.kt, feature/editor/EditorViewModel.kt,
-  feature/editor/EditorRoute.kt, feature/editor strings.xml, feature/editor tests,
-  feature/editor screenshot goldens
-
-- [x] T78 The tool strip gets a second level
-  spec: specs/tool_groups.md; specs/editor_shell.md; DESIGN.md §1, §4, §5, §7, §8
-  deps: —
-  note: **do this before T73 and T77 if the strip is what you are looking at.** It has no code
-  dependency on them, and the two of them are what makes it urgent — twelve tools behind a scroll
-  gesture with no affordance. Doing it first means each new tool lands in a strip that fits.
-  done when:
-    - `ToolGroup` and `Tool.group`; **`isAi` is deleted**, because §2 moved the accent dot up to
-      the parent and two spellings of one fact is how they disagree
-    - the strip binds one level's tools; adding a tool is still one enum entry
-    - the dot is on the AI parent and on **no** child; the ← item is `editInk`
-    - **one surface, one accent** — the strip's height, item size and scrolling are unchanged and
-      no second row appears. §2 names the two designs this rejects and why each costs a rule
-    - committing or cancelling a sheet returns to the root; a **disabled child does not**; the AI
-      parent is never itself disabled even when every child is
-    - system back closes the level before it leaves the screen
-    - the level is UI state, resets to root on entry, and is not in the document
-    - `editor_shell_default` re-recorded **for one reason only** — the strip now ends at AI — plus
-      one new `editor_shell_ai_open`
-    - tests: §7's list, including "every `Tool` appears at exactly one level", which is what fails
-      when a tool is added and forgotten here
-  touches: feature/editor/Tool.kt, feature/editor/EditorToolStrip.kt,
-  feature/editor/EditorScreen.kt, feature/editor/EditorViewModel.kt, feature/editor/EditorRoute.kt,
-  feature/editor strings.xml, feature/editor tests, feature/editor screenshot goldens
-
-## Backlog
-
-The **second device run happened on 2026-09-06** (SM-S948N, the same reverse-tunnel setup). What it
-found is Phase 13. What it has still not answered: T51 and T52 are prompt rewrites, and only a real
-model can say whether they hold.
-
-**Phase 14 adds three more prompt questions to the next run**, and one measurement: whether the
-planner reaches for `apply_style` on "필름 느낌으로" rather than composing adjusts; whether the
-reference-match's local step (style_match.md §5) is right often enough to keep the model call rare;
-whether MonetGPT's taste is one a person recognises as "better". The measurement is T73's twelve
-tiles — style_match.md §7 argues they are two orders of magnitude under the preview budget, and
-`scripts/bench.sh` is where that gets checked rather than assumed.
-
-**Phase 11 needs that run too**: T56's rules are a prompt change, and only a real model can say
-whether the planner reaches for `adjust_color_range` instead of trying to select a colour.
-Everything else in Phase 11 is proven by goldens and properties.
-
-**Phase 12 adds three more prompt questions to that same run**, and no fourth: whether the planner
-picks `crop_ratio` for "인스타에 올릴 비율로" instead of ignoring the shape; whether it tells
-`fill_selection` and `erase_selection` apart; and whether `gemini-2.5-flash-image` will actually
-paint past a white border rather than returning the photograph it was given (outpaint.md §5's guard
-turns that failure into a retry, but only a device run says how often it fires). T57, T59, T63 and
-T66 need no device at all — they are goldens, properties and a benchmark.
-
----
-
-## Deferred
-- D01 Layers · D02 Text · D04 Tablet · D05 Onboarding
-  - _(D03 GPU render promoted to T66; see specs/gpu_render.md. D10 promoted to
-    specs/generative_fill.md. D12 promoted to T58 — vibe_edit.md §4.1 records why the objection that
-    deferred it no longer applies to a closed set of ratios.)_
-- D06 Box prompt for selection (`/segment/box` already exists server-side, so this is UI only)
-- D08 Video (SAM 3 tracking)
-- D09 On-device segmentation fallback — the retired EdgeTAM / ExecuTorch plan (ADR-007, ADR-008).
-  Revisit only if offline selection becomes a requirement.
-- D11 Prompt history in the 지시 sheet — the last few requests, tappable to re-run. Deliberately out
-  of Phase 9 (vibe_edit.md §13); the plan itself is never persisted.
-- D13 A multi-turn planning loop (ADR-012's rejected alternative). Only worth revisiting if
-  single-shot plans are measurably wrong often enough to pay a round trip per step.
-- D14 Folding consecutive HSL adjusts into one pass. Rejected as an optimisation in
-  adjust_hsl.md §5: evaluating every band against the input pixel simultaneously is a different
-  result from applying the ops in order, so it is a maths change. Revisit only with a `bench.sh`
-  number showing a realistic document missing the preview budget.
-- D15 Per-band range editing — the eyedropper that redefines where a band starts and ends. The
-  eight centres in adjust_hsl.md §2 are fixed in v1.
-- D16 Margin presets for 확대 — a "9:16으로" chip that computes the margins instead of dragging for
-  them. Deliberately out of T65 (outpaint.md §9): the drag has to exist first so the user can
-  correct what a preset guessed.
-- D17 Outpainting as a planner function. Out of Phase 12 on purpose (outpaint.md §9): asked to make
-  a photo 9:16, a model would have to choose between discarding pixels and inventing them, and that
-  choice belongs to the person who took the photograph. `crop_ratio` is the answer the planner gets.
-  Revisit only with a device run showing users ask for it by sentence.
+- 자동 연결: `core/ai/.../monet/`, `AutoEnhanceProvider.kt`, `feature/editor/.../tools/auto/`, 기존 서버 설정 시트/controller와 관련 Editor 연결·문자열·테스트.
+- 피부: `core/ai/` 얼굴 분석·보호 mask·provider·모델 준비/수명 관리, `feature/editor/.../tools/retouch/` 및 Editor 세션 통합.
+- 피부 결과 저장에 필요한 `core/imaging` operation/codec/renderer, `core/data` 저장·참조·복제·삭제 경로와 테스트.
+- 실제 배포에 필요한 Gradle/모델 설치 설정, `scripts/install.sh`, APK 설치/설정 안내.
+- `/home/jaeho/monetGPT`: 자체 지침·git 상태·구현을 먼저 확인하고 재현된 서버/배포 설정 결함만 최소 수정한다. 결과는 해당 저장소에도 기록한다.
+- 관련 specs, `work/decisions.md`, `work/retouch_evaluation.md`, `work/RESULT.md`.
+
+### Do not modify
+
+- SAM3 코드/토큰/기존 서비스를 임의로 변경·중단하지 않는다. GPU 부족을 SAM3 종료로 숨기지 않는다.
+- MonetGPT를 fake/고정값/다른 모델로 대체하거나 피부 기능을 전체 blur·미백·단순 얼굴 검출로 대체하지 않는다.
+- 피부 보정에 범용 외부 생성 API를 사용하거나 로컬 실패 시 자동 업로드하지 않는다. 공개 APK에 개인 주소/토큰을 하드코딩하지 않는다.
+- 무관한 도구·디자인 개편, 기존 사용자 데이터 삭제, 자동 commit·공개 배포는 범위 밖이다.
+
+## Requirements
+
+### T1 — 자동 보정 연결 진단·복구
+
+1. **설치 경로를 재현한다.** 앱 versionName/versionCode, APK 출처·variant, clean install과 기존 앱 업데이트의 설정 차이를 확인한다. 프로젝트/설정을 지워서 증상을 가리지 않는다. Monet 설정 출처(저장 override/빌드 기본값/빈 값), base URL, 인증, DNS/TLS/포트/프록시/Android network security, health 응답을 확인한다. 비밀값은 출력하지 않는다. 휴대폰 localhost, 에뮬레이터 `10.0.2.2`, 서버 loopback을 혼동하지 않는다.
+2. **실제 요청 경로를 검증한다.** 기기가 쓰는 경로에서 인증된 `GET /health`, `POST /v1/chat/completions`를 검증한다. `/v1` 없는 base URL, `model: "test"`, PNG, 세 스타일, 문자열 content의 보정 계획 계약을 유지한다. 잘못된 URL은 저장/요청 시 검증하여 crash를 방지한다. 기존 잘못된 override도 앱 내 수정으로 복구할 수 있어야 한다.
+3. **실패 후 재시도를 제공한다.** 미설정은 서버 설정으로 안내한다. 상태 확인 중을 연결 실패로 확정 표시하지 않는다. 실패 시 명시적 재시도와 설정 수정 경로를 제공한다. 서버 복구 후 같은 URL/토큰 그대로 앱 재시작 없이 재확인하고 자동 보정을 실행할 수 있어야 한다. 같은 설정 재저장도 복구 경로가 된다. 중복 요청을 제어하고 무한 polling·사진 자동 재업로드는 하지 않는다.
+4. **오류 원인과 timeout을 구분한다.** 기존 AppError/availability 패턴으로 인증 실패, 서버 준비 중/503, 연결·시간 초과, 잘못된 주소를 가능한 범위에서 구분하고 행동 가능한 한국어 안내를 제공한다. health에는 유한하고 짧은 전용 timeout을 두며 추론 connect 10초/read 120초 계약은 유지한다. 모든 HTTP 실패를 Boolean 네트워크 실패로 버리지 않는다.
+5. **경합을 막는다.** 설정 A 확인 중 B로 변경하면 A의 늦은 완료가 B 상태를 덮지 못한다. 취소를 HTTP에 전파한다. 문서/설정 변경·취소·스타일 재실행 후 늦은 추론 결과가 새 미리보기/history를 쓰지 못하고 old finally가 new busy를 해제하지 못한다. 관련 실제 경합을 회귀 테스트로 고정한다.
+6. **서버 원인도 해결한다.** 모델 준비 상태, 인증, 프록시 및 서비스 재시작 후 접근성을 확인한다. USB reverse는 개발 검증용으로 명시하고 일반 다운로드 앱의 연결 완료와 구분한다. GPU 공존 불가가 계속되면 가용 호스트/장치 등 운영 해법과 필요한 외부 조치를 기록한다. 기존 서비스를 임의로 중단하지 않는다.
+7. `specs/auto_enhance.md` §6의 기존 “probe 실패 → 동작 없음”을 이번 요청의 재시도/설정 수정 동작으로 갱신한다. 정상 자동→결과 시트, 강도 로컬 조절, 스타일별 요청, 한 Apply/Undo, 취소 시 무변경 계약은 유지한다.
+
+### T2 — 실제 피부 엔진과 배포 준비
+
+8. **기존 평가부터 이어간다.** 미커밋 검출기·평가·REVIEW를 확인하고 재사용 가능한 부분을 구분한다. `skin_retouch_validation.md` SR1-A/B를 충족하는 실제 잡티 검출+국소 복원+보호 mask부터 확보한다. 검출 box나 수동 정답 mask 결과만으로 자동 잡티 제거 완료를 선언하지 않는다. MI-GAN은 첫 평가 후보이며 production 채택 완료 모델이 아니다.
+9. **종류별 지원을 검증한다.** 잡티가 통과하면 T3에 연결하고 유분광/다크서클/면도자국은 SR1-C로 각각 평가·구현한다. 하나의 전체 얼굴 후보를 네 slider에 공유하지 않는다. 미완료 종류는 사유와 함께 비활성으로 남기되 일부 구현을 피부 전체 완료로 보고하지 않는다. 네 기능 전체 완료에는 각각의 품질 gate가 필요하다.
+10. **일반 배포에서 준비 가능하게 한다.** 모델/런타임의 사용·배포 조건, 버전/해시/크기, 실제 기기 비용을 검증한다. debug 전용 코드나 adb push만이 모델 설치 경로가 되지 않게 한다. 미설치/다운로드/실패·재시도/준비 완료를 구분하고 설치된 로컬 모델은 offline에서 동작해야 한다. 현행 architecture의 APK <1000MB, editor peak <250MB와 피부 성능 목표를 검증한다. 예전 15MB 기준을 재도입하거나 gate를 편의상 완화하지 않는다.
+11. **D080을 지킨다.** 로컬 우선·사진 업로드 0건을 유지한다. 실측상 별도 보정 서버가 필요하면 채택 근거와 pipeline §8의 wire/설정/인증 계약을 먼저 구체화하고 명시적 서버 설정 후 실행한다. 위치/모델 제공 방식은 decisions에 기록한다. 모델·평가 자료·운영 자원 미확보는 해당 단계의 BLOCKED 사유로 기록하며 정상 지원으로 표시하지 않는다.
+
+### T3 — 피부 편집·저장 통합
+
+12. `SkinRetouchProvider`, `FaceRegionAnalyzer` 계약과 Hilt production binding을 연결하고 실제 모델 자원 소유자를 정한다. 메뉴용 감지를 보정 가능성으로 쓰지 않는다. 현재 문서의 삽입 prefix를 canonical 좌표에서 분석하여 crop/회전/Adjust를 중복 적용하지 않는다. 얼굴 0/1/다중, 작은 얼굴, 가림·누락 landmark를 구분하며 눈·입·머리카락·점/주근깨·다른 사람 보호를 검증한다.
+13. placeholder를 기존 EditSheet/AdjustSlider 기반 기능 시트로 교체한다. 얼굴 선택, 처리 위치/준비 상태, 네 종류별 지원과 0..100 강도, 명시적 미리보기, 취소/적용을 연결한다. 기본 0과 NoChange는 history를 만들지 않는다. 후보 없는 활성 항목은 미리보기 갱신 전 Apply를 막는다. 준비된 후보의 강도 변경은 로컬 합성만 한다. 미준비/실패와 얼굴 없음을 구분하고 재시도를 제공한다. DESIGN.md의 시트 높이·고정 버튼·접근성 패턴을 유지한다.
+14. `skin_retouch_pipeline.md` §4–7의 동일 base, 종류별 candidate, binary support, feather 한 번, alpha 보존 계약을 구현한다. 얼굴/문서/설정/세션 변경과 취소 후 늦은 분석·추론·저장을 무효화한다. `Operation.SkinRetouch`, codec/참조 검사, CPU/GPU 렌더, 원자적 result+mask 저장, 복제/삭제/outpaint guard를 포함한다. Apply는 history 한 번, Undo/Redo/load/export는 재추론 없이 같은 결과를 보존한다. 부분 저장 실패는 문서를 유지하고 이번 요청의 미참조 파일만 정리한다.
+15. 회전 시 draft 유지, process 재생성 시 committed 문서만 복구, draft autosave 제외/export 차단, Cancel/Back/dismiss 시 무변경을 검증한다. 기능이 켜진 실제 배포 variant에서도 동작해야 한다.
+
+### T4 — 수정 APK와 인계
+
+16. T1은 피부 모델 평가와 독립적으로 완료·검증한다. T2→T3는 검증된 종류부터 연결하고 T4에서 통합한다. 한 거대 diff로 섞지 말고 단계별 변경/검증을 기록한다. 자동만 해결하거나 피부 버튼만 활성화해서 두 문제 모두 해결됐다고 선언하지 않는다.
+17. 실제 기기에서 권한 있는 사진으로 자동 세 스타일→강도→적용/취소와 피부 각 지원 기능→강도→미리보기→적용/Undo/Redo→재열기/export를 확인한다. clean install은 별도 테스트 환경에서 수행하여 기존 데이터를 보존한다. 모델 미설치, offline, 서버 중단 후 복구, 잘못된 토큰, 기존 override가 남은 업데이트도 확인한다.
+18. `work/RESULT.md`에 두 문제 각각의 실제 원인, 수정 파일, 단계별 상태, 실행 검사/결과, 품질·성능 근거, 기기/네트워크 조건, APK 경로·SHA-256·버전 및 설치/런타임 설정 절차를 기록한다. 공개 산출물에 개인 주소/토큰/사진을 포함하지 않는다. 실제 기기/서버/평가 자료가 없으면 미실행/제약과 남은 조치를 명시한다.
+
+## Acceptance Criteria
+
+- [ ] 설치 APK의 버전·설정 경로와 자동 연결 실패 원인을 재현 근거로 구분했다.
+- [ ] 미설정/잘못된 설정/인증 실패/확인 중/서버 미준비를 안내하며 설정 수정과 같은 설정 재시도로 복구된다.
+- [ ] 실제 기기에서 MonetGPT 세 스타일 결과, 미리보기/강도/적용/취소/Undo가 동작한다.
+- [ ] 피부가 production provider로 실제 보정 결과를 만든다. 네 종류별 평가가 명시되며 전체 완료에는 네 기능 모두 통과했다.
+- [ ] 일반 배포 APK에서 모델 준비와 오류 복구가 가능하고 debug 수동 설치에 의존하지 않는다.
+- [ ] 피부 보호 영역/0 강도/종류 독립성/NoChange 및 품질·성능 gate를 통과했다.
+- [ ] 피부 Apply/Undo/Redo/저장 후 재열기/export가 재추론 없이 동일 결과를 보존한다.
+- [ ] 취소·역순 완료·설정/얼굴/문서 변경·저장 실패에서 상태/history/파일이 안전하다.
+- [ ] 관련 검사와 저장소 검증을 통과했으며 미실행과 실제 기기 검증을 구분했다.
+- [ ] 수정 APK와 설치·설정 안내가 있고 비밀값 노출·기존 데이터 손실·무관한 회귀가 없다.
+
+## Validation
+
+좁은 개발 검사 후 최종 전체 검증을 수행한다. 기존 placeholder의 “항상 미지원” 및 auto의 “실패 시 동작 없음” 테스트는 새 행동 계약으로 교체하되 실패 coverage를 삭제하지 않는다.
+
+```bash
+git status --short
+./gradlew :core:ai:testDebugUnitTest --tests 'com.diffuse.core.ai.monet.*'
+./gradlew :feature:editor:testDebugUnitTest --tests 'com.diffuse.feature.editor.tools.auto.*'
+./gradlew :core:ai:testDebugUnitTest :core:imaging:testDebugUnitTest :core:data:testDebugUnitTest :feature:editor:testDebugUnitTest
+scripts/check.sh
+./gradlew :app:assembleDebug :app:assembleRelease
+git diff --check
+```
+
+필수 회귀 coverage:
+
+- health 실패→같은 설정 재시도→Ready, 같은 설정 재저장, 최초 확인 중 tap, 401/503/timeout/잘못된 URL, 설정 A/B 역순 응답, clean/기존 override 경로.
+- 실제 HTTP 취소, 늦은 auto 결과 차단, 정상 스타일/강도/history.
+- 피부 입력 불변/보호 mask/NoChange/종류 분리, 모델 준비 실패·재시도, 합성/좌표/원자 저장/offline 재열기/export.
+- 취소 무시 fake 역순 완료, 얼굴/문서 교체, 저장 중 취소, old finally/new busy, 이중 Apply, 회전/draft 복구.
+
+실제 모델/기기 검증은 별도다. 기존 androidTest harness와 SR1 평가 절차를 따르고 전체 editor 메모리/지연을 별도 측정한다. 기기가 있으면 `./gradlew :core:ai:connectedDebugAndroidTest`를 실행하되 검출기 harness 통과를 피부 기능 완료로 해석하지 않는다.
+
+서버 수정 시 `/home/jaeho/monetGPT`의 `scripts/check.sh`와 기존 실제 모델 smoke를 수행한다. GPU 점유·기존 서비스 영향을 확인하고 서버 README의 명령을 따른다. 토큰은 환경 설정에서 읽으며 로그에 노출하지 않는다. host smoke 성공과 휴대폰 end-to-end 성공을 따로 기록한다.
+
+## Notes
+
+- 명세: `specs/architecture.md`, `specs/auto_enhance.md`, `specs/skin_retouch.md`, `specs/skin_retouch_pipeline.md`, `specs/skin_retouch_validation.md`, `DESIGN.md`, `work/decisions.md` D080.
+- 참고 테스트: `MonetClientTest`, `AutoToolTest`, `SkinRetouchSheetTest`, `SkinRetouchToolTest`, 얼굴 분석/검출기 테스트, `OperationOrderTest`, `EditDocumentJsonTest`와 저장소 테스트. Fake는 계약 테스트용이며 실제 품질 증거가 아니다.
+- 이번 요청에 따라 자동 연결 복구 동작을 명세에 반영한다. 주소 없는 공개 APK 정책과 런타임 설정은 유지하며 운영 주체를 임의로 바꾸지 않는다.
+- 피부 gate 미통과 시 T1 완료와 T2/T3 잔여를 분리 보고한다. 전체 완료 기준을 낮추거나 미완성 UI를 해결책으로 삼지 않는다.
