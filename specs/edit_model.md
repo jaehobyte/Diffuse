@@ -31,6 +31,10 @@ sealed interface Operation {
     // v3 (T59, T63) — see generative_fill.md and outpaint.md
     data class GenerativeFill(override val id: String, val maskId: String, val resultRef: ImageRef, val prompt: String) : Operation
     data class Outpaint(override val id: String, val margins: Margins, val resultRef: ImageRef /* the whole expanded image */) : Operation
+
+    // 멀티샷 — see multishot.md §3
+    data class MultiShot(override val id: String, val shots: List<Shot> /* 1..5 */,
+                         val mode: MultiShotMode = Free, val timeline: Timeline? = null) : Operation
 }
 
 /** Fractions of the source's width/height added on each side; each in 0f..0.5f (outpaint.md §3). */
@@ -64,6 +68,7 @@ tool starts a fresh selection.
 - `GenerativeFill` follows `GenerativeErase` exactly — same `maskId` validation, same blend, same file lifetime — and adds `prompt`. It is stored because one prompt reproduces this result exactly, which is not true of `Mask` (see the note above); it is display and provenance data and is never re-sent automatically. See generative_fill.md §5.
 - **At most one `Outpaint`, and it is always `operations[0]`.** `withOutpaint` inserts at index 0 and replaces any existing one. It is the only op that changes the canvas *size*, so everything after it measures against the expanded canvas and nothing has to ask which era it came from. Committing one **re-normalizes an existing `Crop.rect`** into the expanded space (pure arithmetic on `margins`, outpaint.md §3) and is **refused while any `Mask`, `CutOut`, `GenerativeErase` or `GenerativeFill` op exists**, because those carry pixels or alpha sized to the un-extended canvas. See outpaint.md §3.
 - Ops referencing a file (`Mask.maskRef`, `GenerativeErase.resultRef`, `GenerativeFill.resultRef`, `Outpaint.resultRef`) keep that file alive; the file store deletes it only when no op in any history entry references it.
+- **At most one `MultiShot`** (multishot.md §3): appended when new, replaced in place when edited, removed when its last shot is. Its 1–5 shots (six moments with the current photo) have distinct ids and placements inside the shared ranges; a `timeline` orders exactly those ids, and the time layout also needs its hero mask and an anchor on every shot (multishot.md §3, §7). A known `multiShot` that breaks this fails validation on load (`Unsupported`) rather than loading partly. It also blocks `withOutpaint`. Its `Shot.subjectRef` PNGs are kept alive like the refs below.
 - `EditDocument.hasAlpha` (computed): `source.hasAlpha || operations.any { it is CutOut }`.
 
 ## Serialization

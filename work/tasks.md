@@ -2,114 +2,128 @@
 
 ## Goal
 
-다운로드한 앱의 피부 보정을 실제 사용 가능하게 구현하고, AI → 자동의 서버 연결 실패를 해결하여 수정 APK에서 보정·미리보기·적용·저장까지 검증한다.
+Android 멀티샷에서 **시간 순서 배치 선택 → 여러 사진 선택 → 한 번의 추출 실행 → 즉시 자동 균등 배치**가 이어지게 한다. 정상 입력에서는 사진마다 추출·확정을 반복하거나, 별도 순서 확인/배치 버튼을 찾거나, 피사체를 수동 드래그하지 않고 배치된 미리보기를 얻어야 한다.
 
 ## Background
 
-사용자 보고(2026-09-14): 피부 보정에 들어가도 기능을 사용할 수 없고, AI → 자동은 “자동 보정 서버에 연결하지 못했어요”를 표시한다. 문구 변경이나 메뉴 숨김만으로 해결한 것으로 판정하지 않는다.
+2026-10-02 사용자 요청: “시간 순서 배치 선택 | 여러장 추출 | 즉시 자동 배치”. 현재 사용자는 추출한 피사체가 중앙에 겹쳐 남아 수동으로 옮겨야 한다고 보고했다.
 
-저장소 확인 결과:
+코드에서 확인한 원인과 기존 구조:
 
-- `SkinRetouchSheet.kt`는 준비 중 안내와 네 항목 미지원, `applyEnabled = false`인 placeholder다. `AiModule.kt`에 production `SkinRetouchProvider` binding이 없다. 클릭 이벤트만 수정해서 해결할 수 없다.
-- 얼굴 분석 계약과 미커밋 잡티 검출기 평가 구현은 있지만 검출기는 복원 엔진이 아니다. 기존 `work/RESULT.md`는 PARTIAL이며 보호 피부 mask, 실제 복원 provider, SR1 품질 gate, 편집·저장 연결이 남았다고 명시한다. ONNX 실행은 debug 평가 경로이고 일반 배포 모델 준비 경로가 없다.
-- `MonetAutoEnhanceProvider`는 settings Flow 방출 시에만 health를 확인한다. 최초 실패 후 같은 설정에서 서버가 복구돼도 재확인 경로가 없다. `health()`는 HTTP 실패를 Boolean으로 축약하고 `AutoController.onToolTapped()`는 실패 메시지만 표시하며 진입을 거부한다. controller 초기값도 연결 실패여서 확인 중 tap을 실패로 안내할 수 있다.
-- `MonetSettings`의 저장 override가 빌드 기본값보다 우선한다. `scripts/install.sh`는 `-Pdiffuse.localCreds`로 개인 설정을 사용하는 반면 일반 다운로드 APK가 동일 설정을 가진다고 보장할 수 없다.
-- `/home/jaeho/monetGPT/work/RESULT.md`에는 실제 모델 추론과 2026-09-14 smoke 성공이 기록돼 있지만 휴대폰 연동은 미검증이다. 같은 T4에서 SAM3와 동시 상주가 실패했다고 기록돼 있다. 이는 현재 기기 연결 실패 원인의 확정 증거가 아니다.
-- 실제 설치 APK 버전, 현재 서버 접근성은 아직 확인하지 않았다. 작업서 작성 중 기기 재현·서버 호출·빌드·테스트는 실행하지 않았다.
+- `EditorRoute.kt:MultiShotToolSheet`는 `PickVisualMedia`로 한 장씩 받고 `onPhotoPicked(uri, replaceKey)`에 넘긴다. 여러 장을 한 번에 선택하는 경로는 아직 없다.
+- `MultiShotController.extract()`는 선택된 사진 하나만 SAM 3에 보내고, `saveSubject()`는 추출 완료 후 Ready/anchor를 저장할 뿐 위치를 계산하지 않는다.
+- `confirmOrder()`는 확인 플래그만 바꾼다. `placeByOrder()`가 별도로 호출돼야 실제 위치와 시간 순서별 불투명도를 계산한다.
+- `MultiShotState.canPlace`는 **주인공과 추가 사진 전부**의 추출·anchor를 요구한다. 주인공 추출 누락도 배치를 막는다.
+- `MultiShotLayout.positioned/faded`, `MultiShotSubject`, `MultiShotOp`, 기존 controller/시트 및 저장·Undo 구조는 이미 있다. 이 경로를 재사용한다.
+- 이전 실기기 통과는 **추출이 끝난 저장 프로젝트의 재배치**였다. 이번 완료 기준은 반드시 **멀티샷이 없는 새 프로젝트에서 시작하는 정상 사용자 흐름**이다.
 
-이전 서버 작업서는 `work/tasks_monet_server_2026-09-10.md`, 검출기 작업서는 `work/tasks_acne_detector_2026-09-09.md`에 보존한다. 작업 시작 시 기존 미커밋 변경과 RESULT/REVIEW를 확인하고 보존한다. 이전 결과 문서는 새 결과로 덮어쓰기 전에 별도 보관한다.
+### 이번 작업의 경계와 기존 명세 충돌
+
+`specs/multishot.md` §2/§2.1 및 D086/D087의 “한 장씩 선택”, “사진별 추출 완료”, “별도 순서 확인 및 위치 배치”를 정상 경로의 필수 단계로 삼는 규칙은 이번 명시적 사용자 요청으로 변경한다. **일괄 실행 버튼이 화면에 보이는 순서를 확정하고, 추출 성공 후 배치까지 수행**하는 규칙으로 관련 명세·결정을 함께 갱신한다.
+
+D088의 **배치 수학과 원본 중앙 슬롯**은 유지한다. 현재 프로젝트 사진이 고정 배경·마지막 주인공이며, 추가 사진은 시간 순서로 그 외 슬롯을 채운다. 총 3장은 `[A, 원본, B]`, 총 6장은 `[A, B, 원본, C, D, E]`다. 이번 요청을 모든 입력의 단순 좌→우 나열, 원본 이동, 피사체 자동 축소로 해석하지 않는다.
+
+신규 `server/multishot` API는 완성 PNG만 반환하고 앱의 피사체 파일·편집 문서를 반환하지 않는다. **이번에는 기존 Android `SegmentationProvider`를 통한 순차 추출과 로컬 배치를 확장한다.** 서버 API 연결이나 평탄화된 PNG로 편집 문서를 대체하는 변경은 포함하지 않는다. 앱의 개별 피사체 재편집·취소·Undo·오프라인 재열기를 보존하기 위한 경계다.
 
 ## Scope
 
 ### Modify
 
-- 자동 연결: `core/ai/.../monet/`, `AutoEnhanceProvider.kt`, `feature/editor/.../tools/auto/`, 기존 서버 설정 시트/controller와 관련 Editor 연결·문자열·테스트.
-- 피부: `core/ai/` 얼굴 분석·보호 mask·provider·모델 준비/수명 관리, `feature/editor/.../tools/retouch/` 및 Editor 세션 통합.
-- 피부 결과 저장에 필요한 `core/imaging` operation/codec/renderer, `core/data` 저장·참조·복제·삭제 경로와 테스트.
-- 실제 배포에 필요한 Gradle/모델 설치 설정, `scripts/install.sh`, APK 설치/설정 안내.
-- `/home/jaeho/monetGPT`: 자체 지침·git 상태·구현을 먼저 확인하고 재현된 서버/배포 설정 결함만 최소 수정한다. 결과는 해당 저장소에도 기록한다.
-- 관련 specs, `work/decisions.md`, `work/retouch_evaluation.md`, `work/RESULT.md`.
+- `feature/editor/.../EditorRoute.kt`: 시간 순서 배치의 다중 Photo Picker 및 결과 전달. 교체는 단일 선택 유지.
+- `feature/editor/.../tools/multishot/MultiShotController.kt`, `MultiShotState.kt`, `MultiShotSheet.kt`: 일괄 가져오기/추출·일시 정지·재개·자동 배치 상태와 사용자 동작.
+- 같은 폴더의 `MultiShotOverlay.kt`: 새 상태의 미리보기·가이드·접근성 설명에 필요한 범위만.
+- `feature/editor/src/main/res/values/strings.xml`: 일괄 실행, 전송 안내, 진행/선택 필요/실패/성공 문구.
+- 관련 `MultiShotControllerTest`, `MultiShotSheetTest`, `MultiShotToolTest`, `MultiShotGoldenTest` 및 필요한 Picker 결과 처리 회귀 테스트.
+- `core/imaging`/`core/data`의 기존 MultiShot 테스트: 배치 수치·저장/Undo/재열기 확인에 필요한 경우. 제품 코드는 이번 흐름에 꼭 필요한 최소 변경만, 이유를 RESULT에 설명한다.
+- `specs/multishot.md`, `work/decisions.md`: 변경된 흐름·트리거·순서 확정 규칙. `work/RESULT.md`: 실제 구현/검증 결과를 제자리 갱신한다.
 
 ### Do not modify
 
-- SAM3 코드/토큰/기존 서비스를 임의로 변경·중단하지 않는다. GPU 부족을 SAM3 종료로 숨기지 않는다.
-- MonetGPT를 fake/고정값/다른 모델로 대체하거나 피부 기능을 전체 blur·미백·단순 얼굴 검출로 대체하지 않는다.
-- 피부 보정에 범용 외부 생성 API를 사용하거나 로컬 실패 시 자동 업로드하지 않는다. 공개 APK에 개인 주소/토큰을 하드코딩하지 않는다.
-- 무관한 도구·디자인 개편, 기존 사용자 데이터 삭제, 자동 commit·공개 배포는 범위 밖이다.
+- 서버 멀티샷/retouch API, SAM 서버 저장소·모델·키·실행 상태·rate limit, 배포·공개 포트.
+- D088의 슬롯/anchor/opacity 수학, 원본/배경 이동, 합성·보호 픽셀 계약, 저장 형식의 불필요한 변경.
+- 자유 배치의 기존 한 장씩 가져오기·수동 추출/확정·배치 동작, 공용 선택 도구의 사용자 흐름.
+- 일반 레이어 편집기, 자동 동일인 추적, 영상, 배경 정합, 생성형 합성, 파일명/EXIF로 촬영 순서 추정.
+- 관련 없는 미커밋 변경, 피부 보정·Jev 구현. `work/REVIEW.md`의 판정은 리뷰어가 갱신한다.
+- 날짜별/작업별 task·result·review 사본, 자동 commit/push.
 
 ## Requirements
 
-### T1 — 자동 보정 연결 진단·복구
+### 1. 사진 선택과 실행 진입
 
-1. **설치 경로를 재현한다.** 앱 versionName/versionCode, APK 출처·variant, clean install과 기존 앱 업데이트의 설정 차이를 확인한다. 프로젝트/설정을 지워서 증상을 가리지 않는다. Monet 설정 출처(저장 override/빌드 기본값/빈 값), base URL, 인증, DNS/TLS/포트/프록시/Android network security, health 응답을 확인한다. 비밀값은 출력하지 않는다. 휴대폰 localhost, 에뮬레이터 `10.0.2.2`, 서버 loopback을 혼동하지 않는다.
-2. **실제 요청 경로를 검증한다.** 기기가 쓰는 경로에서 인증된 `GET /health`, `POST /v1/chat/completions`를 검증한다. `/v1` 없는 base URL, `model: "test"`, PNG, 세 스타일, 문자열 content의 보정 계획 계약을 유지한다. 잘못된 URL은 저장/요청 시 검증하여 crash를 방지한다. 기존 잘못된 override도 앱 내 수정으로 복구할 수 있어야 한다.
-3. **실패 후 재시도를 제공한다.** 미설정은 서버 설정으로 안내한다. 상태 확인 중을 연결 실패로 확정 표시하지 않는다. 실패 시 명시적 재시도와 설정 수정 경로를 제공한다. 서버 복구 후 같은 URL/토큰 그대로 앱 재시작 없이 재확인하고 자동 보정을 실행할 수 있어야 한다. 같은 설정 재저장도 복구 경로가 된다. 중복 요청을 제어하고 무한 polling·사진 자동 재업로드는 하지 않는다.
-4. **오류 원인과 timeout을 구분한다.** 기존 AppError/availability 패턴으로 인증 실패, 서버 준비 중/503, 연결·시간 초과, 잘못된 주소를 가능한 범위에서 구분하고 행동 가능한 한국어 안내를 제공한다. health에는 유한하고 짧은 전용 timeout을 두며 추론 connect 10초/read 120초 계약은 유지한다. 모든 HTTP 실패를 Boolean 네트워크 실패로 버리지 않는다.
-5. **경합을 막는다.** 설정 A 확인 중 B로 변경하면 A의 늦은 완료가 B 상태를 덮지 못한다. 취소를 HTTP에 전파한다. 문서/설정 변경·취소·스타일 재실행 후 늦은 추론 결과가 새 미리보기/history를 쓰지 못하고 old finally가 new busy를 해제하지 못한다. 관련 실제 경합을 회귀 테스트로 고정한다.
-6. **서버 원인도 해결한다.** 모델 준비 상태, 인증, 프록시 및 서비스 재시작 후 접근성을 확인한다. USB reverse는 개발 검증용으로 명시하고 일반 다운로드 앱의 연결 완료와 구분한다. GPU 공존 불가가 계속되면 가용 호스트/장치 등 운영 해법과 필요한 외부 조치를 기록한다. 기존 서비스를 임의로 중단하지 않는다.
-7. `specs/auto_enhance.md` §6의 기존 “probe 실패 → 동작 없음”을 이번 요청의 재시도/설정 수정 동작으로 갱신한다. 정상 자동→결과 시트, 강도 로컬 조절, 스타일별 요청, 한 Apply/Undo, 취소 시 무변경 계약은 유지한다.
+1. 새 멀티샷에서 `시간 순서 배치`를 선택하고 `사진 추가`를 누르면 **여러 이미지를 한 번에 선택**할 수 있어야 한다. 추가 사진 1~5장, 현재 원본 포함 총 2~6장의 기존 앱 한도를 유지한다. 서버 API의 최소 3장 규칙을 앱에 이식하지 않는다.
+2. 다중 Picker는 남은 추가 가능 장수에 맞게 제한한다. 남은 자리가 1장이면 단일 Picker를 사용하고, 0장이면 추가를 차단한다. 교체는 항상 지정한 한 장만 교체한다. 플랫폼 fallback 등이 한도를 초과한 목록을 반환해도 controller에서 다시 검사해 **목록 전체를 거절하고 안내**하며 조용히 일부만 가져오지 않는다. 빈 결과/Picker 취소는 무변경이다.
+3. 반환된 URI 목록 순서를 그대로 타임라인에 표시하고 기존 추가 사진 뒤에 붙인다. URI·파일명·EXIF·디코딩 완료 순서로 재정렬하거나 중복 제거하지 않는다. 이는 화면상의 동작 순서이며 촬영 순서를 자동 판별했다는 뜻이 아니다. 실행 전 이전/다음·순서 뒤집기로 고칠 수 있어야 한다.
+4. 가져오기는 순차 디코딩하고 기존 EXIF/4096 working/1080 preview 및 thumbnail 경로를 사용한다. 중간 파일이 읽히지 않으면 어느 사진이 실패했는지 표시하고 재선택/삭제로 해결할 수 있게 한다. 실패한 사진을 몰래 생략한 합성을 완료로 보여주지 않는다. 성공한 기존 사진과 저장 문서를 훼손하지 않는다.
+5. 사진을 가져온 뒤 사진별 편집이나 배치 위치를 열 필요 없이 **`모두 추출하고 자동 배치`** 동작을 제공한다. 타임라인 근처의 주 동작으로 노출하고 기존 EditSheet 높이·토큰·고정 취소/적용·하나의 accent 규칙을 지킨다. 선택된 썸네일에 따라 이 동작이 사라지면 안 된다.
+6. 실행 전 “표시된 순서로 배치하며 원본도 주인공 추출을 위해 SAM 3(host)에 전송한다”는 간결한 안내를 표시한다. **모드 선택/Picker 완료만으로 전송하지 않는다.** 일괄 실행 클릭이 전송 시작과 현재 표시 순서의 확정을 겸한다. 별도의 `이 순서가 맞아요` 클릭은 정상 경로에서 요구하지 않는다.
 
-### T2 — 실제 피부 엔진과 배포 준비
+### 2. 한 번의 실행으로 추출부터 자동 배치까지
 
-8. **기존 평가부터 이어간다.** 미커밋 검출기·평가·REVIEW를 확인하고 재사용 가능한 부분을 구분한다. `skin_retouch_validation.md` SR1-A/B를 충족하는 실제 잡티 검출+국소 복원+보호 mask부터 확보한다. 검출 box나 수동 정답 mask 결과만으로 자동 잡티 제거 완료를 선언하지 않는다. MI-GAN은 첫 평가 후보이며 production 채택 완료 모델이 아니다.
-9. **종류별 지원을 검증한다.** 잡티가 통과하면 T3에 연결하고 유분광/다크서클/면도자국은 SR1-C로 각각 평가·구현한다. 하나의 전체 얼굴 후보를 네 slider에 공유하지 않는다. 미완료 종류는 사유와 함께 비활성으로 남기되 일부 구현을 피부 전체 완료로 보고하지 않는다. 네 기능 전체 완료에는 각각의 품질 gate가 필요하다.
-10. **일반 배포에서 준비 가능하게 한다.** 모델/런타임의 사용·배포 조건, 버전/해시/크기, 실제 기기 비용을 검증한다. debug 전용 코드나 adb push만이 모델 설치 경로가 되지 않게 한다. 미설치/다운로드/실패·재시도/준비 완료를 구분하고 설치된 로컬 모델은 offline에서 동작해야 한다. 현행 architecture의 APK <1000MB, editor peak <250MB와 피부 성능 목표를 검증한다. 예전 15MB 기준을 재도입하거나 gate를 편의상 완화하지 않는다.
-11. **D080을 지킨다.** 로컬 우선·사진 업로드 0건을 유지한다. 실측상 별도 보정 서버가 필요하면 채택 근거와 pipeline §8의 wire/설정/인증 계약을 먼저 구체화하고 명시적 서버 설정 후 실행한다. 위치/모델 제공 방식은 decisions에 기록한다. 모델·평가 자료·운영 자원 미확보는 해당 단계의 BLOCKED 사유로 기록하며 정상 지원으로 표시하지 않는다.
+7. 실행 대상은 **추가 사진 전부와 원본 주인공**이다. 기존에 유효하게 추출 완료된 항목은 재사용하고, 미완료 항목만 처리한다. 새 프로젝트에서는 주인공을 먼저 준비·추출하고 추가 사진은 표시 순서로 순차 처리한다. 원본 렌더가 아직 진행 중이면 준비 상태를 표시하고, 주인공 타일을 사용자가 찾아 눌러야 진행되는 상태를 만들지 않는다.
+8. 기존 `SegmentationProvider`로 `person` 추출을 사용한다. 한 번에 하나의 사진/세션만 처리하고, **유효한 후보가 정확히 하나면 자동 채택 → 피사체/주인공 mask 저장 → 다음 사진**으로 진행한다. 정상 경로에는 사진별 `피사체 추출`이나 `추출 완료` 클릭이 필요 없어야 한다.
+9. 유효 후보가 여러 개면 해당 사진과 후보를 보여주며 일괄 실행을 일시 정지한다. 임의 첫 후보/가장 큰 인물을 택하지 않는다. 0개면 추출 없음 안내와 기존 점/문구 보정 기능을 제공한다. 필요한 사진에서만 **대상 선택·보정 확정**을 요청하고, 확정 후 다음 미완료 사진으로 자동 재개한다. 주인공도 같은 규칙이다. 예외 복구 후 별도의 배치 버튼을 요구하지 않는다.
+10. 진행 상태는 현재 사진 번호/총 대상 수 및 준비·추출·저장 단계를 구분한다. 대상 선택이 필요할 때 무한 로딩처럼 보이지 않게 한다. 실행 중 또는 선택 대기 중 중복 실행은 금지하고 취소는 가능해야 한다. 이전처럼 중앙에 겹친 미완료 결과를 “자동 배치 완료”로 제시하지 않는다.
+11. **현재 실행의 모든 필수 항목이 Ready이고 저장까지 성공한 순간** 기존 `MultiShotLayout`으로 위치와 시간 순서별 opacity를 계산해 draft에 반영한다. 별도 `배치 위치`/`이 순서로 N장 균등 배치`/드래그 없이, 배치된 합성 미리보기와 `적용` 가능 상태로 전환한다. 배치 조절 영역을 자동 표시해 간격·잔상 강도·선택적 수동 보정을 이어갈 수 있게 한다.
+12. 자동 배치는 일괄 실행 완료라는 **명시적인 상태 전이에서 한 번만** 실행한다. recomposition, 모든 Ready 관찰, thumbnail 갱신, 시트 재진입에 무조건 연결하지 않는다. `orderConfirmed`, `laidOutOrder`, `keptPositions`의 의미를 자동 완료 상태와 일관되게 갱신한다. 모든 항목이 이미 Ready인 상태에서 사용자가 일괄 재실행/자동 다시 배치를 누르면 네트워크 없이 현재 순서로 배치한다.
+13. D088 재사용: N=추가+1, 원본 슬롯 `k=floor((N-1)/2)`, 나머지 슬롯 증가 순서, `x=hx+(j-k)*spacing/N`, `y=hy`. mask 하단 중앙 anchor가 목표에 와야 한다. 새 시간 배치는 Even/spacing=1이며 새 shot은 scale=1/rotation=0. 3장·6장 예제 및 비중앙 주인공·서로 다른 크기/종횡비를 검증한다. 간격 0의 의도된 겹침과 화면 밖 잘림 안내를 유지하고 자동 clamp/축소하지 않는다.
+14. 시간 순서별 opacity는 기존 `faded` 규칙을 사용한다(추가 1장 경계도 기존 수학 유지). 원본은 이동하지 않고 hero 보호를 유지한다. 가이드는 overlay만이며 export에 포함하지 않는다. 균등 배치 접근성 설명의 기존 “시작에서 주인공까지 경로” 문구도 실제 슬롯 안내와 맞춘다.
 
-### T3 — 피부 편집·저장 통합
+### 3. 수정·오류·취소와 기존 편집 보존
 
-12. `SkinRetouchProvider`, `FaceRegionAnalyzer` 계약과 Hilt production binding을 연결하고 실제 모델 자원 소유자를 정한다. 메뉴용 감지를 보정 가능성으로 쓰지 않는다. 현재 문서의 삽입 prefix를 canonical 좌표에서 분석하여 crop/회전/Adjust를 중복 적용하지 않는다. 얼굴 0/1/다중, 작은 얼굴, 가림·누락 landmark를 구분하며 눈·입·머리카락·점/주근깨·다른 사람 보호를 검증한다.
-13. placeholder를 기존 EditSheet/AdjustSlider 기반 기능 시트로 교체한다. 얼굴 선택, 처리 위치/준비 상태, 네 종류별 지원과 0..100 강도, 명시적 미리보기, 취소/적용을 연결한다. 기본 0과 NoChange는 history를 만들지 않는다. 후보 없는 활성 항목은 미리보기 갱신 전 Apply를 막는다. 준비된 후보의 강도 변경은 로컬 합성만 한다. 미준비/실패와 얼굴 없음을 구분하고 재시도를 제공한다. DESIGN.md의 시트 높이·고정 버튼·접근성 패턴을 유지한다.
-14. `skin_retouch_pipeline.md` §4–7의 동일 base, 종류별 candidate, binary support, feather 한 번, alpha 보존 계약을 구현한다. 얼굴/문서/설정/세션 변경과 취소 후 늦은 분석·추론·저장을 무효화한다. `Operation.SkinRetouch`, codec/참조 검사, CPU/GPU 렌더, 원자적 result+mask 저장, 복제/삭제/outpaint guard를 포함한다. Apply는 history 한 번, Undo/Redo/load/export는 재추론 없이 같은 결과를 보존한다. 부분 저장 실패는 문서를 유지하고 이번 요청의 미참조 파일만 정리한다.
-15. 회전 시 draft 유지, process 재생성 시 committed 문서만 복구, draft autosave 제외/export 차단, Cancel/Back/dismiss 시 무변경을 검증한다. 기능이 켜진 실제 배포 variant에서도 동작해야 한다.
+15. 자동 배치 후 드래그/크기/회전/opacity 보정은 가능하며 UI 갱신 때문에 자동으로 되돌리지 않는다. 명시적 `자동 다시 배치`는 현재 순서에 맞춰 위치와 시간 opacity를 다시 계산하고 기존 크기/회전은 유지한다. 간격 변경은 기존대로 위치만 바꾸며 개별 opacity를 덮어쓰지 않는다.
+16. 추가/교체/삭제/순서 변경은 완료된 배치와 현재 구성의 차이를 표시한다. 편집 직후 기존 수동 위치를 몰래 덮어쓰지 않고, 같은 눈에 띄는 일괄 동작을 `남은 사진 추출하고 자동 배치` 또는 전부 Ready면 `자동 다시 배치`로 제공한다. 실행 후에는 별도 확인 없이 배치까지 마친다. 기존 `현재 위치 유지`는 고급 선택으로 유지할 수 있으나 정상 자동 경로의 필수 단계가 아니다.
+17. 저장된 합성을 단순히 열거나 모드를 왕복하는 것만으로 추출/재배치하지 않는다. 기존 Path/Even 문서의 위치·순서·hero·settings를 유지한다. 기존 자유 배치는 한 장씩 추출/확정하는 흐름을 유지하고 자동 queue를 시작하지 않는다. 배치 계산과 렌더·저장은 기존 경로를 재사용한다.
+18. 서버 unavailable/인증/timeout/업로드 rate limit/추출/저장 실패가 발생하면 해당 항목에서 멈추고 이유와 재시도/교체/삭제를 제공한다. 완료 항목을 보존하며 재시도는 실패한 항목부터 이어간다. 실패 뒤 다음 사진을 계속 보내거나 일부 사진을 빼고 성공 처리하지 않는다. 무한 재시도·병렬 업로드·새 provider 계층을 만들지 않는다. 기존 410 복구는 provider 계약을 따른다.
+19. 진행 취소는 queue와 다음 업로드를 멈춘다. 완료한 draft 항목은 시트 안에서 유지할 수 있으나 취소만으로 자동 배치/commit하지 않는다. 시트 취소/Back/dismiss, 문서 변경, 설정 변경, 화면 이탈에는 queue·선택 세션·늦게 도착한 mask/파일의 처리를 중단한다. 설정 변경 후에는 사용자 재실행 없이 새 서버로 나머지 사진을 전송하지 않는다. 완료 후 늦게 도착한 응답이 새 queue나 다른 사진에 적용되지 않게 한다.
+20. 단일 실행의 coroutine/queue와 파일 소유권은 기존 controller 세션에 둔다. Import/추출/보정/저장 중 취소 각각을 보호한다. 완료 전에는 session 소유 파일, 적용 후에는 document 소유 파일이라는 기존 규칙을 지키고 저장 중 취소로 생긴 파일도 회수한다. SAM 세션을 다음 사진 전에 닫고 선택 도구의 세션과 충돌하지 않게 한다. `startWork`, `selectedKey`, `working`의 중첩 호출로 queue가 취소되거나 고착되지 않게 한다.
+21. Picker 실행 시 세션/교체 대상/남은 한도를 추적한다. 닫힌 시트나 다른 프로젝트로 늦게 돌아온 결과는 버리고, 구성 변경 후 중복 추가/추출하지 않는다. 미적용 draft의 process death 복구는 기존대로 범위 밖이다. 재시작한 새 세션이 이전 queue를 자동 실행해서는 안 된다.
+22. 자동 결과는 **draft 미리보기**다. `적용` 때 한 번의 history entry로 저장하고 `취소`는 문서를 바꾸지 않는다. Undo/Redo, 저장·재열기·export·복제는 기존 피사체 refs/placement를 이용한다. 원본 사진이나 전체 working Bitmap 여섯 장을 추가로 상주시켜 메모리 한도를 악화시키지 않는다.
 
-### T4 — 수정 APK와 인계
+### 4. 명세와 검증 증거
 
-16. T1은 피부 모델 평가와 독립적으로 완료·검증한다. T2→T3는 검증된 종류부터 연결하고 T4에서 통합한다. 한 거대 diff로 섞지 말고 단계별 변경/검증을 기록한다. 자동만 해결하거나 피부 버튼만 활성화해서 두 문제 모두 해결됐다고 선언하지 않는다.
-17. 실제 기기에서 권한 있는 사진으로 자동 세 스타일→강도→적용/취소와 피부 각 지원 기능→강도→미리보기→적용/Undo/Redo→재열기/export를 확인한다. clean install은 별도 테스트 환경에서 수행하여 기존 데이터를 보존한다. 모델 미설치, offline, 서버 중단 후 복구, 잘못된 토큰, 기존 override가 남은 업데이트도 확인한다.
-18. `work/RESULT.md`에 두 문제 각각의 실제 원인, 수정 파일, 단계별 상태, 실행 검사/결과, 품질·성능 근거, 기기/네트워크 조건, APK 경로·SHA-256·버전 및 설치/런타임 설정 절차를 기록한다. 공개 산출물에 개인 주소/토큰/사진을 포함하지 않는다. 실제 기기/서버/평가 자료가 없으면 미실행/제약과 남은 조치를 명시한다.
+23. `specs/multishot.md`의 한 장 Picker/필수 수동 확정/필수 배치 단계를 새 자동 정상 경로와 예외 복구 경로로 고친다. D086/D087에서 어떤 흐름을 대체하는지 새 결정으로 기록하고 D088 수학·D089 서버 경계를 유지한다. 문서가 “추출만 완료하면 별도 배치 필요”와 “일괄 완료 시 자동 배치”를 동시에 지시하지 않게 한다.
+24. 자동 테스트는 사용자 진입 이벤트에서 queue를 실행해 검증한다. **테스트 helper가 `placeByOrder()`를 대신 불러 놓고 자동 배치 성공이라고 판정하지 않는다.** Compose의 버튼 callback 검증만으로 끝내지 말고 controller의 저장된 placement와 변환된 anchor 수치를 확인한다.
+25. 실기기에서는 기존 완성된 6장 프로젝트 재편집만 하지 말고 **새 검증 프로젝트**에서 원본+추가 2장, 원본+추가 5장의 정상 흐름을 각각 실행한다. 다중 선택 → 일괄 실행 한 번 → 자동 미리보기 → 적용까지의 사용자 동작과 서버 요청/후보 중단 여부를 기록한다. 단일 인물 입력과 다중 후보 입력을 구분한다. 사용할 사진 권한/기기/서버가 없으면 실제 미실행 이유를 RESULT에 남기며 fake 통과로 대체하지 않는다.
 
 ## Acceptance Criteria
 
-- [ ] 설치 APK의 버전·설정 경로와 자동 연결 실패 원인을 재현 근거로 구분했다.
-- [ ] 미설정/잘못된 설정/인증 실패/확인 중/서버 미준비를 안내하며 설정 수정과 같은 설정 재시도로 복구된다.
-- [ ] 실제 기기에서 MonetGPT 세 스타일 결과, 미리보기/강도/적용/취소/Undo가 동작한다.
-- [ ] 피부가 production provider로 실제 보정 결과를 만든다. 네 종류별 평가가 명시되며 전체 완료에는 네 기능 모두 통과했다.
-- [ ] 일반 배포 APK에서 모델 준비와 오류 복구가 가능하고 debug 수동 설치에 의존하지 않는다.
-- [ ] 피부 보호 영역/0 강도/종류 독립성/NoChange 및 품질·성능 gate를 통과했다.
-- [ ] 피부 Apply/Undo/Redo/저장 후 재열기/export가 재추론 없이 동일 결과를 보존한다.
-- [ ] 취소·역순 완료·설정/얼굴/문서 변경·저장 실패에서 상태/history/파일이 안전하다.
-- [ ] 관련 검사와 저장소 검증을 통과했으며 미실행과 실제 기기 검증을 구분했다.
-- [ ] 수정 APK와 설치·설정 안내가 있고 비밀값 노출·기존 데이터 손실·무관한 회귀가 없다.
+- [ ] 새 시간 순서 배치에서 여러 장을 한 번에 선택한다. 총 2~6장 한도, 남은 1장, 빈 결과/취소, 초과 목록·늦은 Picker 결과를 처리한다.
+- [ ] 단일 유효 인물 입력의 총 3장/6장에서 **일괄 실행 한 번**으로 주인공 포함 추출·저장·자동 배치를 완료한다. 사진별 확정/별도 순서 확인/별도 배치/드래그 없이 Apply 가능하다.
+- [ ] 모든 피사체가 중앙에 겹친 채 완료되지 않는다. D088 슬롯/anchor·opacity가 실제 draft placement와 맞고 저장/렌더에서도 유지된다.
+- [ ] 0개/다중 후보는 해당 사진에서 명시적으로 중단하며 사용자 보정 확정 후 나머지와 자동 배치를 이어간다. 주인공 선택 누락으로 숨은 비활성 상태에 고착되지 않는다.
+- [ ] 중간 실패/재시도, 진행 취소, 설정 변경, 빠른 닫기/재진입, 저장 중 취소에서 다음 요청·stale 결과·세션/파일 누수가 없다.
+- [ ] 재시도는 완료 항목을 다시 업로드하지 않는다. 정상 완료 후 불필요한 자동 재배치로 수동 보정을 잃지 않는다.
+- [ ] 기존 Free/Path/Even 재열기·모드 전환은 저장 위치/hero/순서를 보존하고 네트워크나 재배치를 자동 실행하지 않는다.
+- [ ] 적용은 한 history step, 취소는 무변경. Undo/Redo·재시작 재열기·PNG export를 확인한다.
+- [ ] 관련 자동 테스트와 canonical 검사를 통과하고, 새로운 정상 흐름을 실기기에서 검증하거나 구체적인 환경 제한을 남긴다.
+- [ ] specs/decisions/RESULT를 갱신하고 기존 서버 R1/R2 및 미완료 품질 평가를 완료로 바꾸지 않는다. 무관한 변경·자동 commit이 없다.
 
 ## Validation
 
-좁은 개발 검사 후 최종 전체 검증을 수행한다. 기존 placeholder의 “항상 미지원” 및 auto의 “실패 시 동작 없음” 테스트는 새 행동 계약으로 교체하되 실패 coverage를 삭제하지 않는다.
+개발 중 좁은 범위:
 
 ```bash
-git status --short
-./gradlew :core:ai:testDebugUnitTest --tests 'com.diffuse.core.ai.monet.*'
-./gradlew :feature:editor:testDebugUnitTest --tests 'com.diffuse.feature.editor.tools.auto.*'
-./gradlew :core:ai:testDebugUnitTest :core:imaging:testDebugUnitTest :core:data:testDebugUnitTest :feature:editor:testDebugUnitTest
+./gradlew --offline --quiet :feature:editor:testDebugUnitTest --tests '*MultiShot*'
+```
+
+완료 시 관련 저장·수학·렌더 회귀 및 canonical:
+
+```bash
+./gradlew --offline --quiet :core:imaging:testDebugUnitTest :core:data:testDebugUnitTest :feature:editor:testDebugUnitTest --tests '*MultiShot*' --tests '*HistoryStack*'
 scripts/check.sh
-./gradlew :app:assembleDebug :app:assembleRelease
 git diff --check
 ```
 
-필수 회귀 coverage:
-
-- health 실패→같은 설정 재시도→Ready, 같은 설정 재저장, 최초 확인 중 tap, 401/503/timeout/잘못된 URL, 설정 A/B 역순 응답, clean/기존 override 경로.
-- 실제 HTTP 취소, 늦은 auto 결과 차단, 정상 스타일/강도/history.
-- 피부 입력 불변/보호 mask/NoChange/종류 분리, 모델 준비 실패·재시도, 합성/좌표/원자 저장/offline 재열기/export.
-- 취소 무시 fake 역순 완료, 얼굴/문서 교체, 저장 중 취소, old finally/new busy, 이중 Apply, 회전/draft 복구.
-
-실제 모델/기기 검증은 별도다. 기존 androidTest harness와 SR1 평가 절차를 따르고 전체 editor 메모리/지연을 별도 측정한다. 기기가 있으면 `./gradlew :core:ai:connectedDebugAndroidTest`를 실행하되 검출기 harness 통과를 피부 기능 완료로 해석하지 않는다.
-
-서버 수정 시 `/home/jaeho/monetGPT`의 `scripts/check.sh`와 기존 실제 모델 smoke를 수행한다. GPU 점유·기존 서비스 영향을 확인하고 서버 README의 명령을 따른다. 토큰은 환경 설정에서 읽으며 로그에 노출하지 않는다. host smoke 성공과 휴대폰 end-to-end 성공을 따로 기록한다.
+- queue/controller: 주인공 포함 순차 실행, 단일 후보 자동 확정, 수동 보정 중단·자동 재개, 중간 오류·cancel/stale·설정 변경·파일 소유권. 지연 가능한 기존 scripted fake로 실행 순서와 요청 수를 확인한다.
+- Picker/시트: 다중 결과 순서·잔여 한도·취소·실패 처리, 한 번의 일괄 동작, progress/후보 선택/에러/성공 화면, 복귀 시 중복 없음. 골든이 바뀌면 관련 파일만 재기록하고 눈으로 확인한다.
+- 배치/controller: 기존 `assertAnchors`와 `MultiShotLayout.onCanvas` 등으로 최종 좌표를 검증한다. 정상 흐름 테스트에서는 직접 배치 함수를 호출하지 않는다.
+- 실기기 빌드/설치: 기존 로컬 자격 설정이 있으면 `./gradlew --offline :app:assembleDebug -Pdiffuse.localCreds` 사용. 키를 문서·출력에 기록하지 않는다. 기존 ADB reverse `127.0.0.1:15039`는 연결 여부를 다시 확인한다.
+- 실기기 필수 시나리오: 새 3장/6장 자동 흐름, 모호한 후보 해결 후 자동 완료, 취소/재시도, 수동 보정 유지, 적용→Undo/Redo→재시작→PNG export. 완료 화면·저장 JSON·요청 수 등 근거를 RESULT에 기록한다.
+- SAM 업로드 rate limit(기존 배포 6회/60초)을 고려해 시나리오 간 간격을 둔다. 운영 서비스/모델을 바꿔 통과시키지 않는다. 완료 PNG 확인은 기능 smoke이며 골프채·손 경계 품질/12MP 성능 합격과 구별한다.
 
 ## Notes
 
-- 명세: `specs/architecture.md`, `specs/auto_enhance.md`, `specs/skin_retouch.md`, `specs/skin_retouch_pipeline.md`, `specs/skin_retouch_validation.md`, `DESIGN.md`, `work/decisions.md` D080.
-- 참고 테스트: `MonetClientTest`, `AutoToolTest`, `SkinRetouchSheetTest`, `SkinRetouchToolTest`, 얼굴 분석/검출기 테스트, `OperationOrderTest`, `EditDocumentJsonTest`와 저장소 테스트. Fake는 계약 테스트용이며 실제 품질 증거가 아니다.
-- 이번 요청에 따라 자동 연결 복구 동작을 명세에 반영한다. 주소 없는 공개 APK 정책과 런타임 설정은 유지하며 운영 주체를 임의로 바꾸지 않는다.
-- 피부 gate 미통과 시 T1 완료와 T2/T3 잔여를 분리 보고한다. 전체 완료 기준을 낮추거나 미완성 UI를 해결책으로 삼지 않는다.
+- 이번 작업은 **구현 계약 작성**이다. 코드 구현·신규 검증 완료를 의미하지 않는다. `work/tasks.md`만 현재 계약으로 교체했으며 이전 작업 인계는 `work/RESULT.md`, `work/REVIEW.md`, `specs/multishot_api.md`, D089에 남아 있다.
+- 이전 서버 API는 실제 SAM 3장/6장 요청이 200으로 통과했지만, REVIEW **R1(ASGI 태스크 취소 후 후속 추출)** / **R2(큰 정수 metadata가 500)**는 미해결이다. 이번 Android 작업으로 해소된 것으로 표시하지 말고 RESULT의 미완료 요약과 참조를 보존한다.
+- 앱의 이전 골프/얇은 경계 품질·진짜 offline·12MP/PSS 평가, 피부 보정 D084 지원 종류 0개·품질/lifecycle 평가, Jev 미구현도 별도 미완료다. 상세는 기존 RESULT/REVIEW와 `work/retouch_evaluation.md`를 참조한다.
+- 권위 자료: 현재 사용자 요청 → `architecture/architecture.md` → 이번에 함께 갱신할 `specs/multishot.md` → DESIGN §4/§7/§8 → D085~D089. 기존 수동 흐름을 고정한 테스트는 새 계약에 맞게 바꾸되 자유 배치·저장 복원·취소 회귀를 약화시키지 않는다.

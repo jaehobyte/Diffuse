@@ -1,0 +1,21 @@
+# systemd *user* unit for the skin retouch backend (loopback only).
+# Install: see server/retouch/deploy/README.md
+[Unit]
+Description=Vibe skin retouch inference server (127.0.0.1:8084)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/vibe_editor_260905/server/retouch
+EnvironmentFile=%h/vibe_editor_260905/server/retouch/deploy/retouch-server.env
+# One process, one worker: the models are loaded once; concurrency is the in-process queue.
+ExecStart=%h/vibe_editor_260905/server/retouch/.venv/bin/python -m app
+Restart=on-failure
+RestartSec=10
+# Loading + digest checks + warm-up take a few seconds; allow for a cold disk and CUDA init.
+TimeoutStartSec=300
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

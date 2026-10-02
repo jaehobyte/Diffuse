@@ -3,6 +3,10 @@ package com.diffuse.core.imaging.history
 import com.diffuse.core.imaging.model.AdjustKind
 import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.core.imaging.model.ImageRef
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -127,5 +131,36 @@ class HistoryStackTest {
         repeat(4) { history.undo() }
         assertFalse(history.canUndo.value)
         assertEquals(0.6f, history.current.value.adjustValue(AdjustKind.Exposure), 0.0001f)
+    }
+
+    /**
+     * work/REVIEW.md N1: the editor collects [HistoryStack.current] and reads the availability in
+     * the callback. On an immediate dispatcher the callback runs inside the assignment, so the
+     * availability has to be published first or the first commit leaves Undo disabled.
+     */
+    @Test
+    fun `a collector of the document sees the availability of that step`() {
+        val history = HistoryStack(base)
+        val edited = exposure(0.1f)
+        val seen = mutableListOf<Triple<EditDocument, Boolean, Boolean>>()
+        val scope = CoroutineScope(Dispatchers.Unconfined)
+        scope.launch {
+            history.current.collect { seen += Triple(it, history.canUndo.value, history.canRedo.value) }
+        }
+
+        history.push(edited)
+        history.undo()
+        history.redo()
+        scope.cancel()
+
+        assertEquals(
+            listOf(
+                Triple(base, false, false),
+                Triple(edited, true, false),
+                Triple(base, false, true),
+                Triple(edited, true, false),
+            ),
+            seen,
+        )
     }
 }

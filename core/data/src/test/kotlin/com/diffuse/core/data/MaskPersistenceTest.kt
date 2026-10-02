@@ -46,6 +46,9 @@ class MaskPersistenceTest {
         override suspend fun full(document: EditDocument, onProgress: (Float) -> Unit) =
             Result.Success(Bitmap.createBitmap(64, 48, Bitmap.Config.ARGB_8888))
 
+        override fun putTransient(ref: ImageRef, bitmap: Bitmap) = Unit
+        override fun removeTransient(ref: ImageRef) = Unit
+
         override suspend fun resolveMask(document: EditDocument, maskId: String): Bitmap? = null
     }
 

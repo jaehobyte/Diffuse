@@ -8,6 +8,7 @@ import androidx.compose.material.icons.rounded.AutoAwesomeMosaic
 import androidx.compose.material.icons.rounded.AutoAwesomeMotion
 import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.AutoFixNormal
+import androidx.compose.material.icons.rounded.BurstMode
 import androidx.compose.material.icons.rounded.Colorize
 import androidx.compose.material.icons.rounded.Crop
 import androidx.compose.material.icons.rounded.Face
@@ -67,6 +68,12 @@ enum class Tool(
 
     /** specs/auto_enhance.md §6: the one AI tool that answers in adjustments rather than pixels. */
     Auto(R.string.editor_tool_auto, Icons.Rounded.AutoFixNormal, ToolGroup.Ai),
+
+    /**
+     * specs/multishot.md §2: pixels from other photographs, so an AI-level tool offered in both
+     * menu profiles. Appended before 지시 so every existing tool keeps its relative order.
+     */
+    MultiShot(R.string.editor_tool_multishot, Icons.Rounded.BurstMode, ToolGroup.Ai),
 
     /** specs/vibe_edit.md §3: last in the strip, because it can reach any of the others. */
     Direct(R.string.editor_tool_direct, Icons.Rounded.AutoAwesome, ToolGroup.Ai),

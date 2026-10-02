@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -36,7 +37,15 @@ import com.diffuse.feature.editor.tools.expand.ExpandSheet
 import com.diffuse.feature.editor.tools.fill.FillSheet
 import com.diffuse.feature.editor.tools.prompt.VoicePromptBar
 import com.diffuse.feature.editor.tools.select.Sam3SettingsSheet
+import com.diffuse.feature.editor.tools.retouch.SkinRetouchActions
+import com.diffuse.feature.editor.tools.retouch.SkinRetouchSheet
 import com.diffuse.feature.editor.tools.select.SelectSheet
+import com.diffuse.core.imaging.render.CanvasPoint
+import com.diffuse.feature.editor.tools.multishot.MultiShotActions
+import com.diffuse.feature.editor.tools.multishot.MultiShotOverlay
+import com.diffuse.feature.editor.tools.multishot.MultiShotSheet
+import com.diffuse.feature.editor.tools.multishot.MultiShotState
+import com.diffuse.feature.editor.tools.multishot.ShotStatus
 import kotlinx.coroutines.launch
 
 /**
@@ -71,7 +80,7 @@ fun EditorRoute(
 
     Box(modifier = modifier.fillMaxSize()) {
         EditorScreen(
-            preview = state.preview,
+            preview = shownPreview(state),
             source = state.source,
             selectedTool = state.selectedTool,
             onToolClick = viewModel::onToolClick,
@@ -89,23 +98,16 @@ fun EditorRoute(
             onRedo = viewModel::redo,
             onReset = viewModel::reset,
             onCompareChange = {},
-            onExport = onExport,
+            onExport = exportAction(state, viewModel, onExport),
             overlayTransform = overlayTransform(state),
             disabledTools = disabledTools(state),
             toolLevel = toolLevelState(toolLevel, state) { toolLevel = it },
-            gestureMode = if (state.selectedTool == Tool.Select) {
+            gestureMode = if (pointTaps(state, viewModel) != null) {
                 CanvasGestureMode.SelectPoint
             } else {
                 CanvasGestureMode.Pan
             },
-            pointTaps = if (state.selectedTool != Tool.Select) {
-                null
-            } else {
-                CanvasPointTaps(
-                    onForeground = { viewModel.selection.addPoint(it.x, it.y, foreground = true) },
-                    onBackground = { viewModel.selection.addPoint(it.x, it.y, foreground = false) },
-                )
-            },
+            pointTaps = pointTaps(state, viewModel),
             // specs/selection_tool.md §5: while `busy` the previous mask stays; only the
             // one-off `open` earns the overlay.
             busy = isBusy(state),
@@ -134,6 +136,30 @@ private fun toolLevelState(
     onChange: (ToolGroup) -> Unit,
 ) = ToolLevelState(level, onChange, menuProfileFor(state.portrait))
 
+/**
+ * specs/multishot.md §2: while an added photo is still a photo, the canvas shows it rather than
+ * the composite.
+ */
+private fun shownPreview(state: EditorUiState) =
+    state.multiShot.photo?.takeIf { state.selectedTool == Tool.MultiShot } ?: state.preview
+
+/**
+ * specs/selection_tool.md §2 and multishot.md §2: the tools that claim a single-finger tap on the
+ * photo — 선택, and 멀티샷 while an added photo's selection is being refined.
+ */
+private fun pointTaps(state: EditorUiState, viewModel: EditorViewModel): CanvasPointTaps? = when {
+    state.selectedTool == Tool.Select -> CanvasPointTaps(
+        onForeground = { viewModel.selection.addPoint(it.x, it.y, foreground = true) },
+        onBackground = { viewModel.selection.addPoint(it.x, it.y, foreground = false) },
+    )
+    state.selectedTool == Tool.MultiShot && state.multiShot.selected?.status ==
+        ShotStatus.Selecting -> CanvasPointTaps(
+        onForeground = { viewModel.multiShot.addPoint(it.x, it.y, include = true) },
+        onBackground = { viewModel.multiShot.addPoint(it.x, it.y, include = false) },
+    )
+    else -> null
+}
+
 /** DESIGN.md §7: the overlay's cancel button reaches whichever tool is working. */
 private fun cancelWork(viewModel: EditorViewModel) {
     viewModel.selection.cancelWork()
@@ -142,7 +168,17 @@ private fun cancelWork(viewModel: EditorViewModel) {
     viewModel.expand.cancel()
     viewModel.auto.cancel()
     viewModel.direct.cancelWork()
+    viewModel.skin.cancelWork()
+    viewModel.multiShot.cancelWork()
 }
+
+/** specs/skin_retouch.md §5: while a skin draft is open, export waits for 적용 or 취소. */
+private fun exportAction(state: EditorUiState, viewModel: EditorViewModel, onExport: () -> Unit): () -> Unit =
+    if (state.selectedTool == Tool.SkinRetouch) {
+        { viewModel.skin.showMessage(R.string.skin_retouch_export_blocked) }
+    } else {
+        onExport
+    }
 
 /** One snackbar, so the one that was shown is cleared wherever it came from. */
 private fun clearMessages(viewModel: EditorViewModel) {
@@ -153,12 +189,15 @@ private fun clearMessages(viewModel: EditorViewModel) {
     viewModel.auto.onMessageShown()
     viewModel.style.onMessageShown()
     viewModel.direct.onMessageShown()
+    viewModel.skin.onMessageShown()
+    viewModel.multiShot.onMessageShown()
 }
 
 /** DESIGN.md §7: every AI call shows progress and a way out, so they share one flag. */
 private fun isBusy(state: EditorUiState): Boolean =
     state.selection.working || state.erase.busy || state.fill.busy || state.expand.busy ||
-        state.auto.busy || state.style.matching || state.direct.working
+        state.auto.busy || state.style.matching || state.direct.working || state.skin.busy ||
+        state.multiShot.working
 
 /** specs/selection_tool.md §1 and generative_erase.md §5: a tool that cannot work is greyed. */
 private fun disabledTools(state: EditorUiState): Set<Tool> = buildSet {
@@ -176,6 +215,7 @@ private fun disabledTools(state: EditorUiState): Set<Tool> = buildSet {
 
 /** DESIGN.md §4 State display: the overlay says what is actually happening. */
 private fun busyLabel(state: EditorUiState): Int = when {
+    state.multiShot.working && state.multiShot.workLabel != null -> state.multiShot.workLabel
     state.direct.planning -> R.string.direct_planning
     state.direct.running -> R.string.direct_running
     state.erase.busy -> R.string.erase_working
@@ -183,6 +223,8 @@ private fun busyLabel(state: EditorUiState): Int = when {
     state.fill.busy -> R.string.fill_working
     state.auto.busy -> R.string.auto_working
     state.style.matching -> R.string.style_matching
+    state.skin.preparing -> R.string.skin_retouch_working
+    state.skin.applying -> R.string.skin_retouch_applying
     state.selection.phraseBusy -> R.string.select_prompt_working
     else -> R.string.select_preparing
 }
@@ -199,7 +241,8 @@ private fun message(state: EditorUiState): String? {
         direct != null -> stringResource(direct.res)
         else -> (
             state.selection.message ?: state.erase.message ?: state.fill.message
-                ?: state.expand.message ?: state.auto.message ?: state.style.message
+                ?: state.expand.message ?: state.auto.message ?: state.style.message ?: state.skin.message
+                ?: state.multiShot.message
             )?.let { stringResource(it) }
     }
 }
@@ -222,6 +265,8 @@ private fun canvasOverlay(
     )
     // specs/outpaint.md §6: the pending area is the canvas's own checkerboard, drawn by
     // `OverlayTransform.margins`; the overlay itself is the four handles.
+    // specs/multishot.md §2: the added photo's selection while it is a photo, the drag once placed.
+    Tool.MultiShot -> multiShotOverlay(state, viewModel)
     Tool.Expand -> {
         {
             ExpandOverlay(
@@ -249,15 +294,7 @@ private fun sheetFor(
     viewModel: EditorViewModel,
 ): (@Composable () -> Unit)? {
     if (state.selection.showSettings) {
-        return {
-            Sam3SettingsSheet(
-                config = state.selection.config,
-                geminiApiKey = state.selection.geminiApiKey,
-                monetConfig = state.selection.monetConfig,
-                onSave = viewModel.selection::saveSettings,
-                onCancel = { viewModel.selection.setSettingsVisible(false) },
-            )
-        }
+        return { SettingsSheet(state, viewModel) }
     }
     return document?.let { doc ->
         {
@@ -287,6 +324,8 @@ private fun sheetFor(
                 Tool.Auto -> AutoToolSheet(state = state, viewModel = viewModel)
                 Tool.Style -> StyleToolSheet(state = state, viewModel = viewModel)
                 Tool.Direct -> DirectToolSheet(state = state, viewModel = viewModel)
+                Tool.SkinRetouch -> SkinRetouchToolSheet(state = state, viewModel = viewModel)
+                Tool.MultiShot -> MultiShotToolSheet(state = state, viewModel = viewModel)
                 else -> ToolSheetHost(
                     maskOption = MaskOption(
                         available = doc.activeMaskId != null,
@@ -421,6 +460,130 @@ private fun AutoToolSheet(state: EditorUiState, viewModel: EditorViewModel) {
         onIntensityChange = viewModel.auto::setIntensity,
         onCancel = viewModel::cancelSheet,
         onApply = viewModel::applySheet,
+    )
+}
+
+@Composable
+private fun SettingsSheet(state: EditorUiState, viewModel: EditorViewModel) {
+    Sam3SettingsSheet(
+        config = state.selection.config,
+        geminiApiKey = state.selection.geminiApiKey,
+        monetConfig = state.selection.monetConfig,
+        onSave = viewModel.selection::saveSettings,
+        onCancel = { viewModel.selection.setSettingsVisible(false) },
+        retouchConfig = state.selection.retouchConfig,
+        onSaveRetouch = viewModel.selection::saveRetouchSettings,
+    )
+}
+
+/** specs/skin_retouch.md §4: the face, four strengths, 미리보기 and the server's own settings path. */
+@Composable
+private fun SkinRetouchToolSheet(state: EditorUiState, viewModel: EditorViewModel) {
+    val skin = viewModel.skin
+    SkinRetouchSheet(
+        state = state.skin,
+        actions = SkinRetouchActions(
+            onSelectFace = skin::selectFace,
+            onStrengthChange = skin::setStrength,
+            onPreview = skin::preview,
+            onRetryAnalysis = skin::retryAnalysis,
+            onRecheckServer = skin::refreshServer,
+            onOpenSettings = { viewModel.selection.setSettingsVisible(true) },
+            onCancel = viewModel::cancelSheet,
+            onApply = viewModel::applySheet,
+        ),
+    )
+}
+
+private fun multiShotOverlay(
+    state: EditorUiState,
+    viewModel: EditorViewModel,
+): (@Composable androidx.compose.foundation.layout.BoxScope.() -> Unit)? {
+    val multiShot = state.multiShot
+    return when {
+        multiShot.photo != null ->
+            selectionOverlaySlot(mask = multiShot.mask, points = emptyList(), labels = emptyList())
+        multiShot.layoutShown || multiShot.selected?.status == ShotStatus.Ready -> {
+            {
+                MultiShotOverlay(
+                    onMove = viewModel.multiShot::moveBy,
+                    marker = multiShot.anchorMarker,
+                    anchorEditing = multiShot.anchorEditing,
+                    pathStart = multiShot.pathStart,
+                    baseline = multiShot.showsBaseline,
+                    pathEnd = multiShot.heroAnchor?.let { CanvasPoint(it.x, it.y) },
+                    slots = multiShot.slots,
+                )
+            }
+        }
+        else -> null
+    }
+}
+
+/**
+ * specs/multishot.md §2: the system Photo Picker, so no gallery permission is asked for — several
+ * new photos at once in the time layout, up to what still fits; one for the free layout, a
+ * replacement or the last free place. Which request the answer belongs to survives a configuration
+ * change; the controller drops an answer to any other request.
+ */
+@Composable
+private fun MultiShotToolSheet(state: EditorUiState, viewModel: EditorViewModel) {
+    val multiShot = viewModel.multiShot
+    var requestId by rememberSaveable { mutableStateOf<String?>(null) }
+    val single = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        multiShot.onPicked(requestId, listOfNotNull(uri))
+    }
+    // The contract carries its limit; PickMultipleVisualMedia needs at least two.
+    val room = (MultiShotState.MAX_ITEMS - state.multiShot.items.size).coerceAtLeast(2)
+    val multipleContract = remember(room) { ActivityResultContracts.PickMultipleVisualMedia(room) }
+    val multiple = rememberLauncherForActivityResult(multipleContract) { uris ->
+        multiShot.onPicked(requestId, uris)
+    }
+    val pick = { key: String? ->
+        multiShot.requestPick(key)?.let { request ->
+            requestId = request.id
+            val images = PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+            if (request.max > 1) multiple.launch(images) else single.launch(images)
+        }
+    }
+    MultiShotSheet(
+        state = state.multiShot,
+        actions = MultiShotActions(
+            onAdd = { pick(null) },
+            onReplace = { pick(it) },
+            onSelect = multiShot::select,
+            onRemove = multiShot::remove,
+            onMove = multiShot::move,
+            onExtract = multiShot::extract,
+            onChooseCandidate = multiShot::chooseCandidate,
+            onPhraseChange = multiShot::setPhrase,
+            onSubmitPhrase = multiShot::submitPhrase,
+            onFinishExtraction = multiShot::finishExtraction,
+            onOpacityChange = multiShot::setOpacity,
+            onScaleChange = multiShot::setScale,
+            onRotationChange = multiShot::setRotation,
+            onResetPlacement = multiShot::resetPlacement,
+            onAfterimage = multiShot::applyAfterimage,
+            onRecheckServer = multiShot::refreshServer,
+            onOpenSettings = { viewModel.selection.setSettingsVisible(true) },
+            onCancel = viewModel::cancelSheet,
+            onApply = viewModel::applySheet,
+            onModeChange = multiShot::setMode,
+            onMoveInTime = multiShot::moveInTime,
+            onReverseTime = multiShot::reverseTime,
+            onRun = multiShot::runAll,
+            onCancelRun = multiShot::cancelRun,
+            onPlace = multiShot::placeByOrder,
+            onKeepPositions = multiShot::keepPositions,
+            onPanelChange = multiShot::setPanel,
+            onArrangementChange = multiShot::setArrangement,
+            onSpacingChange = multiShot::setSpacing,
+            onDirectionChange = multiShot::setDirection,
+            onDistanceChange = multiShot::setDistance,
+            onStrengthChange = multiShot::setStrength,
+            onAnchorEditingChange = multiShot::setAnchorEditing,
+            onReselectHero = multiShot::reselectHero,
+        ),
     )
 }
 

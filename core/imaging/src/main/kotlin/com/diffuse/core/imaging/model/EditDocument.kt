@@ -41,13 +41,19 @@ data class EditDocument(
     fun generativeFills(): List<Operation.GenerativeFill> =
         operations.filterIsInstance<Operation.GenerativeFill>()
 
+    fun skinRetouches(): List<Operation.SkinRetouch> =
+        operations.filterIsInstance<Operation.SkinRetouch>()
+
+    /** specs/multishot.md §3: at most one. */
+    fun multiShot(): Operation.MultiShot? = operations.filterIsInstance<Operation.MultiShot>().firstOrNull()
+
     /** specs/outpaint.md §3: at most one, and always `operations[0]`. */
     fun outpaint(): Operation.Outpaint? = operations.firstOrNull() as? Operation.Outpaint
 
     /**
-     * specs/outpaint.md §3: 확대 comes before 선택. A `Mask`, `CutOut`, `GenerativeErase` or
-     * `GenerativeFill` carries pixels or alpha sized to the un-extended canvas, and re-basing
-     * those would mean resampling stored PNGs — a quality loss the user did not ask for. One
+     * specs/outpaint.md §3: 확대 comes before 선택. A `Mask`, `CutOut`, `GenerativeErase`,
+     * `GenerativeFill` or `SkinRetouch` carries pixels or alpha sized to the un-extended canvas,
+     * and re-basing those would mean resampling stored PNGs — a quality loss the user did not ask for. One
      * guard, in the model, so neither the tool nor a future planner can go round it.
      */
     val canOutpaint: Boolean
@@ -55,7 +61,9 @@ data class EditDocument(
             it is Operation.Mask ||
                 it is Operation.CutOut ||
                 it is Operation.GenerativeErase ||
-                it is Operation.GenerativeFill
+                it is Operation.GenerativeFill ||
+                it is Operation.SkinRetouch ||
+                it is Operation.MultiShot
         }
 
     /**
@@ -86,6 +94,39 @@ data class EditDocument(
         copy(operations = operations + Operation.GenerativeFill(id, maskId, resultRef, prompt))
 
     /**
+     * specs/skin_retouch_pipeline.md §6: the support `Mask` and the `SkinRetouch` as one document
+     * change, so one undo removes both. [activeMaskId] is left alone — the support is not a
+     * selection the user made.
+     *
+     * Both go in at [insertIndex] (the entry document's [skinRetouchInsertIndex]), the mask
+     * immediately before the retouch so the pair stays adjacent. The index is kept clear of an
+     * `Outpaint`, which must stay `operations[0]`.
+     */
+    // Two refs and two ids name the pair; the settings and the index are the retouch's own.
+    @Suppress("LongParameterList")
+    fun withSkinRetouch(
+        maskRef: ImageRef,
+        resultRef: ImageRef,
+        settings: SkinRetouchSettings,
+        maskId: String = newId(),
+        id: String = newId(),
+        insertIndex: Int = skinRetouchInsertIndex(),
+    ): EditDocument {
+        val first = if (outpaint() == null) 0 else 1
+        val index = insertIndex.coerceIn(first, operations.size)
+        val updated = operations.toMutableList().apply {
+            addAll(
+                index,
+                listOf(
+                    Operation.Mask(maskId, maskRef),
+                    Operation.SkinRetouch(id, maskId, resultRef, settings),
+                ),
+            )
+        }
+        return copy(operations = updated)
+    }
+
+    /**
      * Adds a selection and makes it active, as one step. Older masks stay in the list so undo
      * can restore them; only [activeMaskId] moves.
      */
@@ -95,12 +136,17 @@ data class EditDocument(
     /**
      * specs/edit_model.md: every mask reference must resolve. A document that fails this is not
      * loadable — silently dropping the reference would silently drop the user's selection.
+     * A `SkinRetouch` must also carry valid settings (specs/skin_retouch_pipeline.md §6), and a
+     * `MultiShot` must be the only one and whole (specs/multishot.md §7).
      */
     fun referencesResolve(): Boolean =
         (activeMaskId == null || mask(activeMaskId) != null) &&
             cutOuts().all { mask(it.maskId) != null } &&
             generativeErases().all { mask(it.maskId) != null } &&
-            generativeFills().all { mask(it.maskId) != null }
+            generativeFills().all { mask(it.maskId) != null } &&
+            skinRetouches().all { mask(it.maskId) != null && it.settings.isValid } &&
+            operations.count { it is Operation.MultiShot } <= 1 &&
+            multiShot()?.isValid != false
 
     /**
      * One live [Operation.Adjust] per `(kind, maskId)` pair: setting one that already exists
@@ -176,3 +222,58 @@ data class EditDocument(
         return copy(operations = updated)
     }
 }
+
+/**
+ * specs/multishot.md §3: a new composite is appended; an edited one is replaced **in place**,
+ * keeping its list position and id; an empty [shots] removes it. Adjusts are never re-ordered.
+ */
+fun EditDocument.withMultiShot(
+    shots: List<Shot>,
+    id: String = newId(),
+    mode: MultiShotMode = MultiShotMode.Free,
+    timeline: Timeline? = null,
+): EditDocument {
+    val index = operations.indexOfFirst { it is Operation.MultiShot }
+    val updated = when {
+        shots.isEmpty() && index >= 0 -> operations - operations[index]
+        shots.isEmpty() -> operations
+        index >= 0 -> operations.toMutableList().also {
+            it[index] = Operation.MultiShot(operations[index].id, shots, mode, timeline)
+        }
+        else -> operations + Operation.MultiShot(id, shots, mode, timeline)
+    }
+    return copy(operations = updated)
+}
+
+/**
+ * specs/multishot.md §6: the composite's input — the ops before it (all of them for a new one,
+ * which is appended) without the `Crop`, so it is the canonical canvas the hero is selected on and
+ * protected against. Every `Mask` stays for lookup; `Outpaint` stays, since it defines the canvas.
+ */
+fun EditDocument.multiShotBase(): EditDocument {
+    val index = operations.indexOfFirst { it is Operation.MultiShot }.takeIf { it >= 0 } ?: operations.size
+    return copy(
+        operations = operations.filterIndexed { position, operation ->
+            operation is Operation.Mask || (position < index && operation !is Operation.Crop)
+        },
+    )
+}
+
+/**
+ * specs/skin_retouch_pipeline.md §4: the retouch goes before the first `Adjust`, or last when
+ * there is none, so every adjustment still applies once, on top of it.
+ */
+fun EditDocument.skinRetouchInsertIndex(): Int =
+    operations.indexOfFirst { it is Operation.Adjust }.takeIf { it >= 0 } ?: operations.size
+
+/**
+ * specs/skin_retouch_pipeline.md §4 step 2: the document whose render is the retouch's base —
+ * the ops before [insertIndex] without the `Crop`, so the base is in canonical canvas space.
+ * Every `Mask` in the whole list stays for lookup; masks change no pixels. `Outpaint` is
+ * index 0 and stays, since it defines that canvas.
+ */
+fun EditDocument.skinRetouchBase(insertIndex: Int): EditDocument = copy(
+    operations = operations.filterIndexed { index, operation ->
+        operation is Operation.Mask || (index < insertIndex && operation !is Operation.Crop)
+    },
+)

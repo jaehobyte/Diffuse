@@ -1,7 +1,10 @@
 package com.diffuse.feature.editor
 
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollToNode
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.diffuse.core.ai.PortraitResult
 import com.diffuse.core.ui.theme.AppTheme
@@ -45,7 +48,8 @@ class PortraitToolMenuTest {
         )
         assertEquals(
             listOf(
-                Tool.Select, Tool.Erase, Tool.Fill, Tool.Expand, Tool.Style, Tool.Auto, Tool.Direct,
+                Tool.Select, Tool.Erase, Tool.Fill, Tool.Expand, Tool.Style, Tool.Auto, Tool.MultiShot,
+                Tool.Direct,
             ),
             tools(ToolGroup.Ai, ToolMenuProfile.General),
         )
@@ -68,7 +72,9 @@ class PortraitToolMenuTest {
     @Test
     fun `the portrait AI level is the general one without 자동`() {
         assertEquals(
-            listOf(Tool.Select, Tool.Erase, Tool.Fill, Tool.Expand, Tool.Style, Tool.Direct),
+            listOf(
+                Tool.Select, Tool.Erase, Tool.Fill, Tool.Expand, Tool.Style, Tool.MultiShot, Tool.Direct,
+            ),
             tools(ToolGroup.Ai, ToolMenuProfile.Portrait),
         )
     }
@@ -144,8 +150,10 @@ class PortraitToolMenuTest {
 
         compose.onNodeWithText("자동").assertDoesNotExist()
         compose.onNodeWithText("선택").assertExists()
-        compose.onNodeWithText("지시").assertExists()
         compose.onNodeWithText("뒤로").assertExists()
+        // specs/multishot.md §2 made the level longer than the lazy strip composes at once.
+        compose.onNodeWithTag(ToolStripTestTag).performScrollToNode(hasText("지시"))
+        compose.onNodeWithText("지시").assertExists()
     }
 
     @Test

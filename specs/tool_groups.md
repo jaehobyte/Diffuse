@@ -21,7 +21,7 @@ committing any tool, comes back.
 
 ```
 rest      [라이트][색상][혼합][자르기][디테일][ AI ]
-AI open   [  ←  ][선택][지우기][채우기][확대][스타일][자동][지시]
+AI open   [  ←  ][선택][지우기][채우기][확대][스타일][자동][멀티샷][지시]
 ```
 
 - **The strip's height, item size and scrolling are unchanged.** DESIGN.md §4's 72dp / 64dp / 24dp
