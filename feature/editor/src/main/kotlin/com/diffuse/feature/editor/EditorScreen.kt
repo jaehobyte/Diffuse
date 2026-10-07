@@ -1,16 +1,24 @@
 package com.diffuse.feature.editor
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -20,12 +28,14 @@ import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.diffuse.core.ui.theme.AppTheme
@@ -38,6 +48,9 @@ import com.diffuse.feature.editor.canvas.EditorCanvas
 import com.diffuse.feature.editor.canvas.OverlayTransform
 
 const val EditorScreenTestTag = "EditorScreen"
+const val VibePromptTestTag = "VibePrompt"
+const val VibeSpeakTestTag = "VibeSpeak"
+const val VibeToolsRevealTestTag = "VibeToolsReveal"
 
 /** specs/editor_shell.md: top bar 56dp / canvas / tool strip 72dp, portrait only in v1. */
 @Composable
@@ -78,6 +91,14 @@ fun EditorScreen(
     /** One-shot snackbar text; DESIGN.md §4 forbids toasts. */
     message: String? = null,
     onMessageShown: () -> Unit = {},
+    /**
+     * Vibe Editing: the default tool strip stays hidden until the user asks for it.
+     * editor_shell.md still describes a permanent 72dp strip; the current request overrides
+     * that for the render screen. Pass true to keep the classic shell (golden screenshots).
+     */
+    initialToolsRevealed: Boolean = false,
+    /** Speech shell only. The planner path is wired in a later slice. */
+    onVibeListen: (Boolean) -> Unit = {},
 ) {
     // DESIGN.md §1: the editor is always warm-dark chrome, never the browse palette.
     AppTheme(mode = ThemeMode.Edit) {
@@ -111,6 +132,8 @@ fun EditorScreen(
             )
         }
         var toolStripHeightPx by remember { mutableIntStateOf(0) }
+        var toolsRevealed by rememberSaveable { mutableStateOf(initialToolsRevealed) }
+        var listening by rememberSaveable { mutableStateOf(false) }
         val sheetInset = canvasInset(sheet != null, sheetHeightPx, toolStripHeightPx)
         Box(modifier = modifier.testTag(EditorScreenTestTag).fillMaxSize()) {
             EditorBody(
@@ -129,10 +152,20 @@ fun EditorScreen(
                 gestureMode = gestureMode,
                 pointTaps = pointTaps,
                 canvasOverlay = canvasOverlay,
+                toolsRevealed = toolsRevealed,
                 onToolStripHeight = { toolStripHeightPx = it },
             )
             if (busy) SelectionProgressOverlay(onCancel = onCancelWork, labelRes = busyLabelRes)
             if (sheet != null) SheetOverlay(sheet) { sheetHeightPx = it }
+            VibeChrome(
+                toolsRevealed = toolsRevealed,
+                listening = listening,
+                onToggleTools = { toolsRevealed = !toolsRevealed },
+                onToggleListen = {
+                    listening = !listening
+                    onVibeListen(listening)
+                },
+            )
             SnackbarHost(
                 hostState = snackbarHost,
                 modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding(),
@@ -159,6 +192,7 @@ private fun EditorBody(
     gestureMode: CanvasGestureMode,
     pointTaps: CanvasPointTaps?,
     canvasOverlay: (@Composable BoxScope.() -> Unit)?,
+    toolsRevealed: Boolean,
     onToolStripHeight: (Int) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize().background(Tokens.editBackground)) {
@@ -176,15 +210,79 @@ private fun EditorBody(
             pointTaps = pointTaps,
             overlay = canvasOverlay,
         )
-        EditorToolStrip(
-            selectedTool = selectedTool,
-            onToolClick = onToolClick,
-            disabledTools = disabledTools,
-            level = toolLevel.level,
-            onLevelChange = toolLevel.onChange,
-            profile = toolLevel.profile,
-            modifier = Modifier.navigationBarsPadding().onSizeChanged { onToolStripHeight(it.height) },
+        if (toolsRevealed) {
+            EditorToolStrip(
+                selectedTool = selectedTool,
+                onToolClick = onToolClick,
+                disabledTools = disabledTools,
+                level = toolLevel.level,
+                onLevelChange = toolLevel.onChange,
+                profile = toolLevel.profile,
+                modifier = Modifier.navigationBarsPadding().onSizeChanged { onToolStripHeight(it.height) },
+            )
+        } else {
+            SideEffect { onToolStripHeight(0) }
+        }
+    }
+}
+
+/** Luminar-like speech control. Photo stays the hero; tools stay behind an explicit reveal. */
+@Composable
+private fun BoxScope.VibeChrome(
+    toolsRevealed: Boolean,
+    listening: Boolean,
+    onToggleTools: () -> Unit,
+    onToggleListen: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .navigationBarsPadding()
+            .padding(
+                start = 16.dp,
+                end = 16.dp,
+                bottom = if (toolsRevealed) 88.dp else 16.dp,
+            )
+            .fillMaxWidth()
+            .height(48.dp)
+            .testTag(VibePromptTestTag)
+            .clip(RoundedCornerShape(16.dp))
+            .background(Tokens.editSurfaceRaised)
+            .padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .testTag(VibeSpeakTestTag)
+                .clip(RoundedCornerShape(16.dp))
+                .background(if (listening) Tokens.accent else Tokens.editSurfaceRaised)
+                .clickable(role = Role.Button, onClick = onToggleListen),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = stringResource(if (listening) R.string.vibe_listening else R.string.vibe_speak),
+                color = if (listening) Tokens.onAccent else Tokens.editInk,
+            )
+        }
+        Text(
+            text = stringResource(R.string.vibe_prompt_hint),
+            color = Tokens.editInkSecondary,
+            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
         )
+        Box(
+            modifier = Modifier
+                .height(48.dp)
+                .testTag(VibeToolsRevealTestTag)
+                .clickable(role = Role.Button, onClick = onToggleTools)
+                .padding(horizontal = 12.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = stringResource(if (toolsRevealed) R.string.vibe_hide_tools else R.string.vibe_show_tools),
+                color = Tokens.editInk,
+            )
+        }
     }
 }
 
