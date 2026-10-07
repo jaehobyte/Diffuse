@@ -237,7 +237,7 @@
     <string name="style_variant_faded_matte_1">웜 매트</string>
     <string name="style_variant_faded_matte_2">쿨 매트</string>
     <string name="style_variant_faded_matte_3">IN 매트 룩</string>
-    <string name="style_variant_cinematic_teal_1">딥 틸&오렌지</string>
+    <string name="style_variant_cinematic_teal_1">딥 틸\u0026오렌지</string>
     <string name="style_variant_cinematic_teal_2">블리치 바이패스</string>
     <string name="style_variant_cinematic_teal_3">네오 누아르</string>
     <string name="style_variant_cinematic_teal_4">그린 디스토피아</string>
