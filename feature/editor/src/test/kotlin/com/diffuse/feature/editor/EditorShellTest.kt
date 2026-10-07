@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasTestTag
@@ -57,6 +58,7 @@ class EditorShellTest {
         canUndo: Boolean = false,
         canRedo: Boolean = false,
         canCompare: Boolean = false,
+        initialToolsRevealed: Boolean = true,
     ) {
         compose.setContent {
             EditorScreen(
@@ -71,9 +73,22 @@ class EditorShellTest {
                 onRedo = {},
                 onCompareChange = { compareStates += it },
                 onExport = {},
+                initialToolsRevealed = initialToolsRevealed,
             )
         }
         compose.waitForIdle()
+    }
+
+    @Test
+    fun `vibe editing hides the tool strip until tools are revealed`() {
+        showShell(initialToolsRevealed = false)
+
+        compose.onNodeWithTag(ToolStripTestTag).assertDoesNotExist()
+        compose.onNodeWithTag(VibePromptTestTag).assertExists()
+        compose.onNodeWithTag(VibeToolsRevealTestTag).performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(ToolStripTestTag).assertExists()
     }
 
     @Test
@@ -101,6 +116,7 @@ class EditorShellTest {
                 onCompareChange = {},
                 onExport = {},
                 toolLevel = ToolLevelState(ToolGroup.Ai),
+                initialToolsRevealed = true,
             )
         }
         compose.waitForIdle()
@@ -222,6 +238,7 @@ class EditorShellTest {
                 onToolClick = {},
                 canUndo = false, canRedo = false, canCompare = false,
                 onBack = {}, onUndo = {}, onRedo = {}, onCompareChange = {}, onExport = {},
+                initialToolsRevealed = true,
                 sheet = {
                     if (open()) {
                         Box(
