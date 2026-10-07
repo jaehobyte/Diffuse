@@ -116,6 +116,7 @@ fun EditorRoute(
             canvasOverlay = canvasOverlay(state, viewModel),
             sheet = sheetFor(state, document, viewModel),
             onVibeListen = { listening -> applyVibeSpeech(listening, viewModel) },
+            vibeTranscript = state.direct.request,
         )
     }
 }

@@ -122,6 +122,32 @@ class EditorShellTest {
         assertEquals(listOf(true, false), events)
     }
 
+
+    @Test
+    fun `the vibe overlay shows the direct planner transcript`() {
+        compose.setContent {
+            EditorScreen(
+                preview = testImage(),
+                selectedTool = null,
+                onToolClick = {},
+                canUndo = false,
+                canRedo = false,
+                canCompare = false,
+                onBack = {},
+                onUndo = {},
+                onRedo = {},
+                onCompareChange = {},
+                onExport = {},
+                initialToolsRevealed = false,
+                vibeTranscript = "나무를 더 푸르게",
+            )
+        }
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(VibeTranscriptTestTag).assertExists()
+        compose.onNodeWithText("나무를 더 푸르게").assertExists()
+    }
+
     @Test
     fun `the shell shows the top bar, canvas and the root tools`() {
         showShell()

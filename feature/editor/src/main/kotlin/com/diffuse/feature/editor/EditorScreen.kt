@@ -51,6 +51,7 @@ const val EditorScreenTestTag = "EditorScreen"
 const val VibePromptTestTag = "VibePrompt"
 const val VibeSpeakTestTag = "VibeSpeak"
 const val VibeToolsRevealTestTag = "VibeToolsReveal"
+const val VibeTranscriptTestTag = "VibeTranscript"
 
 /** specs/editor_shell.md: top bar 56dp / canvas / tool strip 72dp, portrait only in v1. */
 @Composable
@@ -97,8 +98,16 @@ fun EditorScreen(
      * that for the render screen. Pass true to keep the classic shell (golden screenshots).
      */
     initialToolsRevealed: Boolean = false,
-    /** Speech shell only. The planner path is wired in a later slice. */
+    /**
+     * Speak toggles listening. [EditorRoute] turns that into the existing 지시 planner
+     * (open sheet + SpeechInput). No second planner.
+     */
     onVibeListen: (Boolean) -> Unit = {},
+    /**
+     * Transcript the direct planner already holds. Shown on the overlay so the speech
+     * control and the sheet stay one path. Blank falls back to the hint.
+     */
+    vibeTranscript: String = "",
 ) {
     // DESIGN.md §1: the editor is always warm-dark chrome, never the browse palette.
     AppTheme(mode = ThemeMode.Edit) {
@@ -160,6 +169,7 @@ fun EditorScreen(
             VibeChrome(
                 toolsRevealed = toolsRevealed,
                 listening = listening,
+                transcript = vibeTranscript,
                 onToggleTools = { toolsRevealed = !toolsRevealed },
                 onToggleListen = {
                     listening = !listening
@@ -231,6 +241,7 @@ private fun EditorBody(
 private fun BoxScope.VibeChrome(
     toolsRevealed: Boolean,
     listening: Boolean,
+    transcript: String,
     onToggleTools: () -> Unit,
     onToggleListen: () -> Unit,
 ) {
@@ -266,9 +277,12 @@ private fun BoxScope.VibeChrome(
             )
         }
         Text(
-            text = stringResource(R.string.vibe_prompt_hint),
-            color = Tokens.editInkSecondary,
-            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+            text = transcript.ifBlank { stringResource(R.string.vibe_prompt_hint) },
+            color = if (transcript.isBlank()) Tokens.editInkSecondary else Tokens.editInk,
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 8.dp)
+                .testTag(VibeTranscriptTestTag),
         )
         Box(
             modifier = Modifier
