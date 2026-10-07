@@ -171,17 +171,19 @@ fun EditorScreen(
             )
             if (busy) SelectionProgressOverlay(onCancel = onCancelWork, labelRes = busyLabelRes)
             if (sheet != null) SheetOverlay(sheet) { sheetHeightPx = it }
-            VibeChrome(
-                toolsRevealed = toolsRevealed,
-                listening = listening,
-                transcript = vibeTranscript,
-                status = vibeStatus,
-                onToggleTools = { toolsRevealed = !toolsRevealed },
-                onToggleListen = {
-                    listening = !listening
-                    onVibeListen(listening)
-                },
-            )
+            if (vibeChromeVisible(sheet != null)) {
+                VibeChrome(
+                    toolsRevealed = toolsRevealed,
+                    listening = listening,
+                    transcript = vibeTranscript,
+                    status = vibeStatus,
+                    onToggleTools = { toolsRevealed = !toolsRevealed },
+                    onToggleListen = {
+                        listening = !listening
+                        onVibeListen(listening)
+                    },
+                )
+            }
             SnackbarHost(
                 hostState = snackbarHost,
                 modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding(),
