@@ -108,6 +108,11 @@ fun EditorScreen(
      * control and the sheet stay one path. Blank falls back to the hint.
      */
     vibeTranscript: String = "",
+    /**
+     * Planner phase the direct tool already owns (planning, running, not understood,
+     * failure). Wins over [vibeTranscript] so the overlay and the sheet stay one path.
+     */
+    vibeStatus: String = "",
 ) {
     // DESIGN.md §1: the editor is always warm-dark chrome, never the browse palette.
     AppTheme(mode = ThemeMode.Edit) {
@@ -170,6 +175,7 @@ fun EditorScreen(
                 toolsRevealed = toolsRevealed,
                 listening = listening,
                 transcript = vibeTranscript,
+                status = vibeStatus,
                 onToggleTools = { toolsRevealed = !toolsRevealed },
                 onToggleListen = {
                     listening = !listening
@@ -242,6 +248,7 @@ private fun BoxScope.VibeChrome(
     toolsRevealed: Boolean,
     listening: Boolean,
     transcript: String,
+    status: String,
     onToggleTools: () -> Unit,
     onToggleListen: () -> Unit,
 ) {
@@ -276,9 +283,11 @@ private fun BoxScope.VibeChrome(
                 color = if (listening) Tokens.onAccent else Tokens.editInk,
             )
         }
+        val hint = stringResource(R.string.vibe_prompt_hint)
+        val line = vibeOverlayLine(status, transcript, hint)
         Text(
-            text = transcript.ifBlank { stringResource(R.string.vibe_prompt_hint) },
-            color = if (transcript.isBlank()) Tokens.editInkSecondary else Tokens.editInk,
+            text = line,
+            color = if (line == hint) Tokens.editInkSecondary else Tokens.editInk,
             modifier = Modifier
                 .weight(1f)
                 .padding(horizontal = 8.dp)

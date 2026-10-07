@@ -20,4 +20,28 @@ class VibeSpeechTest {
             vibeSpeechCommand(listening = false),
         )
     }
+
+    @Test
+    fun `planner status wins over the transcript on the overlay`() {
+        assertEquals(
+            "무엇을 할지 생각하는 중",
+            vibeOverlayLine(
+                status = "무엇을 할지 생각하는 중",
+                transcript = "나무를 더 푸르게",
+                hint = "말로 편집하기",
+            ),
+        )
+    }
+
+    @Test
+    fun `a quiet planner leaves the transcript, then the hint`() {
+        assertEquals(
+            "나무를 더 푸르게",
+            vibeOverlayLine(status = "", transcript = "나무를 더 푸르게", hint = "말로 편집하기"),
+        )
+        assertEquals(
+            "말로 편집하기",
+            vibeOverlayLine(status = "  ", transcript = "", hint = "말로 편집하기"),
+        )
+    }
 }

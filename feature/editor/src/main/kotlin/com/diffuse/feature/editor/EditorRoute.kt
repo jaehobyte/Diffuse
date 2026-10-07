@@ -117,6 +117,7 @@ fun EditorRoute(
             sheet = sheetFor(state, document, viewModel),
             onVibeListen = { listening -> applyVibeSpeech(listening, viewModel) },
             vibeTranscript = state.direct.request,
+            vibeStatus = vibePlannerStatus(state),
         )
     }
 }
@@ -473,6 +474,24 @@ private fun CropToolSheet(state: EditorUiState, viewModel: EditorViewModel) {
  * Vibe chrome speak → the existing 지시 planner. Opening Direct mounts [VoicePromptBar],
  * which already submits a final utterance to [DirectController.submit]. No second planner.
  */
+/**
+ * Overlay line for the planner the sheet already owns. Status wins; the request stays
+ * the transcript. Strings are the ones vibe_edit.md §10 and §11 already ship.
+ */
+@Composable
+private fun vibePlannerStatus(state: EditorUiState): String {
+    val direct = state.direct
+    val message = direct.message
+    return when {
+        direct.planning -> stringResource(R.string.direct_planning)
+        direct.running -> stringResource(R.string.direct_running)
+        direct.notUnderstood -> stringResource(R.string.direct_not_understood)
+        message?.arg != null -> stringResource(message.res, message.arg)
+        message != null -> stringResource(message.res)
+        else -> ""
+    }
+}
+
 private fun applyVibeSpeech(listening: Boolean, viewModel: EditorViewModel) {
     val command = vibeSpeechCommand(listening)
     if (command.openDirect) viewModel.onToolClick(Tool.Direct)

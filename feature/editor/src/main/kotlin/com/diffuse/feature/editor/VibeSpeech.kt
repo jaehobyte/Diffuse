@@ -17,3 +17,11 @@ fun vibeSpeechCommand(listening: Boolean): VibeSpeechCommand =
     } else {
         VibeSpeechCommand(openDirect = false, startSpeech = false, stopSpeech = true)
     }
+
+/**
+ * One line on the speech overlay. Planner status (planning, running, not understood,
+ * failure) wins over the request the sheet already holds; a blank pair falls back to
+ * the hint. No second planner — both strings come from DirectState.
+ */
+fun vibeOverlayLine(status: String, transcript: String, hint: String): String =
+    status.ifBlank { transcript.ifBlank { hint } }

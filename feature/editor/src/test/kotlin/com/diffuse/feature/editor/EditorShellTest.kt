@@ -149,6 +149,32 @@ class EditorShellTest {
     }
 
     @Test
+    fun `planner status replaces the transcript on the vibe overlay`() {
+        compose.setContent {
+            EditorScreen(
+                preview = testImage(),
+                selectedTool = null,
+                onToolClick = {},
+                canUndo = false,
+                canRedo = false,
+                canCompare = false,
+                onBack = {},
+                onUndo = {},
+                onRedo = {},
+                onCompareChange = {},
+                onExport = {},
+                initialToolsRevealed = false,
+                vibeTranscript = "나무를 더 푸르게",
+                vibeStatus = "무엇을 할지 생각하는 중",
+            )
+        }
+        compose.waitForIdle()
+
+        compose.onNodeWithText("무엇을 할지 생각하는 중").assertExists()
+        compose.onNodeWithText("나무를 더 푸르게").assertDoesNotExist()
+    }
+
+    @Test
     fun `the shell shows the top bar, canvas and the root tools`() {
         showShell()
 
