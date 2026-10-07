@@ -8,6 +8,7 @@ import com.diffuse.core.ai.MatchStyleProvider
 import com.diffuse.core.ai.OutpaintProvider
 import com.diffuse.core.ai.FaceRegionAnalyzer
 import com.diffuse.core.ai.PortraitDetector
+import com.diffuse.core.ai.PromptSuggestionProvider
 import com.diffuse.core.ai.SkinRetouchProvider
 import com.diffuse.core.ai.retouch.server.RetouchServerSettings
 import com.diffuse.core.ai.SegmentationProvider
@@ -45,4 +46,6 @@ class EditorAi @Inject constructor(
     val skinRetouch: SkinRetouchProvider,
     val faceRegions: FaceRegionAnalyzer,
     val retouchServerSettings: RetouchServerSettings,
+    /** specs/vibe_edit.md §14: 지시's read-only sentence suggestions. */
+    val promptSuggestion: PromptSuggestionProvider,
 )

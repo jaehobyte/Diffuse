@@ -10,6 +10,8 @@ import com.diffuse.core.ai.gemini.GeminiOutpaintProvider
 import com.diffuse.core.ai.gemini.GeminiPlanClient
 import com.diffuse.core.ai.gemini.GeminiPlanProvider
 import com.diffuse.core.ai.gemini.GeminiSettings
+import com.diffuse.core.ai.gemini.GeminiSuggestionClient
+import com.diffuse.core.ai.gemini.GeminiSuggestionProvider
 import com.diffuse.core.ai.monet.MonetClient
 import com.diffuse.core.ai.monet.MonetConfigSource
 import com.diffuse.core.ai.monet.MonetAutoEnhanceProvider
@@ -72,6 +74,9 @@ internal abstract class AiModule {
 
     @Binds
     abstract fun matchStyle(impl: GeminiMatchStyleProvider): MatchStyleProvider
+
+    @Binds
+    abstract fun promptSuggestion(impl: GeminiSuggestionProvider): PromptSuggestionProvider
 
     @Binds
     abstract fun portrait(impl: MlKitPortraitDetector): PortraitDetector
@@ -153,6 +158,16 @@ internal abstract class AiModule {
             okHttp: OkHttpClient,
             logger: com.diffuse.core.common.Logger,
         ): GeminiPlanClient = GeminiPlanClient(config, dispatchers, okHttp, logger)
+
+        /** Provided for the same reason the other clients are: the wire stays in this module. */
+        @Provides
+        @Singleton
+        fun geminiSuggestionClient(
+            config: GeminiConfigSource,
+            dispatchers: DispatcherProvider,
+            okHttp: OkHttpClient,
+            logger: com.diffuse.core.common.Logger,
+        ): GeminiSuggestionClient = GeminiSuggestionClient(config, dispatchers, okHttp, logger)
 
         /** Provided for the same reason the other clients are: the wire stays in this module. */
         @Provides

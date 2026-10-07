@@ -554,6 +554,7 @@ class SkinRetouchToolTest {
             provider,
             analyzer,
             retouchSettings,
+            com.diffuse.core.ai.FakePromptSuggestionProvider(),
         ),
         dispatchers = dispatchers,
         savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),

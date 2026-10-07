@@ -14,6 +14,8 @@ import com.diffuse.core.ai.FakeMatchStyleProvider
 import com.diffuse.core.ai.FakeOutpaintProvider
 import com.diffuse.core.ai.FakePlanProvider
 import com.diffuse.core.ai.FakePortraitDetector
+import com.diffuse.core.ai.FakePromptSuggestionProvider
+import com.diffuse.core.ai.PromptSuggestionId
 import com.diffuse.core.ai.FakeSegmentationProvider
 import com.diffuse.core.ai.PlanStep
 import com.diffuse.core.ai.gemini.GeminiSettings
@@ -37,6 +39,7 @@ import com.diffuse.feature.editor.R
 import com.diffuse.feature.editor.TestDispatchers
 import com.diffuse.feature.editor.Tool
 import com.diffuse.feature.editor.tools.crop.AspectPreset
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -63,6 +66,8 @@ class DirectToolTest {
     private val eraser = FakeEraseProvider()
     private val filler = FakeFillProvider()
     private val planner = FakePlanProvider()
+    private val suggester = FakePromptSuggestionProvider()
+    private val renderer = FakeRenderer()
     private lateinit var repository: RecordingRepository
     private lateinit var settings: Sam3Settings
     private lateinit var geminiSettings: GeminiSettings
@@ -417,6 +422,312 @@ class DirectToolTest {
         assertEquals("bus", eraser.lastHint)
     }
 
+    // ---- §14, sentence suggestions ----------------------------------------
+
+    @Test
+    fun `opening the sheet sends no suggestion request`() = runTest {
+        val viewModel = opened()
+
+        val state = viewModel.uiState.value.direct
+        assertEquals(0, suggester.suggestCount)
+        assertEquals(SuggestionPhase.Idle, state.suggestions.phase)
+        assertTrue(state.suggestions.frameReady)
+        assertTrue(state.showSuggestions)
+    }
+
+    @Test
+    fun `one suggestion tap is one call, and repeated taps coalesce`() = runTest {
+        val viewModel = opened()
+        suggester.hold()
+
+        viewModel.direct.suggestions.find()
+        viewModel.direct.suggestions.find()
+        assertEquals(SuggestionPhase.Loading, viewModel.uiState.value.direct.suggestions.phase)
+        suggester.release()
+
+        val suggestions = viewModel.uiState.value.direct.suggestions
+        assertEquals(1, suggester.suggestCount)
+        assertEquals(SuggestionPhase.Tailored, suggestions.phase)
+        assertEquals(FakePromptSuggestionProvider.DEFAULT, suggestions.ids)
+    }
+
+    @Test
+    fun `a suggestion is asked of the frame on screen`() = runTest {
+        val viewModel = opened()
+        viewModel.onAdjust(AdjustKind.Exposure, 0.2f)
+
+        viewModel.direct.suggestions.find()
+
+        assertEquals(ADJUSTED, suggester.lastImage!!.getPixel(0, 0))
+    }
+
+    @Test
+    fun `a finished suggestion is reused after the sheet is reopened`() = runTest {
+        val viewModel = opened()
+        viewModel.direct.suggestions.find()
+        viewModel.cancelSheet()
+
+        viewModel.onToolClick(Tool.Direct)
+        viewModel.direct.suggestions.find()
+
+        assertEquals(1, suggester.suggestCount)
+        assertEquals(SuggestionPhase.Tailored, viewModel.uiState.value.direct.suggestions.phase)
+    }
+
+    @Test
+    fun `picking a suggestion only fills the bar`() = runTest {
+        val viewModel = opened()
+        viewModel.direct.suggestions.find()
+
+        viewModel.direct.pickSuggestion(PICKED)
+
+        val state = viewModel.uiState.value
+        assertEquals(PICKED, state.direct.request)
+        assertEquals(RequestSource.Suggestion, state.direct.requestSource)
+        assertTrue("an unedited suggestion can still be swapped", state.direct.showSuggestions)
+        assertEquals(0, planner.planCount)
+        assertNull(state.direct.plan)
+        assertEquals(emptyList<Operation>(), state.document?.operations)
+        assertFalse(state.canUndo)
+    }
+
+    @Test
+    fun `a picked suggestion plans once on submit and applies through the plan`() = runTest {
+        val viewModel = opened()
+        viewModel.direct.pickSuggestion(PICKED)
+        planner.next(EditPlan(listOf(PlanStep.Adjust(AdjustKind.Exposure, 0.3f, masked = false))))
+
+        viewModel.direct.submit(PICKED)
+        assertEquals(1, planner.planCount)
+        viewModel.applySheet()
+
+        assertEquals(1, viewModel.uiState.value.document!!.operations.size)
+    }
+
+    @Test
+    fun `changing the sentence after a suggestion plan makes it unappliable`() = runTest {
+        val viewModel = opened()
+        viewModel.direct.pickSuggestion(PICKED)
+        viewModel.direct.submit(PICKED)
+        assertTrue(viewModel.uiState.value.direct.canApply)
+
+        viewModel.direct.setRequest("사진 전체를 많이 밝게 해줘")
+
+        assertNull(viewModel.uiState.value.direct.plan)
+        assertFalse(viewModel.uiState.value.direct.canApply)
+        viewModel.applySheet()
+        assertEquals(emptyList<Operation>(), viewModel.uiState.value.document?.operations)
+    }
+
+    @Test
+    fun `a late plan for the sentence before a suggestion swap is dropped`() = runTest {
+        val viewModel = opened()
+        planner.hold()
+        viewModel.direct.submit(REQUEST)
+
+        viewModel.direct.pickSuggestion(PICKED)
+        planner.release()
+
+        val state = viewModel.uiState.value.direct
+        assertEquals(PICKED, state.request)
+        assertNull(state.plan)
+        assertFalse(state.planning)
+    }
+
+    @Test
+    fun `typing while a suggestion request runs keeps the text and hides the list`() = runTest {
+        val viewModel = opened()
+        suggester.hold()
+        viewModel.direct.suggestions.find()
+
+        viewModel.direct.setRequest("하늘을")
+        suggester.release()
+
+        val state = viewModel.uiState.value.direct
+        assertEquals("하늘을", state.request)
+        assertFalse(state.showSuggestions)
+        assertEquals(SuggestionPhase.Tailored, state.suggestions.phase)
+        // Clearing the bar brings the same answer back without a second call.
+        viewModel.direct.setRequest("")
+        assertTrue(viewModel.uiState.value.direct.showSuggestions)
+        assertEquals(1, suggester.suggestCount)
+    }
+
+    @Test
+    fun `cancelling a suggestion request after a pick keeps the sentence and the document`() = runTest {
+        val viewModel = opened()
+        suggester.hold()
+        viewModel.direct.suggestions.find()
+        viewModel.direct.pickSuggestion(PICKED)
+        assertEquals(SuggestionPhase.Loading, viewModel.uiState.value.direct.suggestions.phase)
+
+        viewModel.direct.suggestions.cancel()
+        suggester.release()
+
+        val state = viewModel.uiState.value
+        assertEquals(SuggestionPhase.Idle, state.direct.suggestions.phase)
+        assertEquals(PICKED, state.direct.request)
+        assertEquals(RequestSource.Suggestion, state.direct.requestSource)
+        assertEquals(Tool.Direct, state.selectedTool)
+        assertEquals(emptyList<Operation>(), state.document?.operations)
+        assertFalse(state.canUndo)
+        assertFalse(state.canRedo)
+    }
+
+    @Test
+    fun `submitting drops a suggestion request still in flight`() = runTest {
+        val viewModel = opened()
+        suggester.hold(ignoreCancellation = true)
+        viewModel.direct.suggestions.find()
+
+        viewModel.direct.submit(REQUEST)
+        suggester.release()
+
+        assertEquals(SuggestionPhase.Idle, viewModel.uiState.value.direct.suggestions.phase)
+        assertEquals(1, planner.planCount)
+    }
+
+    @Test
+    fun `closing the sheet drops a late suggestion answer`() = runTest {
+        val viewModel = opened()
+        suggester.hold(ignoreCancellation = true)
+        viewModel.direct.suggestions.find()
+
+        viewModel.cancelSheet()
+        suggester.release()
+
+        assertEquals(SuggestionPhase.Idle, viewModel.uiState.value.direct.suggestions.phase)
+        viewModel.onToolClick(Tool.Direct)
+        viewModel.direct.suggestions.find()
+        assertEquals(2, suggester.suggestCount)
+    }
+
+    @Test
+    fun `undo and redo drop suggestions asked of another document`() = runTest {
+        val viewModel = opened()
+        viewModel.onAdjust(AdjustKind.Exposure, 0.2f)
+        viewModel.onAdjustFinished()
+        viewModel.direct.suggestions.find()
+
+        viewModel.undo()
+        assertEquals(SuggestionPhase.Idle, viewModel.uiState.value.direct.suggestions.phase)
+        viewModel.redo()
+        assertEquals(SuggestionPhase.Idle, viewModel.uiState.value.direct.suggestions.phase)
+
+        viewModel.direct.suggestions.find()
+        assertEquals("never re-asked on its own", 2, suggester.suggestCount)
+    }
+
+    @Test
+    fun `a late suggestion for an older document is dropped`() = runTest {
+        val viewModel = opened()
+        suggester.hold(ignoreCancellation = true)
+        viewModel.direct.suggestions.find()
+
+        viewModel.onAdjust(AdjustKind.Exposure, 0.2f)
+        suggester.release()
+
+        assertEquals(SuggestionPhase.Idle, viewModel.uiState.value.direct.suggestions.phase)
+    }
+
+    @Test
+    fun `render A still on screen for document B sends no suggestion request`() = runTest {
+        val viewModel = opened()
+        renderer.gate = CompletableDeferred()
+
+        viewModel.onAdjust(AdjustKind.Exposure, 0.2f)
+        viewModel.direct.suggestions.find()
+
+        assertFalse(viewModel.uiState.value.direct.suggestions.frameReady)
+        assertEquals(0, suggester.suggestCount)
+        renderer.gate!!.complete(Unit)
+        assertTrue(viewModel.uiState.value.direct.suggestions.frameReady)
+    }
+
+    @Test
+    fun `a failed render sends no suggestion request`() = runTest {
+        val viewModel = opened()
+        renderer.fail = true
+
+        viewModel.onAdjust(AdjustKind.Exposure, 0.2f)
+        viewModel.direct.suggestions.find()
+
+        assertFalse(viewModel.uiState.value.direct.suggestions.frameReady)
+        assertEquals(0, suggester.suggestCount)
+    }
+
+    @Test
+    fun `a Gemini settings change drops suggestions and the request in flight`() = runTest {
+        val viewModel = opened()
+        suggester.hold(ignoreCancellation = true)
+        viewModel.direct.suggestions.find()
+
+        geminiSettings.update("another-key")
+        suggester.release()
+
+        assertEquals(SuggestionPhase.Idle, viewModel.uiState.value.direct.suggestions.phase)
+        assertEquals(1, suggester.suggestCount)
+    }
+
+    @Test
+    fun `a suggestion failure says so once and falls back to the examples`() = runTest {
+        val viewModel = opened()
+        suggester.failNext(AppError.Unavailable)
+
+        viewModel.direct.suggestions.find()
+
+        val state = viewModel.uiState.value.direct
+        assertEquals(SuggestionPhase.Failed, state.suggestions.phase)
+        assertEquals(R.string.direct_suggest_failed, state.message?.res)
+        assertTrue(state.showSuggestions)
+        assertEquals("no automatic retry", 1, suggester.suggestCount)
+        viewModel.direct.suggestions.find()
+        assertEquals(SuggestionPhase.Tailored, viewModel.uiState.value.direct.suggestions.phase)
+    }
+
+    @Test
+    fun `nothing fitting is an empty suggestion answer, not a failure`() = runTest {
+        val viewModel = opened()
+        suggester.next(emptyList())
+
+        viewModel.direct.suggestions.find()
+
+        val state = viewModel.uiState.value.direct
+        assertEquals(SuggestionPhase.Empty, state.suggestions.phase)
+        assertNull(state.message)
+    }
+
+    @Test
+    fun `hidden suggestions stay hidden for the session, whatever arrives`() = runTest {
+        val viewModel = opened()
+        suggester.hold()
+        viewModel.direct.suggestions.find()
+
+        viewModel.direct.suggestions.hide()
+        suggester.release()
+
+        assertFalse(viewModel.uiState.value.direct.showSuggestions)
+        viewModel.cancelSheet()
+        viewModel.onToolClick(Tool.Direct)
+        assertTrue(viewModel.uiState.value.direct.showSuggestions)
+    }
+
+    @Test
+    fun `the suggestion catalog keeps one direction per group`() {
+        assertEquals(
+            listOf(PromptSuggestionId.Warm, PromptSuggestionId.Brighten),
+            PromptSuggestionId.distinctDirections(
+                listOf(
+                    PromptSuggestionId.Warm,
+                    PromptSuggestionId.Cool,
+                    PromptSuggestionId.FilmWarm,
+                    PromptSuggestionId.Brighten,
+                    PromptSuggestionId.LiftShadows,
+                ),
+            ),
+        )
+    }
+
     // ---- fixtures ---------------------------------------------------------
 
     private suspend fun opened(): EditorViewModel = viewModel().also { it.onToolClick(Tool.Direct) }
@@ -424,7 +735,7 @@ class DirectToolTest {
     private fun viewModel() = EditorViewModel(
         context = ApplicationProvider.getApplicationContext(),
         repository = repository,
-        renderer = FakeRenderer(),
+        renderer = renderer,
         ai = EditorAi(
             segmentation,
             eraser,
@@ -443,6 +754,7 @@ class DirectToolTest {
             com.diffuse.core.ai.retouch.server.RetouchServerSettings(
                 androidx.test.core.app.ApplicationProvider.getApplicationContext(),
             ),
+            suggester,
         ),
         dispatchers = TestDispatchers,
         savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),
@@ -454,8 +766,14 @@ class DirectToolTest {
     /** Resolves any mask to a full-frame one, as the erase tool's test does. */
     /** T70: colour-coded by whether the document still carries adjustments, as the tool tests are. */
     private class FakeRenderer : Renderer {
-        override suspend fun preview(document: EditDocument, targetLongEdgePx: Int) =
-            Result.Success(frame(document))
+        /** §14: a render that fails keeps the old frame on screen; one held keeps it in flight. */
+        var fail = false
+        var gate: CompletableDeferred<Unit>? = null
+
+        override suspend fun preview(document: EditDocument, targetLongEdgePx: Int): Result<Bitmap> {
+            gate?.await()
+            return if (fail) Result.Failure(AppError.Unavailable) else Result.Success(frame(document))
+        }
 
         override suspend fun full(document: EditDocument, onProgress: (Float) -> Unit) =
             Result.Success(frame(document))
@@ -549,6 +867,7 @@ class DirectToolTest {
     private companion object {
         const val PROJECT_ID = "p"
         const val REQUEST = "나무를 좀 더 푸르게 해줘"
+        const val PICKED = "사진 전체를 조금 더 밝게 해줘"
         const val SIZE = 32
         val PLAIN = android.graphics.Color.rgb(40, 50, 60)
         val ADJUSTED = android.graphics.Color.rgb(200, 210, 220)

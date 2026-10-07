@@ -32,6 +32,7 @@ import com.diffuse.feature.editor.tools.style.StyleSheet
 import com.diffuse.feature.editor.tools.crop.CropSheet
 import com.diffuse.feature.editor.tools.crop.STRAIGHTEN_MAX_DEG
 import com.diffuse.feature.editor.tools.direct.DirectSheet
+import com.diffuse.feature.editor.tools.direct.DirectSuggestionArea
 import com.diffuse.feature.editor.tools.expand.ExpandOverlay
 import com.diffuse.feature.editor.tools.expand.ExpandSheet
 import com.diffuse.feature.editor.tools.fill.FillSheet
@@ -603,6 +604,16 @@ private fun DirectToolSheet(state: EditorUiState, viewModel: EditorViewModel) {
                 placeholder = stringResource(R.string.direct_placeholder),
                 enabled = !state.direct.working,
                 onMessage = viewModel.direct::showMessage,
+            )
+        },
+        suggestions = {
+            DirectSuggestionArea(
+                state = state.direct,
+                speech = viewModel.speech,
+                onFind = viewModel.direct.suggestions::find,
+                onCancel = viewModel.direct.suggestions::cancel,
+                onHide = viewModel.direct.suggestions::hide,
+                onPick = viewModel.direct::pickSuggestion,
             )
         },
     )

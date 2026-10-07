@@ -8,6 +8,37 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+## D091 - 지시 sentence suggestions: read-only, explicit, catalog ids only, input only
+
+Status: Accepted (2026-10-07, work/tasks.md 사진 맞춤 추천 문장 넛지). specs/vibe_edit.md §14.
+
+Decision:
+The 지시 sheet shows three general example sentences at once and sends a photo for tailored ones
+only on the explicit `사진에 맞는 문장 보기` tap. The model (`gemini-2.5-flash`, existing settings,
+HTTP, error mapping and `GeminiImageCodec`) answers with one forced `suggest_directions(ids)` call
+over an eight-id reviewed catalog; the app keeps the model's order, drops unknown ids and every
+later id of an already-shown conflict group, and shows at most three. Labels and sentences are app
+resources. A pick only fills the bar (`RequestSource.Suggestion`); sending still goes through the one
+`EditPlanProvider` call, validation, step list and 적용. State and job live in `DirectSuggestions`,
+a collaborator owned by `DirectController`. A request is keyed by the document the preview was
+rendered from (`EditorUiState.renderedDocument`) and a generation counter; one in-memory answer is
+cached for the current document. Any sentence change invalidates the waiting plan and drops a late
+one (`planSeq`).
+
+Reason:
+Free generation would put unreviewed Korean and unsupported edits in front of the user and could
+not be checked; ids from a closed catalog keep every suggestion executable by the current planner
+and every failure on a known fallback. Sending a photo is a cost and a privacy step, so it is never
+implicit. Keying on the rendered document — not on the preview bitmap alone — is what keeps an older
+render or a failed one from being described as the current photo.
+
+Consequences:
+Expression is limited to whole-photo tone/colour/one style; object-level, skin or body suggestions,
+home-screen nudges and personalisation are later decisions. Suggestion progress is inline in the
+sheet (DESIGN.md §4 exception), not the canvas overlay. `EditorAi` gains `promptSuggestion`;
+`DirectController` takes the provider and the Gemini settings flow. The `direct_sheet_open` golden
+now shows the suggestion area; `direct_suggest_loading` and `direct_suggest_tailored` are added.
+
 ## D090 - 멀티샷 one press: several photos per pick, extract all in the shown order, lay out once at the end
 
 Status: Accepted (2026-10-02, work/tasks.md 시간 순서 배치 일괄 추출·자동 배치). Replaces D086/D087's

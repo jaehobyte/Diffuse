@@ -1,13 +1,140 @@
 # Result
 
+## Review Fix Pass (2026-10-08, work/REVIEW.md R1·R2)
+
+### Status
+
+PARTIAL — R1·R2 코드 수정과 자동 검증은 완료. 실기기 재확인은 ADB 15039 연결 거부로 미실행.
+
+### Changed
+
+- **R1** `DirectSuggestionArea.StatusLine`: Loading 검사를 추천 초안 안내보다 먼저 둔다. 분석 중 예시를 골라도
+  진행 문구와 추천 취소가 유지되고, 요청이 끝난 뒤에야 `문장을 바꿔도 좋아요`가 보인다. 취소 동작 자체는 변경 없음.
+- **R2** `EditorScreen.SheetOverlay`에 `imePadding()`(크기 측정 뒤) 추가 + `MainActivity`에
+  `windowSoftInputMode="adjustResize"`. edge-to-edge에서 창이 pan되지 않고 IME 인셋만큼 시트가 키보드 위로 올라가며,
+  측정 높이에 키보드가 포함되어 캔버스가 남은 공간으로 다시 맞춰진다. 시트 내부 `navigationBarsPadding`은 IME가 소비한
+  인셋과 겹쳐 0이 된다. 앱의 텍스트 입력은 모두 편집기 시트 안(지시/채우기/확장/SAM3 설정/멀티샷)이라 모두 같은 처리를 받는다.
+
+### Files
+
+- `feature/editor/.../tools/direct/DirectSuggestionArea.kt`, `feature/editor/.../EditorScreen.kt`, `app/src/main/AndroidManifest.xml`
+- tests: `DirectSheetTest`(분석 중 + Suggestion 출처 + 비어 있지 않은 입력 → 진행·취소 노출),
+  `DirectToolTest`(선택 후 추천 취소 → 문장·출처·도구·문서·history 보존), `EditorShellTest`(IME 인셋 900px 주입 →
+  시트 하단이 키보드 위, 캔버스가 시트 위로 재배치)
+
+### Validation
+
+| 명령 | 결과 |
+| --- | --- |
+| `./gradlew --offline --quiet :feature:editor:testDebugUnitTest --tests '*EditorShellTest*' --tests '*DirectSheetTest*' --tests '*DirectToolTest*'` | 통과 |
+| 같은 IME 테스트를 `imePadding()` 제거 상태로 실행 | 실패(EditorShellTest.kt:317, 키보드가 시트를 덮음) → 원복 |
+| `scripts/check.sh` | **exit 0** |
+| `git diff --check` | 통과 |
+| `adb -H 127.0.0.1 -P 15039 devices -l` | Connection refused → 실기기 미실행 |
+
+### Review Notes
+
+- 키보드가 열리면 시트(최대 화면 45%)+키보드 때문에 캔버스가 매우 작아진다(“캔버스 절반 노출”은 키보드 표시 중 보장 불가).
+  큰 글자/좁은 화면에서는 시트 본문이 기존 내부 세로 스크롤로 줄어들며, 액션 행은 고정된다. 상단 바를 덮지는 않는지
+  실기기 확인 필요.
+- Robolectric은 인셋 주입으로 레이아웃만 검증한다. Samsung 키보드 실제 동작·IME 애니메이션은 실기기 재검증 필요.
+
+### Known Issues
+
+- R2 실기기(1080×2340/450, font_scale 1.5·density 480 포함) 재확인 미실행. REVIEW의 기존 미실행 항목(사진 6종·8문장,
+  TalkBack, 음성 Final, 네트워크 실패, 피부 보정 draft)은 이번 패스 범위 밖으로 그대로 남는다.
+
+---
+
 ## Status
+
+PARTIAL
+
+2026-10-07 지시 도구의 사진 맞춤 추천 문장 넛지를 구현했다. 코드·자동 테스트·canonical 검사는 통과했다.
+**실사진 smoke(실제 Gemini 키·기기)와 카탈로그 8문장의 실제 계획 해석 확인은 미실행**이라 PARTIAL로 둔다.
+
+## Changed
+
+- 지시 시트 입력창 아래 추천 영역: 즉시 보이는 일반 예시 3개(`이렇게 말해보세요`), 명시적 `사진에 맞는 문장 보기`
+  + 전송 안내, 분석 중(인라인 진행 문구 + 취소), 맞춤(`이 사진에는 이런 방향도 좋아요`, 최대 3개), 빈 결과, 실패(snackbar +
+  `다시 찾기`), 숨기기(시트 세션 동안), 추천 초안 안내(`문장을 바꿔도 좋아요`). 음성 인식 중·직접 입력 시 숨김.
+- pill 선택은 입력창 채우기만 한다(`RequestSource.Suggestion`). planner/runner/commit 0회, 키보드 강제 없음. 전송 시 기존
+  `EditPlanProvider` 1회 → 검증 → 단계 목록 → 적용.
+- 문장 변경 시 대기 계획·`canApply` 즉시 무효화, 진행 중 계획 취소, 이전 문장의 늦은 계획 폐기(`planSeq`). 실행 중엔 변경 불가.
+- `core:ai`: `PromptSuggestionProvider`/`PromptSuggestionId`(8개, 충돌 그룹, capability), `GeminiSuggestionClient`
+  (강제 function call `suggest_directions(ids)`, ID만 읽음, 미지원/중복/충돌/초과 제거, 빈 결과≠실패, 차단·잘림·잘못된 구조=실패,
+  기존 상태코드 매핑, 12초 timeout, 취소 시 call 종료), `GeminiSuggestionProvider`(기존 `GeminiImageCodec` ≤1024, 임시 bitmap만
+  recycle), DI 바인딩.
+- `DirectSuggestions`(DirectController 소유 협력 객체): 문서 단위 키 + generation, 메모리 1항목 캐시, 연속 탭 병합, 자동 재시도 없음.
+  문서 변경(Undo/Redo/보정/실행)·Gemini 설정 변경·시트 닫기/도구 전환·전송/음성 Final에서 취소·무효화.
+- `EditorUiState.renderedDocument`: preview가 렌더된 문서. 현재 문서와 같을 때만 분석 가능(렌더 대기/실패 시 `사진을 준비하는 중`).
+- 명세/디자인/결정: `specs/vibe_edit.md` §14 및 §2 문단, `specs/prompt_input.md`, `specs/ai_provider.md`, `DESIGN.md` §4 상태 표시
+  예외, `work/decisions.md` D091.
+
+## Files
+
+- core/ai main: `PromptSuggestionProvider.kt`, `gemini/GeminiSuggestion{Catalog,Client,Provider}.kt`(신규),
+  `gemini/GeminiDto.kt`(`Schema.items`), `AiModule.kt`
+- core/ai testShared/test: `FakePromptSuggestionProvider.kt`(신규), `FakePlanProvider.kt`(hold/release),
+  `GeminiSuggestion{Client,Provider}Test.kt`(신규)
+- feature/editor main: `tools/direct/DirectSuggestions.kt`, `DirectSuggestionArea.kt`(신규), `DirectController.kt`,
+  `DirectSheet.kt`, `EditorAi.kt`, `EditorViewModel.kt`, `EditorRoute.kt`, `res/values/strings.xml`
+- feature/editor test: `DirectToolTest.kt`(+20), `DirectSheetTest.kt`(+11), `DirectGoldenTest.kt`(+2),
+  EditorAi 생성자 인자 추가만 한 9개 tool 테스트
+- goldens: `direct_sheet_open.png`(갱신, 추천 영역 포함), `direct_suggest_loading.png`, `direct_suggest_tailored.png`(신규).
+  `direct_plan_preview.png`는 변하지 않음
+- docs: `specs/vibe_edit.md`, `specs/prompt_input.md`, `specs/ai_provider.md`, `DESIGN.md`, `work/decisions.md`, `work/RESULT.md`,
+  `work/REVIEW.md`(사용자 직접 요청으로 자체 리뷰 섹션 추가, 기존 내용 보존)
+
+## Validation
+
+| 명령 | 결과 |
+| --- | --- |
+| `./gradlew --offline --quiet :core:ai:testDebugUnitTest --tests '*Suggestion*' --tests '*GeminiPlan*'` | 통과 (Suggestion 16, GeminiPlan 66) |
+| `./gradlew --offline --quiet :feature:editor:testDebugUnitTest --tests '*DirectToolTest*'` / `'*DirectSheetTest*'` | 통과 (41 / 22) |
+| `./gradlew --offline --quiet :feature:editor:recordRoborazziDebug --tests '*DirectGoldenTest*'` | 3장 기록, 육안 확인 |
+| `./gradlew --offline --quiet detekt` | 통과 (ReturnCount 2건·줄 길이 1건 수정 후) |
+| `scripts/check.sh` | **exit 0**, 2분 43초 (lint/detekt/unit/Roborazzi verify/dependencyGuard). Direct 골든 4, VoicePrompt 7 포함 |
+| `git diff --check` | 통과 |
+| `adb -H 127.0.0.1 -P 15039 devices` | 15초 timeout(응답 없음) → 실기기 미실행 |
+
+실사진 smoke 기록(요구 표):
+
+| 입력 유형 | 추천 ID/순서 | 전송까지 동작 | 지연/요청 수 | 계획·문장 일치 | 환경 |
+| --- | --- | --- | --- | --- | --- |
+| 6종(어두운 실내/밝은 야외/음식/인물/강한 색감/야경) | 미실행 | 미실행 | 미실행 | 미실행 | ADB 전달 응답 없음, 키/권한 사진 미사용 |
+
+자동 테스트의 추천 결과는 fake/MockWebServer 응답이며 실제 문장 해석·추천 적합성 품질을 검증하지 않는다.
+
+## Review Notes
+
+- 요청 식별은 `renderedDocument == document`(구조적 동등) + generation. 같은 내용의 문서로 Undo/Redo 왕복해도 이전 응답은
+  generation으로 폐기되며, 완료된 캐시만 동일 문서에 재사용된다.
+- 추천 영역은 `DirectSheet`의 `suggestions` slot이며 `state.showSuggestions`로만 노출. 음성 Listening 숨김은
+  `DirectSuggestionArea`가 `SpeechInput.state`를 직접 구독해 처리.
+- pill 터치 테스트는 Robolectric 기본 화면(시트 45% 스크롤 안 가로 Row)에서 터치가 닿지 않아 semantics OnClick 액션으로 검증.
+  48dp 높이와 TalkBack 설명은 별도 테스트로 확인.
+- 실패 snackbar: 401/403 → `direct_needs_key`, 그 외(차단 포함) → `추천 문장을 가져오지 못했어요`.
+- 피부 보정 `close()`는 재렌더를 요청하지 않으므로, 취소 직후 preview가 draft 렌더로 남으면 다음 문서 변경 전까지 맞춤 요청이
+  `사진을 준비하는 중`으로 비활성일 수 있다(잘못된 프레임 전송은 아님). 실기기 확인 필요.
+
+## Known Issues
+
+1. 실사진 smoke·카탈로그 8문장의 실제 Gemini 계획 결과(선택/삭제/생성 단계 미발생 여부) 미확인. 키·기기 환경에서 수행 필요.
+2. 큰 글자·작은 화면·키보드 표시 실기기 확인 미실행(자동: 시트 45%·고정 취소/적용·내용 스크롤 구조 유지, 골든은 Pixel6a).
+3. 사용성 개선 효과는 가설이며 사용자 검증 없음.
+4. 이전 미해결 유지: 서버 멀티샷 API R1(ASGI 취소 후 후속 추출)/R2(큰 정수 metadata 500), 피부 보정 D084 지원 종류 0개·품질/lifecycle
+   평가, Jev 미구현, 앱 골프/얇은 경계 품질·offline·12MP/PSS 평가 — 아래 이전 기록, `work/retouch_evaluation.md`, `work/REVIEW.md`.
+
+## 이전 기록 (2026-10-02 멀티샷 일괄 추출·자동 배치, 이번 변경 전)
+### Status
 
 PARTIAL — Android 시간 순서 배치에서 **다중 선택 → `모두 추출하고 자동 배치` 한 번 → 자동 균등 배치 미리보기 → 적용**
 흐름을 구현했다. 자동 테스트와 canonical `scripts/check.sh`는 통과했다(아래 Validation). **실기기 시나리오(요구 25)는
 미실행**: 이 환경에 연결된 Android 기기/에뮬레이터가 없다(`adb devices` 빈 목록, `adb reverse --list` →
 `error: no devices/emulators found`). fake 통과로 대체하지 않았다.
 
-## Changed
+### Changed
 
 - **Picker** (`EditorRoute.MultiShotToolSheet`): 시간 순서 배치의 추가는 `PickMultipleVisualMedia(남은 자리)`, 남은 자리 1장·
   자유 배치·교체는 단일 `PickVisualMedia`. 실행마다 controller의 `requestPick(replaceKey)`가 id·교체 대상·한도를 세션에
@@ -36,7 +163,7 @@ PARTIAL — Android 시간 순서 배치에서 **다중 선택 → `모두 추�
   필수 수동 단계를 대체, D088 수학·D089 서버 경계 유지).
 - core 제품 코드 변경 없음(배치 수학·저장 형식·렌더 미변경).
 
-## Files
+### Files
 
 - `feature/editor/src/main/kotlin/com/diffuse/feature/editor/EditorRoute.kt`
 - `feature/editor/src/main/kotlin/com/diffuse/feature/editor/tools/multishot/{MultiShotController,MultiShotState,MultiShotSheet,MultiShotOverlay}.kt`
@@ -45,7 +172,7 @@ PARTIAL — Android 시간 순서 배치에서 **다중 선택 → `모두 추�
 - `feature/editor/src/test/screenshots/multishot_sheet_timeline.png`(재기록), `multishot_sheet_run.png`(신규) — 나머지 골든 불변(md5 동일)
 - `specs/multishot.md`, `work/decisions.md`, `work/RESULT.md`
 
-## Validation
+### Validation
 
 | Command | Result |
 |---|---|
@@ -67,7 +194,7 @@ PARTIAL — Android 시간 순서 배치에서 **다중 선택 → `모두 추�
     → 슬롯 anchor 확인 → 적용 1 history step → Undo/Redo.
   - 기존 저장 Free/Path/Even 재열기·모드 전환 무네트워크/무재배치, persistence(저장·재열기·export·복제) 테스트는 변경 없이 통과.
 
-## Review Notes
+### Review Notes
 
 - 기존 수동 흐름 테스트에서 `confirmOrder()` 호출과 "확인만으로는 배치 아님" 단정을 제거했다(기능 삭제에 따른 변경). 자유 배치·
   저장 복원·취소 회귀 테스트는 그대로다. `placeByOrder()`는 배치 패널의 수동 동작으로 남아 있고 이제 배치 패널을 표시한다.
@@ -76,7 +203,7 @@ PARTIAL — Android 시간 순서 배치에서 **다중 선택 → `모두 추�
 - 진행 중 표시는 바쁜 오버레이(단계 문구)와 시트의 "n/N · 단계" 줄 두 곳. 오버레이 라벨은 인자 없는 문자열 계약이라 번호는 시트에만 있다.
 - 실행 버튼은 accent가 아닌 TertiaryPill(DESIGN의 하나의 accent=적용 유지). 시트는 45% 높이 안에서 스크롤된다.
 
-## Known Issues
+### Known Issues
 
 1. **실기기 미검증(요구 25)** — 새 프로젝트에서 원본+2장, 원본+5장 정상 흐름, 다중 후보 해결, 취소/재시도, 수동 보정 유지,
    적용→Undo/Redo→재시작→PNG export, 서버 요청 수 기록이 남아 있다. 필요: ADB 기기, SAM 3 서버(`127.0.0.1:15039` reverse 재확인),

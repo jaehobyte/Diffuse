@@ -122,6 +122,11 @@ same reason `Adjust` carries `AdjustKind` (§2): the plan model must be able to 
 It maps to `AspectPreset` at the `feature:editor` boundary; `core:ai` does not reach for crop
 geometry.
 
+`PromptSuggestionProvider.suggest(image): Result<List<PromptSuggestionId>>` (vibe_edit.md §14) is
+read-only: it returns at most three catalog ids from distinct groups, an empty list meaning
+"nothing fits", and never a plan. `PromptSuggestionId` carries an `AdjustKind`/`StyleId` capability
+for checking only, under §2's existing `AdjustKind` edge.
+
 `EraseProvider` says nothing about *how* the hole is described to a model. Painting the masked
 region white is `GeminiEraseProvider`'s private business (generative_erase.md §4), so swapping the
 backend under this interface leaves `EraseController` and `FakeEraseProvider` untouched.
@@ -176,6 +181,11 @@ outside the mask. Deterministic, so goldens are stable.
 `EditPlan(listOf(Select("나무"), Adjust(Saturation, 0.3f, masked = true)))` — the request vibe_edit.md
 was specified from, so the goldens read as that story.
 
+`FakePromptSuggestionProvider` (vibe_edit.md §14): returns lift_shadows, warm, vivid_color unless
+`next(ids)`/`failNext(error)` override the following call; `hold(ignoreCancellation)`/`release()`
+park a call so tests can prove late answers are dropped. `FakePlanProvider.hold()/release()` does
+the same for a plan.
+
 No test reaches an external host. The `Sam3Client`, `GeminiEraseClient` and `GeminiPlanClient`
 tests use `MockWebServer` on localhost; all three take their base URL as a constructor seam, which
 is what makes that possible for a client whose production host is a public one.
@@ -187,6 +197,7 @@ abstract class AiModule {
     @Binds abstract fun seg(impl: Sam3SegmentationProvider): SegmentationProvider
     @Binds abstract fun erase(impl: GeminiEraseProvider): EraseProvider
     @Binds abstract fun plan(impl: GeminiPlanProvider): EditPlanProvider
+    @Binds abstract fun promptSuggestion(impl: GeminiSuggestionProvider): PromptSuggestionProvider
 }
 ```
 Tests replace it with `@TestInstallIn` binding the fakes.

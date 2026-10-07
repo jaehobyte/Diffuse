@@ -74,6 +74,11 @@ import javax.inject.Inject
 /** specs/editor_shell.md §State. */
 data class EditorUiState(
     val preview: ImageBitmap? = null,
+    /**
+     * specs/vibe_edit.md §14: the document [preview] was rendered from, or null after a failed
+     * render left an older frame on screen. Equal to [document] only when the canvas is current.
+     */
+    val renderedDocument: EditDocument? = null,
     val source: ImageBitmap? = null,
     val canUndo: Boolean = false,
     val canRedo: Boolean = false,
@@ -265,6 +270,8 @@ class EditorViewModel @Inject constructor(
                 }
             }
         },
+        suggestionProvider = ai.promptSuggestion,
+        settingsChanges = ai.geminiSettings.config,
     )
 
     /**
@@ -440,6 +447,23 @@ class EditorViewModel @Inject constructor(
         viewModelScope.launch {
             direct.state.collect { _uiState.value = _uiState.value.copy(direct = it) }
         }
+        // specs/vibe_edit.md §14: a suggestion may only be asked of a frame rendered from the
+        // document on screen — never an older render, nor one a failed render left behind.
+        viewModelScope.launch {
+            _uiState.map { state ->
+                state.document to state.preview?.takeIf { state.renderedDocument == state.document }
+            }
+                .distinctUntilChanged()
+                .collect { (document, preview) ->
+                    direct.suggestions.onCanvas(document, preview?.asAndroidBitmap())
+                }
+        }
+        // §14: closing the sheet, a finished run or another tool ends the session's request.
+        viewModelScope.launch {
+            _uiState.map { it.selectedTool == Tool.Direct }
+                .distinctUntilChanged()
+                .collect { open -> if (!open) direct.suggestions.endSession() }
+        }
     }
 
     private suspend fun load() {
@@ -509,9 +533,10 @@ class EditorViewModel @Inject constructor(
             // Resolved here rather than in its own pass: it is cached, and this is the one
             // place that already knows the document changed.
             val mask = document.activeMaskId?.let { renderer.resolveMask(document, it) }
+            val frame = (rendered as? Result.Success)?.value
             _uiState.value = _uiState.value.copy(
-                preview = (rendered as? Result.Success)?.value?.asImageBitmap()
-                    ?: _uiState.value.preview,
+                preview = frame?.asImageBitmap() ?: _uiState.value.preview,
+                renderedDocument = shown.takeIf { frame != null },
                 activeMask = mask,
             )
         }

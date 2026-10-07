@@ -168,6 +168,7 @@ class CropPreviewTest {
             com.diffuse.core.ai.retouch.server.RetouchServerSettings(
                 androidx.test.core.app.ApplicationProvider.getApplicationContext(),
             ),
+            com.diffuse.core.ai.FakePromptSuggestionProvider(),
         ),
         dispatchers = TestDispatchers,
         savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),

@@ -2,6 +2,198 @@
 
 ## Status
 
+CHANGES_REQUESTED
+
+2026-10-07 Codex 독립 확인. **지시 도구 사진 맞춤 추천 문장 넛지**의 R1·R2 수정이 필요하다.
+사용자 연결 복구 후 `127.0.0.1:15039`의 SM-S948U에 최신 APK 설치 및 실기기 smoke를 수행했다.
+실제 Gemini 추천·계획·노출 적용/Undo 정상 경로는 확인했지만, 추천 취소 표시 소실과 키보드 가림을 재현하여 승인하지 않는다.
+이전 연결 장애는 해소됐다. 사진 6종·카탈로그 8문장 전체 검증 완료를 의미하지 않는다.
+
+## Blocking
+
+### R1 분석 중 예시 선택 시 진행 표시와 추천 취소 버튼이 사라짐
+
+Location:
+`feature/editor/src/main/kotlin/com/diffuse/feature/editor/tools/direct/DirectSuggestionArea.kt:99`
+
+Problem:
+`사진에 맞는 문장 보기`로 Loading에 진입한 뒤 여전히 활성인 일반 예시 pill을 누르면
+`requestSource == Suggestion`이 된다. `StatusLine`은 Loading보다 추천 초안 안내를 먼저 검사하므로
+진행 문구와 추천 취소 버튼을 `문장을 바꿔도 좋아요`로 대체한다.
+`pickSuggestion()`은 추천 요청을 취소하지 않아 네트워크 요청은 계속된다.
+
+Impact:
+사용자는 진행 중인 추천 요청을 확인하거나 추천 영역에서 취소할 수 없다.
+입력·사진·history를 유지하는 추천 취소 대신 지시 시트 전체를 닫아야 하는 상태가 되며,
+`work/tasks.md` 요구 14와 `specs/vibe_edit.md` §14의 인라인 진행+취소 계약을 위반한다.
+
+Required fix:
+분석 중 예시를 골라도 요청이 계속되는 동안 진행 상태와 추천 취소 동작을 유지한다.
+추천 취소 후 선택한 문장과 문서/history를 보존하는 회귀 테스트를 추가한다.
+
+실기기 재현:
+맞춤 요청 → 0.3초 후 일반 예시 선택 → `문장을 바꿔도 좋아요`만 표시되고 추천 취소 없음.
+그 뒤 15:04:07 KST에 Gemini 추천 결과가 도착해 요청이 계속됐음을 확인했다.
+증거: `/tmp/direct-device-review/loading-picked.{png,xml}`, `loading-picked-end.xml`, `final-log.txt`.
+
+### R2 키보드가 지시 시트의 고정 취소·적용 버튼을 가림
+
+Location:
+`feature/editor/src/main/kotlin/com/diffuse/feature/editor/tools/direct/DirectSheet.kt:45`
+`core/ui/src/main/kotlin/com/diffuse/core/ui/components/EditSheet.kt:65`
+
+Problem:
+기본 설정(1080×2340, density 450, font_scale 1.0)에서 추천 문장을 선택하고 입력창을 누르면
+Samsung 키보드가 추천 영역과 하단 취소·적용 버튼을 덮는다. 화면은 입력창까지 위로 이동하지만
+고정 액션 행은 키보드 뒤에 남는다. 실제 screenshot에서 확인했으며, UI hierarchy의 존재 여부만으로는 검출되지 않는다.
+현재 공통 시트는 navigation bar 여백을 처리하지만 이 진입 경로에서 IME 표시 시 액션 행 노출을 보장하지 않는다.
+
+Impact:
+문장을 수정하는 사용자가 키보드를 별도로 닫아야 시트 취소·적용을 확인하거나 조작할 수 있다.
+`work/tasks.md` 요구 22의 “키보드 표시에서도 입력과 고정 취소·적용이 가려지지 않게” 조건을 충족하지 않는다.
+공통 시트의 기존 동작일 수 있으며 이번 diff가 처음 만든 회귀라고 단정하지 않는다.
+
+Required fix:
+지시 시트에서 IME가 열린 동안 입력과 고정 액션 행을 보이게 하고,
+큰 글자·작은 화면에서도 스크롤과 캔버스/시트 제약을 검증한다.
+공통 컴포넌트 변경이 필요하면 이번 요구를 충족하는 최소 범위로 조정하고 다른 시트의 회귀를 확인한다.
+증거: `/tmp/direct-device-review/keyboard.png`, `keyboard.xml`, `typed.xml`.
+
+## Tests Missing
+
+- R1의 **Loading + RequestSource.Suggestion + 비어 있지 않은 입력** 조합.
+  기존 `a suggestion in progress says so and can be cancelled`는 빈 입력만 검사한다.
+- 실사진 6종 및 카탈로그 8문장 전체 검증은 미완료. 이번에는 공개 앵무새 사진 1장의 원본/노출 보정 상태와
+  Brighten·VividColor 두 문장의 실제 계획을 확인했다. 다른 사진 유형이나 나머지 문장까지 통과로 확대하지 않는다.
+- 실제 TalkBack 읽기 순서, 음성 Final, 네트워크 실패·빈 추천, 피부 보정 draft 취소 후 프레임 상태는 미실행.
+- 키보드 가림 R2의 실기기/IME 회귀 검증이 필요하다.
+
+## Non-blocking
+
+- 피부 보정 취소 후 `renderedDocument != document` 잔류 가능성은 기존 확인 필요 항목으로 유지한다.
+  이번 기기에서 재현하거나 해소했다고 판단하지 않는다.
+
+## Validation Notes
+
+### 연결 복구 후 실기기 검증 (2026-10-07 14:56~15:05 KST)
+
+- 같은 15039 포트, `R3CYA0AVYEL` / SM-S948U / Android 16. 기존에 빌드한 동일 SHA-256 APK의
+  `adb install -r` **Success / exit 0**. 전송 포함 약 3분. 로그 `/tmp/direct-device-install-retry.log`.
+- 기존 저장소 로컬 Gemini 키를 신규 앱 설정에 저장하고 실제 앱에서 호출했다. 키 값은 로그/문서에 노출하지 않았다.
+  서버 주소·서비스·모델·공개 포트는 변경하지 않았다.
+- 저장소 기존 샘플 `test/kodim23.png`(앵무새 2마리)를 `/sdcard/Pictures/DirectReview/parrots.png`로 복사해
+  시스템 Photo Picker로 새 프로젝트 `2aabf5ed-82e9-423b-b9c6-02beeee44c41`를 생성했다. 개인 사진은 사용하지 않았다.
+- PASS: 지시 진입 시 일반 예시 3개, 입력 비어 있음, 적용 disabled. pill 선택 후 완성 문장이 채워지고 키보드는 열리지 않음.
+  `before.json == picked.json` assertion 통과, Undo disabled 유지. 선택만으로 편집하지 않았다.
+- PASS: `사진 전체를 조금 더 밝게 해줘` → 전송 → 실제 계획 `Exposure +0.2`(UI `노출 20`) → 적용.
+  저장 operations는 Adjust 하나, Undo enabled. Undo 후 operations=`[]`; 이후 Redo 화면에서도 노출 변화와 Undo 활성 확인.
+- PASS: 원본 preview 명시적 분석 → `vivid_color, film_warm` 2개 추천. 시트 재진입에서 같은 결과를 즉시 표시했고
+  해당 구간 성공 응답 로그가 1개로 유지됐다. 로그는 완료 이벤트이며 별도 패킷 계측으로 요청 수를 측정한 것은 아니다.
+- PASS: 맞춤 `색감을 생생하게` 선택 → `사진 전체의 채도를 조금 높여줘` → 전송 → 실제 계획 `Saturation +0.2`.
+  선택/삭제/생성 단계 없음. 이 채도 계획은 적용하지 않고 입력 수정 검증에 사용했다.
+- PASS: 입력창에서 문장에 `x`를 삽입하자 추천 목록이 숨겨지고 적용 disabled로 전환됨. 이전 계획 적용 차단.
+  해당 수정 문장은 전송하지 않고 시트를 취소했다.
+- PASS: Redo로 현재 문서가 바뀐 뒤 지시 재진입 시 일반 예시로 돌아가며 자동 분석하지 않았다.
+  다시 명시적으로 요청한 보정 preview의 추천도 `vivid_color, film_warm`이었다.
+- FAIL: 분석 중 예시 선택 시 진행/취소 소실(R1). 이후 응답은 추천 목록만 갱신하고 선택한 초안은 유지했다.
+- FAIL: 키보드가 하단 액션을 가림(R2). UI hierarchy에 액션 노드가 남아 있어도 실제로는 키보드 뒤였다.
+- 큰 글자/좁은 화면: font_scale=1.5, density=480(가로 360dp)에서 고정 취소·적용은 키보드가 없을 때 보였다.
+  긴 pill은 가로 스크롤, 내용은 세로 스크롤로 노출됨. 입력 placeholder의 두 번째 줄 일부가 잘리는 것도 관찰했다.
+  전체 접근성 통과 판정은 하지 않는다. 확인 후 **font_scale=1.0, density=450** 원복을 조회로 확인했다.
+
+| 입력/문장 | 실제 추천 또는 계획 | 결과 |
+| --- | --- | --- |
+| 강한 색감의 앵무새 원본 | vivid_color → film_warm | 맞춤 제목과 2개 pill 표시 |
+| 같은 사진 Exposure +0.2 preview | vivid_color → film_warm | 문서 변경 후 새 명시적 분석, 초안 유지 |
+| Brighten 완성 문장 | Exposure +0.2, masked=false | 계획 확인·적용·저장·Undo 통과 |
+| VividColor 완성 문장 | Saturation +0.2, masked=false | 계획 확인·입력 수정 후 적용 차단 통과 |
+
+- 추천 성공 로그 KST 15:00:54.559 / 15:04:07.599, 계획 성공 로그 14:59:21.280 / 15:02:10.861.
+  탭→응답 지연을 별도로 정밀 계측하지 않았으므로 latency 수치를 보고하지 않는다.
+- 증거 `/tmp/direct-device-review/`: `before/picked/applied/undo/final.json`, `tailored.png`,
+  `loading-picked.png`, `keyboard.png`, `large-direct.png`, 각 UI XML 및 `final-log.txt`.
+  `before == picked`, applied=Exposure 0.2 하나, Undo/final operations=`[]`를 로컬 assertion으로 검증했다.
+- 최종 상태: 원본으로 Undo한 새 검증 프로젝트의 일반 편집 화면. 샘플 사진과 프로젝트, 앱/설정은 기기에 남겼다.
+  기존 사용자 사진·프로젝트를 수정하지 않았다. 제품 코드/테스트 수정 및 commit/push 없음.
+  동일 소스/APK의 실기기 검증만 수행했으므로 이전 통과한 canonical 검사를 불필요하게 재실행하지 않았다.
+
+### 복구 전 빌드·자동 검증·연결 시도 (기존 기록)
+
+- `work/tasks.md`, `work/RESULT.md`, 기존 REVIEW, 관련 구현·테스트·diff, DESIGN 및 D091을 확인했다.
+- `scripts/check.sh`: 첫 실행 **exit 0**. lint/detekt/unit/Roborazzi/dependencyGuard를 포함하며 캐시·증분 결과가 섞인다.
+  확인한 관련 XML은 Suggestion 16, GeminiPlan 66, Direct 67, VoicePrompt 7 — failures/errors 0.
+  기존 테스트의 전체 강제 재실행을 주장하지 않는다.
+- R1 검증을 위해 `DirectSheetTest`에 임시 테스트 1개를 추가해 실행:
+  `./gradlew --offline --quiet :feature:editor:testDebugUnitTest --tests '*DirectSheetTest*review probe*'`
+  → **1 test / 1 failed**, `DirectSuggestionCancel` 노드를 찾지 못하는 assertion으로 재현.
+  임시 테스트는 제거했으며 제품 구현은 수정하지 않았다.
+  제거 후 `scripts/check.sh` 재실행도 **exit 0**, `git diff --check` 통과.
+  증거: `/tmp/direct-review-probe.log`, `/tmp/direct-device-review/probe-result.xml`.
+- `./gradlew --offline :app:assembleDebug -Pdiffuse.localCreds`: **BUILD SUCCESSFUL, 1분 32초**.
+  APK 133,276,286 bytes, SHA-256 `826465a3816bbe9d17cc1de601ca1ab386e756c0a4efc3debf3a7d186eb07a59`.
+  로컬 자격 정보 포함 빌드이며 공개 배포하지 않았다.
+- 15039 최초 조회: serial `R3CYA0AVYEL`, model **SM-S948U**, Android **16**, 1080×2340, density 450.
+  이전 리뷰의 S25 `R3CY601Q6GZ`와 다른 기기다. 최초 패키지 목록에는 `com.diffuse`가 없었다.
+- 이후 ADB shell/기기 목록이 timeout. 호스트 권한 재시도도 20초 timeout(exit 124).
+  TCP 연결은 열리지만 ADB `host:version`, `host:devices-l` 각각 4초 read timeout.
+  `timeout 180 adb -H 127.0.0.1 -P 15039 -s R3CYA0AVYEL install -r ...`도 **exit 124**,
+  설치 성공 응답 없음. 설치 완료 여부·앱 화면·Gemini 요청·사진 편집을 확인하지 못했다.
+- 빌드/표준 검사/설치 로그: `/tmp/direct-device-{build,check,install}.log`.
+  `/tmp` 증거의 영구 보존은 보장하지 않는다. 사진·키를 새로 전송하지 않았고 자동 commit/push하지 않았다.
+- 재개 조건: PC의 USB/ADB 및 15039 SSH 전달 복구 후 기기 응답·설치 상태부터 다시 확인.
+  기존 서버 멀티샷 R1/R2, 피부 보정·Jev 미해결은 이번 검증으로 해소되지 않았다.
+
+## 이전 구현자 자체 리뷰 (2026-10-07)
+
+## Status
+
+COMMENT — 구현자(Claude) 자체 리뷰, 승인 아님
+
+2026-10-07. 현재 `work/tasks.md`의 **지시 도구 사진 맞춤 추천 문장 넛지** 구현을 사용자 요청으로 구현자가 직접 검토했다.
+독립 리뷰어 판정이 아니며, 실사진 smoke와 실제 Gemini 계획 해석이 미실행이므로 APPROVE를 주지 않는다.
+코드·테스트·명세 대조 범위에서 차단 결함은 발견하지 못했다. 아래 확인 필요 항목을 독립 리뷰/실기기에서 확인해야 한다.
+
+## Blocking
+
+None (자동 검증 범위).
+
+## Needs Verification
+
+1. **실사진 smoke 미실행** — Acceptance의 "현재 preview를 실제 분석해 서로 다른 방향 추천", 6종 사진 표, 카탈로그 8문장 →
+   실제 계획(선택/삭제/생성 단계 미발생) 확인이 비어 있다. `127.0.0.1:15039` ADB가 15초 timeout으로 응답하지 않았다.
+2. **피부 보정 취소 직후의 프레임 상태** — `SkinRetouchController.close()`는 `onDraftChanged()`를 부르지 않는다. 취소 후 preview가
+   draft 렌더로 남으면 `renderedDocument != document`라 지시 시트의 맞춤 요청이 다음 문서 변경까지 `사진을 준비하는 중`으로
+   비활성일 수 있다. 잘못된 프레임 전송은 막히지만 UX 정지 가능성이 있다(기존 preview 갱신 경로 확인 필요).
+3. **큰 글자/작은 화면/키보드** — 구조(시트 45%, 고정 취소·적용, 내용 세로 스크롤, pill 가로 스크롤)는 유지했으나 기기에서 미확인.
+   Robolectric 기본 화면에서는 pill이 시트 스크롤 영역 밖이라 터치 테스트를 semantics OnClick으로 대체했다.
+
+## Tests Missing
+
+- 시트 열림 상태에서 프로젝트 전환 시나리오는 별도 테스트가 없다(문서 id가 동등성 키에 포함되어 같은 경로로 무효화된다).
+- 실제 TalkBack 읽기 순서·반복 알림 부재는 자동 검증하지 않았다(contentDescription/liveRegion 미사용만 코드로 확인).
+
+## Non-blocking
+
+- 추천 실패 snackbar는 401/403만 `direct_needs_key`, 나머지(차단 포함)는 단일 문구다. 세분화는 요구되지 않았다.
+- 분석 중 영역의 `취소`와 시트의 `취소`가 같은 글자다. 추천 쪽은 contentDescription `문장 추천 찾기 취소`로 구분된다.
+- `EditorUiState.renderedDocument`는 렌더 성공마다 `shown`(도구별 표시 문서)을 기록하므로 자동/스타일/자르기 표시 중에는
+  의도적으로 현재 문서와 다르다. 지시 시트는 해당 도구가 닫힌 뒤 재렌더되는 경로에 의존한다.
+
+## Validation Notes
+
+- 대조: tasks Requirements 1–23, `specs/vibe_edit.md`/`prompt_input.md`/`ai_provider.md`, `DESIGN.md` §4, D091, 신규·변경 코드 전체 diff.
+- `scripts/check.sh` exit 0 (lint/detekt/unit/Roborazzi verify/dependencyGuard), `git diff --check` 통과.
+- 신규/관련 테스트: GeminiSuggestionClient 15, GeminiSuggestionProvider 1, GeminiPlan 66, DirectToolTest 41(+20), DirectSheetTest 22(+11),
+  DirectGolden 4(+2), VoicePromptBar 7 — failures/errors 0.
+- 골든: `direct_sheet_open` 갱신, `direct_suggest_loading`/`direct_suggest_tailored` 추가, 육안 확인(적용만 accent, 순위 배지 없음).
+  `direct_plan_preview` 불변.
+- 보존: 이전 리뷰(2026-10-02 멀티샷 승인 및 미커밋 추가분)는 아래에 그대로 두었다. 서버 멀티샷 R1/R2, 피부 보정 D084·Jev 등
+  이전 미해결은 이번 작업으로 해소되지 않았다.
+
+## 이전 리뷰 (2026-10-02 Android 멀티샷 일괄 추출·자동 배치)
+
+### Status
+
 APPROVE
 
 2026-10-02. 현재 `work/tasks.md`의 **Android 다중 선택 → 일괄 추출 → 즉시 자동 균등 배치**를 승인한다.
@@ -11,11 +203,11 @@ APPROVE
 이 승인은 현재 Android 작업에 한정한다. **서버 멀티샷 API의 기존 R1/R2는 미해결**이며, 피부 보정·Jev·전체 사진 품질/성능 평가는 승인하지 않는다.
 `RESULT` 상단의 “기기가 없어 실기기 미실행”은 구현 당시 기록이다. 아래는 그 이후 리뷰어가 직접 수행한 검증이다.
 
-## Blocking
+### Blocking
 
 None.
 
-## Tests Missing
+### Tests Missing
 
 현재 변경에 새 차단 수준의 자동 테스트 누락은 발견하지 못했다. 다음은 실기기 미검증 범위이며 통과로 해석하지 않는다.
 
@@ -25,15 +217,15 @@ None.
 - 실제 네트워크 차단 상태의 재열기/export, 12MP·PSS·slider 지연, 반복 실행 잔류, 골프채·손·머리카락 경계 및 연속 동작 품질.
 - 이번 실행에서 JPEG export와 프로젝트 복제를 새로 수행하지 않았다.
 
-## Non-blocking
+### Non-blocking
 
 - 기존 Android 접근성 N1은 해소: 균등 배치에서 “원본 발밑 높이의 기준선 … N개의 목표 위치”가 실제 UI hierarchy에 표시됐다.
 - NASA 초상은 기능 smoke용이다. 6장에는 서로 다른 인물이 포함되고 피사체가 넓어 겹침·잘림이 크다.
   현재 D088의 고정 크기/원본 중앙 슬롯 계약과 잘림 안내는 지켰지만, 최종 사진 품질 합격 예시로 사용하면 안 된다.
 
-## Validation Notes
+### Validation Notes
 
-### 저장소·빌드
+#### 저장소·빌드
 
 - `git status --short`, `git diff --check`, 관련 diff와 미추적 멀티샷 파일을 확인했다.
   전체 작업 트리에는 이전 피부/서버/문서 변경이 함께 있으므로 이번 Android 변경과 구분했다.
@@ -47,7 +239,7 @@ None.
   APK 133,259,494 bytes, SHA-256 `9d517f6d4188577696458c552eceb27b956939ffb1e3cb32c2ad3aa90414a591`.
 - 서버 API/retouch 검사는 이번에 재실행하지 않았다. 제품 코드·테스트·tasks/RESULT는 수정하지 않았고 자동 commit도 하지 않았다.
 
-### 연결과 입력
+#### 연결과 입력
 
 - EC2에서 로컬 PC의 SSH 전달 ADB **127.0.0.1:15039** 사용. serial **R3CY601Q6GZ**, Samsung **SM-S931N**, Android **16**.
   EC2 기본 ADB의 빈 목록을 기기 부재로 판단하지 않았다.
@@ -58,7 +250,7 @@ None.
   `/sdcard/Pictures/MultishotBatchReview/`에 추가했다. 예외 경로는 기존 `MultishotCheck`의 두 인물 동작 샘플을 사용했다.
   개인 사진을 SAM에 새로 전송하지 않았다.
 
-### 새 3장 정상 흐름 — PASS
+#### 새 3장 정상 흐름 — PASS
 
 - 새 프로젝트 **`4c83ffc3-3d82-4762-bcaf-f3ceef0e9b93`** 생성. 원본 + 추가 2장을 **하나의 다중 Picker**에서 선택.
 - 시간 순서 배치 → 사진 추가 → 2장 선택/완료 → 시트 스크롤 → **모두 추출하고 자동 배치 1회** → 자동 미리보기 → 적용.
@@ -69,7 +261,7 @@ None.
   공통 y **0.953704**, opacity **0.25 / 0.70**, scale=1, rotation=0. `[A, 원본, B]` 수식과 일치.
 - 적용 직후 Undo enabled. 실제 Undo 후 저장 operations=`[]`; Redo 후 원래 operations·피사체 refs·좌표가 정확히 복원됨을 JSON assertion으로 확인했다.
 
-### 새 6장 정상 흐름·수동 보정·재시작·PNG — PASS
+#### 새 6장 정상 흐름·수동 보정·재시작·PNG — PASS
 
 - 별도 새 프로젝트 **`4d4b2708-280a-4f27-b010-244b18c68940`** 생성. 원본 + 추가 5장을 한 번에 선택하고
   **모두 추출하고 자동 배치 1회**로 완료했다. 1~5단계·주인공과 적용 enabled, 자동 배치 가이드를 확인했다.
@@ -97,7 +289,7 @@ None.
   **4,181,685 bytes, 1536×1920 RGBA**. 실제 파일을 가져와 decode하고 육안 확인했다. 가이드/번호는 출력에 없었다.
   픽셀 단위 원본 보호 품질이나 골프 합성 품질의 완전한 검증으로 확대하지 않는다.
 
-### 다중 후보·진행 취소/재개·시트 취소 — PASS
+#### 다중 후보·진행 취소/재개·시트 취소 — PASS
 
 - 새 예외 검증 프로젝트 **`3ff4c6b4-ab75-4101-8df6-822dfd428dd3`**: 두 인물 원본 + 단일 인물 추가 1장.
 - 일괄 실행 시 **주인공에서 1/2 · 대상 선택 필요**, 후보 2개, 적용/타일/패널 전환 비활성.
@@ -109,7 +301,7 @@ None.
 - 최종 **시트 취소** 후 Undo 비활성, 저장 operations=`[]`, 프로젝트 파일은 `document.json/source.jpg/thumb.png`만 남았다.
   이번 draft의 hero/subject 파일이 회수된 것을 확인했다.
 
-### 증거·남겨둔 상태
+#### 증거·남겨둔 상태
 
 - 이번 임시 증거: `/tmp/multishot-batch-review/`의 `three-auto.png`, `three-{applied,undo,redo}.json`,
   `six-auto.png`, `six-{auto-saved,corrected,reopened}.json`, `six-reopened.png`, `six-export.png`,
@@ -117,6 +309,35 @@ None.
 - 서버 로그의 이번 세 시나리오 총 upload/text/DELETE는 **각 11회**다. 타임스탬프 구간으로 이전 요청과 구분했다.
 - NASA 입력 6장, 새 3장/6장 검증 프로젝트, 취소한 예외 검증의 원본 프로젝트와 PNG export는 기기에 남겼다.
   최종 화면은 저장된 6장 프로젝트이며, 재열기 화면과 캔버스 RGB가 같다는 비교로 확인했다. `/tmp` 증거의 영구 보존은 보장하지 않는다.
+
+#### 후속 요청 — HTTP API 자동 추출·배치·합성 확인 (2026-10-02)
+
+사용자 요청에 따라 `POST /v1/multishot` 한 번으로 완성 PNG에 배치가 반영되는지 직접 재검증했다.
+**정상 경로 자동 적용은 이미 구현되어 있고 통과했다. `work/tasks.md`는 변경하지 않는다.**
+이 결과는 서버 API 전체 승인이나 Android 편집 문서 자동 저장 연동을 뜻하지 않는다. 기존 서버 R1/R2는 미해결이다.
+
+- 브랜치 `dev/combie`, 기반 커밋 `70da3dc`. `server/multishot/scripts/check.sh`: **131 passed, 2 warnings, 2.95초, exit 0**.
+- 실제 `python -m app`를 임시 `127.0.0.1:18086`에 실행하고 기존 실제 SAM `127.0.0.1:18091`에 연결했다.
+  검증용 임시 API 토큰과 기존 SAM 자격 정보를 사용했으며 값은 기록하지 않았다. 공개 배포 endpoint를 검증한 것은 아니다.
+- 기존 NASA 공개 초상으로 3장/6장 각각 **POST 한 번**, `metadata` 생략(기본 spacing=1, 자동 person 추출).
+  별도 후보 확정/배치/적용 HTTP 호출은 없었다. 6장에는 다른 인물 2명이 포함되어 동일인 동작 품질 검증은 아니다.
+
+| 입력 | HTTP | 요청 시간 | 반환 PNG | 원본 hero와 다른 픽셀 수 |
+| --- | --- | --- | --- | --- |
+| 3장 | 200 | 11.80초 | 1536×1920 RGBA, 3,671,754 bytes | 958,782 |
+| 6장 | 200 | 21.55초 | 1536×1920 RGBA, 3,995,857 bytes | 1,454,623 |
+
+- 입력 순 슬롯은 3장 `[0,2,1]`, 6장 `[0,1,3,4,5,2]`. 마지막 입력이 hero,
+  hero anchor `(0.485532,0.954630)`, 모든 y가 같고 x는 `hx+(slot-k)/N`에 일치했다.
+  opacity는 3장 `[.25,.7,1]`, 6장 `[.25,.3625,.475,.5875,.7,1]`로 assertion을 통과했다.
+- 응답 multipart 파싱, PNG decode/크기, 좌표/불투명도, 원본과 픽셀 차이를 검사했고 두 PNG를 직접 열어 합성을 확인했다.
+  픽셀 차이만으로 사진 품질이나 보호 영역의 완전한 정확성을 증명하지 않는다. 겹침·잘림 및 `subject_clipped` 경고가 있었다.
+- 인증된 health 200, 무인증 401, 이미지 2장 422 `invalid_image_count`도 확인했다.
+  두 성공 요청 뒤 spool이 비었고 임시 서버는 종료했다. 기존 SAM rate limit을 변경하지 않고 요청 사이 65초 간격을 뒀다.
+- 임시 증거: `/tmp/multishot-api-auto-check/{three,six}.png`, `{three,six}.json`, `summary.json`, `server.log`.
+  request_id: 3장 `a20e3606263545f0a9f81ed2c27f9992`, 6장 `78081583c0774df3ae943b0a86120e33`.
+- 여러 후보/미검출은 명세상 422이며 자동 임의 선택하지 않는다. 이 경우에는 `subject_points`로 대상을 지정해 재요청해야 한다.
+  현재 API는 완성 PNG와 진단 metadata를 반환하며 앱의 피사체별 편집 문서에 자동 저장하는 API는 아니다(D089).
 
 ---
 
@@ -126,7 +347,7 @@ None.
 아래 “최신 tasks”는 **해당 리뷰 당시의 작업서**를 뜻한다. 이전 접근성 N1은 위 최신 검증에서 해소됐다.
 
 
-## Status
+### Status
 
 CHANGES_REQUESTED
 
@@ -135,9 +356,9 @@ CHANGES_REQUESTED
 로컬 Galaxy S25의 기존 Android 멀티샷도 ADB로 조작했다. **앱은 신규 API를 호출하지 않으므로 기기 조작을 API 종단 검증으로 계산하지 않는다.**
 Android 균등 배치의 이전 기능 승인과 남은 평가 사항은 아래 이전 리뷰에 보존한다. 이번 판정은 신규 서버 API에 대한 것이다.
 
-## Blocking
+### Blocking
 
-### R1 [P2] 요청 태스크 취소가 worker 중단 신호로 전달되지 않음
+#### R1 [P2] 요청 태스크 취소가 worker 중단 신호로 전달되지 않음
 
 Location:
 `server/multishot/app/main.py:108`
@@ -158,7 +379,7 @@ Required fix:
 대기 중 작업은 시작하지 않고, 실행 중 thread는 실제 종료할 때까지 slot/spool 소유권을 유지해야 한다.
 첫 추출 중 취소 후 호출 수가 1회에 머물며 종료 후 자원이 해제되는 회귀 테스트를 추가한다.
 
-### R2 [P2] 큰 JSON 정수 좌표·간격이 400 대신 500으로 처리됨
+#### R2 [P2] 큰 JSON 정수 좌표·간격이 400 대신 500으로 처리됨
 
 Location:
 `server/multishot/app/options.py:40`
@@ -177,21 +398,21 @@ Required fix:
 float 변환 오버플로를 포함해 범위 밖 숫자를 일관되게 400 `invalid_metadata`로 처리한다.
 spacing 및 point 좌표의 큰 양수·음수 정수에 대한 endpoint 회귀 테스트를 추가하고 SAM 미호출을 확인한다.
 
-## Tests Missing
+### Tests Missing
 
 - R1: 기존 `test_lifecycle.py`는 disconnect/deadline을 검사하지만 ASGI 호출 태스크 자체의 취소를 검사하지 않는다.
 - R2: NaN/Infinity/`1e999` 검사에 더해 JSON 정수의 float 변환 오버플로가 필요하다.
 - 실제 SAM 3장/6장 smoke는 `work/RESULT.md`의 구현자 실행 기록을 검토했다. 초기 리뷰 후 아래 재접속 검증에서 실제 SAM 3장/6장 요청도 직접 통과했다.
 - 재접속 후 기존 앱의 저장·Undo/Redo·재시작·PNG export를 검증했다. 새 API의 앱 연동, offline·12MP 성능 및 골프 연속 동작 품질은 미검증이다.
 
-## Non-blocking
+### Non-blocking
 
 기존 Android 접근성 문구 N1과 품질·성능 평가의 미완료 상태를 아래 이전 리뷰에 보존한다.
 신규 API의 Android 미연동은 현재 작업서에 명시된 범위이며 결함으로 분류하지 않는다.
 
-## Validation Notes
+### Validation Notes
 
-### 직접 실행한 서버 검사
+#### 직접 실행한 서버 검사
 
 - `git status --short`, `git diff --check`, 관련 diff/신규 파일을 확인했다. 기존 미커밋 Android·피부 변경이 섞여 있으므로
   전체 작업 트리를 이번 API 구현분이라고 간주하지 않았다.
@@ -206,7 +427,7 @@ spacing 및 point 좌표의 큰 양수·음수 정수에 대한 endpoint 회귀 
   신규 서버 검사와 기존 설치 앱의 UI smoke를 구분한다. APK 재빌드·재설치는 하지 않았다.
 - 서비스 재기동, GPU 모델 교체, 포트 공개, 자동 commit은 하지 않았다.
 
-### 초기 로컬 실기기 확인과 연결 제한 — 아래 재접속 결과로 보완
+#### 초기 로컬 실기기 확인과 연결 제한 — 아래 재접속 결과로 보완
 
 - 기존 SSH reverse ADB `127.0.0.1:15039`에서 `R3CY601Q6GZ`, Galaxy S25 `SM_S931N`을 `device`로 확인했다.
 - 화면을 켜고 실행 중인 `com.diffuse`에서 도구 목록을 스크롤 → AI → 멀티샷을 실제 탭했다.
@@ -217,7 +438,7 @@ spacing 및 point 좌표의 큰 양수·음수 정수에 대한 endpoint 회귀 
 - 시트 취소 명령도 전송을 시도했지만 응답을 확인하지 못했다. 최종 UI 복귀 여부는 미확인이다.
   이전 screenshot/JSON을 이번 실행의 새 증거로 사용하지 않았다.
 
-### 2026-10-02 재접속 — 실제 신규 API 검증
+#### 2026-10-02 재접속 — 실제 신규 API 검증
 
 사용자의 재접속 요청 후 직접 실행했다. 코드 수정은 없으므로 **R1/R2와 CHANGES_REQUESTED는 유지**한다.
 
@@ -250,7 +471,7 @@ spacing 및 point 좌표의 큰 양수·음수 정수에 대한 endpoint 회귀 
 - 직접 생성한 임시 증거: `/tmp/multishot-live-review/{three,six}.png`, `{three,six}.json`, `summary.json`, `server.log`.
   요청 ID: 3장 `5bdb5c9dd1e74767a140b7eb407c0756`, 6장 `592e7d5c09cc449b8311b99315e1a568`.
 
-### 2026-10-02 재접속 — 로컬 Galaxy S25 실기기 검증
+#### 2026-10-02 재접속 — 로컬 Galaxy S25 실기기 검증
 
 - ADB `127.0.0.1:15039`, serial `R3CY601Q6GZ`, Galaxy S25 SM-S931N, Android 16에 재접속했다.
   기존 설치 debug 앱을 사용했으며 APK 재빌드/설치는 하지 않았다.
@@ -277,7 +498,7 @@ spacing 및 point 좌표의 큰 양수·음수 정수에 대한 endpoint 회귀 
 
 아래 APPROVE와 명령·실기기 수치는 **이전 Android 작업의 결과**다. 위 최신 서버 API 판정이나 이번 실행 결과와 구분한다.
 
-## Status
+### Status
 
 APPROVE
 
@@ -285,7 +506,7 @@ APPROVE
 
 피부 보정·Jev 등 기존 미커밋 변경은 승인 범위에서 제외한다.
 
-## Blocking
+### Blocking
 
 None.
 
@@ -294,9 +515,9 @@ None.
 - **이전 R1 — 투명 보호 경계 색상 오류:** `MultiShotOp.protect`가 alpha를 고려한 premultiplied 보간을 수행하고 mask 0/255 경계를 보존한다. 투명/부분 투명 입력의 색·alpha와 보호 경계 회귀 테스트를 확인했고 관련 렌더 테스트를 직접 재실행해 통과했다. 이번 불투명 실기기 사진만으로 투명 PNG 정확성을 판정한 것이 아니다.
 - **이전 R2 — 자유 배치 편집 시 주인공 정보 손실:** 순서 확인 상태와 timeline/hero 보존을 분리한 `orderConfirmed`, `draftTimeline()` 및 재열기 경로를 확인했다. 사진 변경·자유 전환·재열기 및 참조 보존 회귀 테스트가 추가됐고 controller/persistence 테스트가 통과했다. 이 전이의 모든 조합을 실기기에서 재현한 것은 아니다.
 
-## Tests Missing
+### Tests Missing
 
-### T1 실기기 품질·오프라인·성능 검증은 PARTIAL
+#### T1 실기기 품질·오프라인·성능 검증은 PARTIAL
 
 이번 기기 검증은 1280×720 연속 동작 샘플의 3장/6장 기능 smoke다. 아래를 통과로 보고하지 않는다.
 
@@ -308,9 +529,9 @@ None.
 
 새로운 차단 수준의 자동 테스트 누락은 발견하지 못했다. 위 항목은 남은 평가 범위이며 `RESULT`의 PARTIAL 상태를 유지해야 한다.
 
-## Non-blocking
+### Non-blocking
 
-### N1 균등 배치의 접근성 설명에 기존 경로 문구가 남음
+#### N1 균등 배치의 접근성 설명에 기존 경로 문구가 남음
 
 Location:
 `feature/editor/src/main/kotlin/com/diffuse/feature/editor/tools/multishot/MultiShotOverlay.kt:66`
@@ -318,9 +539,9 @@ Location:
 
 균등 배치에서도 캔버스 설명이 “시작에서 주인공까지의 경로와 5개의 목표 위치”로 노출된다. 실기기 UI hierarchy에서도 확인했다. 원본이 중앙 슬롯이고 양옆에 배치되는 현재 동작을 스크린리더 이용자에게 잘못 설명한다. arrangement에 맞춰 균등 배치는 원본 기준 수평 슬롯, 기존 Path는 경로로 안내하면 된다. 시각적 배치·저장 계산에는 영향을 주지 않아 비차단으로 분류한다.
 
-## Validation Notes
+### Validation Notes
 
-### 직접 실행한 저장소 검사
+#### 직접 실행한 저장소 검사
 
 - `git status --short`, 관련 diff/신규 파일, tasks/RESULT/이전 REVIEW, DESIGN, 관련 명세 및 D088, 모델/JSON/배치 수학/렌더/controller/state/sheet/overlay와 주변 테스트를 검토했다.
 - `scripts/check.sh` → **exit 0**. 캐시·증분 실행을 포함하며 모든 검사를 새 환경에서 재실행했다는 의미는 아니다.
@@ -329,7 +550,7 @@ Location:
 - `git diff --check` → **exit 0**.
 - 기존 문서의 arrangement 누락은 Path로 읽고 신규 기본은 Even인 점, 총 추가 5장 한도, 원본 슬롯 `floor((N-1)/2)`, `spacing/N` 간격, 실제 placement 저장 및 재열기 시 자동 재배치하지 않는 경로를 확인했다.
 
-### 이번 빌드의 로컬 실기기 검증
+#### 이번 빌드의 로컬 실기기 검증
 
 - 환경: SSH reverse ADB `127.0.0.1:15039`, Galaxy S25 `SM-S931N`, serial `R3CY601Q6GZ`, Android 16. 기존 SAM 3 서버를 사용했으며 서버/키 설정을 변경하지 않았다.
 - 기존 테스트 프로젝트 `4a206fff-6565-42cf-89e2-97c98db35daf`를 UI에서 복제했다. 이번 편집 대상은 복제본 **`3a62e870-e9fb-4248-810c-3a0ac8b70d6f`**다. 개인 사진 프로젝트를 검증용으로 편집하지 않았다.
@@ -353,7 +574,7 @@ Location:
 - 실제 생성 파일: `/sdcard/Pictures/Diffuse/IMG_20261001_203320.png` **1,177,343 bytes**, `IMG_20261001_203359.jpg` **166,434 bytes**. 이전 17시대 산출물은 이번 빌드의 근거로 사용하지 않았다.
 - 임시 증거: `/tmp/multishot-device/even-three.json`, `even-six-default.json`, `even-six-narrow.json`, `even-six-undo.json`, `even-six-redo.json`, `even-six-default.png`, `even-six-narrow.png`, `even-six-export.png`. 임시 경로이므로 영구 배포 산출물로 간주하지 않는다. 검증 프로젝트와 export 파일은 기기에 남겨 두었다.
 
-### 이전 미완료 인계 보존
+#### 이전 미완료 인계 보존
 
 - 피부 작업의 이전 R1(품질 gate 없는 지원 노출), R2(body/decode 전 admission), R3(취소된 draft transient 누수), R4(설정 변경 중 얼굴 분석 고착)는 구현자 수정 보고만 있으며 별도 재리뷰 완료로 판정하지 않는다. gate/health, 수신·디코딩·후처리 동시 제한, 합성 취소 회수, 분석 중 설정 변경 복구와 실제 Corrected 적용·Undo/Redo·재열기·export/offline·lifecycle 경합을 별도 검증한다.
 - D084상 피부 지원 종류는 0개. 권한 있는 최소 24장·종류별 양성/음성 각 6장 이상 평가, 일반 메뉴 진입 불일치, 12MP/working 4096 PSS <250MB·slider p50 <100ms·네 종류 왕복 p95 15초는 미완료다. 기존 debug PSS 353,171kB와 배포/운영 기록은 `work/retouch_evaluation.md` §7 및 `server/retouch/deploy/README.md`를 참조한다. 과거 서버 검사 81 passed / 4 deselected는 현재 재승인 근거가 아니다.

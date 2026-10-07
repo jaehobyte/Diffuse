@@ -92,6 +92,46 @@
     <string name="direct_step_crop">%1$s 비율로 자르기</string>
     <string name="direct_step_style">%1$s 스타일</string>
 
+    <!-- specs/vibe_edit.md §14: 문장 추천. Labels and sentences are the reviewed catalog. -->
+    <string name="direct_suggest_examples_title">이렇게 말해보세요</string>
+    <string name="direct_suggest_tailored_title">이 사진에는 이런 방향도 좋아요</string>
+    <string name="direct_suggest_find">사진에 맞는 문장 보기</string>
+    <string name="direct_suggest_retry">다시 찾기</string>
+    <string name="direct_suggest_notice">현재 사진의 축소본을 Gemini에 보내 추천해요</string>
+    <string name="direct_suggest_preparing">사진을 준비하는 중</string>
+    <string name="direct_suggest_working">사진에 맞는 문장을 찾는 중</string>
+    <string name="direct_suggest_cancel">취소</string>
+    <string name="direct_suggest_cancel_description">문장 추천 찾기 취소</string>
+    <string name="direct_suggest_hide">숨기기</string>
+    <string name="direct_suggest_empty">다른 방향을 직접 말해보세요</string>
+    <string name="direct_suggest_editable">문장을 바꿔도 좋아요</string>
+    <string name="direct_suggest_failed">추천 문장을 가져오지 못했어요</string>
+    <string name="direct_suggest_pill_description">%1$s. %2$s 누르면 문장이 입력돼요</string>
+    <string name="direct_suggest_brighten_label">조금 더 밝게</string>
+    <string name="direct_suggest_brighten_request">사진 전체를 조금 더 밝게 해줘</string>
+    <string name="direct_suggest_brighten_hint">사진 전체가 어둡게 느껴진다면.</string>
+    <string name="direct_suggest_lift_shadows_label">어두운 부분을 밝게</string>
+    <string name="direct_suggest_lift_shadows_request">사진 전체의 어두운 부분을 조금 밝게 해줘</string>
+    <string name="direct_suggest_lift_shadows_hint">어두운 부분을 더 보고 싶다면.</string>
+    <string name="direct_suggest_soften_highlights_label">밝은 부분을 부드럽게</string>
+    <string name="direct_suggest_soften_highlights_request">사진 전체의 너무 밝은 부분을 조금 어둡게 해줘</string>
+    <string name="direct_suggest_soften_highlights_hint">밝은 부분이 눈부시게 느껴진다면.</string>
+    <string name="direct_suggest_warm_label">따뜻한 분위기로</string>
+    <string name="direct_suggest_warm_request">사진 전체의 색감을 조금 따뜻하게 해줘</string>
+    <string name="direct_suggest_warm_hint">포근한 느낌을 원한다면.</string>
+    <string name="direct_suggest_cool_label">시원한 분위기로</string>
+    <string name="direct_suggest_cool_request">사진 전체의 색감을 조금 차갑게 해줘</string>
+    <string name="direct_suggest_cool_hint">맑고 시원한 느낌을 원한다면.</string>
+    <string name="direct_suggest_natural_color_label">색감을 자연스럽게</string>
+    <string name="direct_suggest_natural_color_request">사진 전체의 과한 채도를 조금 낮춰줘</string>
+    <string name="direct_suggest_natural_color_hint">색이 과하게 느껴진다면.</string>
+    <string name="direct_suggest_vivid_color_label">색감을 생생하게</string>
+    <string name="direct_suggest_vivid_color_request">사진 전체의 채도를 조금 높여줘</string>
+    <string name="direct_suggest_vivid_color_hint">색이 밋밋하게 느껴진다면.</string>
+    <string name="direct_suggest_film_warm_label">따뜻한 필름 느낌으로</string>
+    <string name="direct_suggest_film_warm_request">사진 전체에 따뜻한 필름 스타일을 약하게 적용해줘</string>
+    <string name="direct_suggest_film_warm_hint">필름 사진 같은 분위기를 원한다면.</string>
+
     <!-- specs/selection_tool.md -->
     <string name="select_title">선택</string>
     <string name="select_preparing">이미지를 분석하는 중</string>
