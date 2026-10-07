@@ -115,6 +115,7 @@ fun EditorRoute(
             onMessageShown = { clearMessages(viewModel) },
             canvasOverlay = canvasOverlay(state, viewModel),
             sheet = sheetFor(state, document, viewModel),
+            onVibeListen = { listening -> applyVibeSpeech(listening, viewModel) },
         )
     }
 }
@@ -465,4 +466,15 @@ private fun CropToolSheet(state: EditorUiState, viewModel: EditorViewModel) {
         onCancel = viewModel::cancelSheet,
         onApply = viewModel::applySheet,
     )
+}
+
+/**
+ * Vibe chrome speak → the existing 지시 planner. Opening Direct mounts [VoicePromptBar],
+ * which already submits a final utterance to [DirectController.submit]. No second planner.
+ */
+private fun applyVibeSpeech(listening: Boolean, viewModel: EditorViewModel) {
+    val command = vibeSpeechCommand(listening)
+    if (command.openDirect) viewModel.onToolClick(Tool.Direct)
+    if (command.startSpeech && viewModel.speech.isAvailable) viewModel.speech.start()
+    if (command.stopSpeech) viewModel.speech.stop()
 }

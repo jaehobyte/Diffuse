@@ -92,6 +92,37 @@ class EditorShellTest {
     }
 
     @Test
+    fun `the speak control reports listening to the planner hook`() {
+        val events = mutableListOf<Boolean>()
+        compose.setContent {
+            EditorScreen(
+                preview = testImage(),
+                selectedTool = null,
+                onToolClick = {},
+                canUndo = false,
+                canRedo = false,
+                canCompare = false,
+                onBack = {},
+                onUndo = {},
+                onRedo = {},
+                onCompareChange = {},
+                onExport = {},
+                initialToolsRevealed = false,
+                onVibeListen = { events += it },
+            )
+        }
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(VibeSpeakTestTag).performClick()
+        compose.waitForIdle()
+        assertEquals(listOf(true), events)
+
+        compose.onNodeWithTag(VibeSpeakTestTag).performClick()
+        compose.waitForIdle()
+        assertEquals(listOf(true, false), events)
+    }
+
+    @Test
     fun `the shell shows the top bar, canvas and the root tools`() {
         showShell()
 
