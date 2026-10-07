@@ -25,3 +25,9 @@ fun vibeSpeechCommand(listening: Boolean): VibeSpeechCommand =
  */
 fun vibeOverlayLine(status: String, transcript: String, hint: String): String =
     status.ifBlank { transcript.ifBlank { hint } }
+
+/**
+ * Speak opens the direct sheet, which already owns [VoicePromptBar]. The overlay sits
+ * above that sheet, so it yields for the sheet's lifetime and returns when it closes.
+ */
+fun vibeChromeVisible(sheetOpen: Boolean): Boolean = !sheetOpen

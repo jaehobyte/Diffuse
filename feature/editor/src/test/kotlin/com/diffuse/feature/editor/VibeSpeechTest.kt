@@ -1,6 +1,8 @@
 package com.diffuse.feature.editor
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class VibeSpeechTest {
@@ -43,5 +45,11 @@ class VibeSpeechTest {
             "말로 편집하기",
             vibeOverlayLine(status = "  ", transcript = "", hint = "말로 편집하기"),
         )
+    }
+
+    @Test
+    fun `the speech overlay yields while the direct sheet is open`() {
+        assertFalse(vibeChromeVisible(sheetOpen = true))
+        assertTrue(vibeChromeVisible(sheetOpen = false))
     }
 }
