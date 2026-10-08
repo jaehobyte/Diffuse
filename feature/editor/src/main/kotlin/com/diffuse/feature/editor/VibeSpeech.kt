@@ -30,7 +30,9 @@ fun vibeOverlayLine(status: String, transcript: String, hint: String): String =
 
 /**
  * Speak opens the direct sheet, which already owns [VoicePromptBar]. The overlay sits
- * above that sheet, so it yields for the sheet's lifetime and returns when it closes.
+ * above that sheet, so it yields while the slot has measured height and returns when
+ * the slot is empty. [EditorRoute] always passes a sheet lambda; an unselected tool
+ * is [ToolSheetHost] at zero height and must not hide the speak control.
  */
 fun vibeChromeVisible(sheetOpen: Boolean): Boolean = !sheetOpen
 
