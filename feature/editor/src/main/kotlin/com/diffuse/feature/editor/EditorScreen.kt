@@ -122,7 +122,8 @@ fun EditorScreen(
     /**
      * Recogniser the direct sheet already owns. A final or a failure returns the speak
      * control to 말하기; a partial keeps 듣는 중. Idle does not override the local toggle.
-     * A non-blank partial is also the overlay line until the sheet copies it into the request.
+     * A non-blank partial is the overlay line until the sheet copies it into the request.
+     * A failure uses the same prompt_voice_failed copy the sheet already posts.
      */
     speechState: SpeechState = SpeechState.Idle,
 ) {
@@ -307,7 +308,11 @@ private fun BoxScope.VibeChrome(
             )
         }
         val hint = stringResource(R.string.vibe_prompt_hint)
-        val line = vibeOverlayLine(status, transcript, hint, vibeHeardLine(speechState))
+        val heard = vibeHeardLine(
+            speechState,
+            failure = stringResource(R.string.prompt_voice_failed),
+        )
+        val line = vibeOverlayLine(status, transcript, hint, heard)
         Text(
             text = line,
             color = if (line == hint) Tokens.editInkSecondary else Tokens.editInk,
