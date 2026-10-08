@@ -124,6 +124,37 @@ class EditorShellTest {
         assertEquals(listOf(true, false), events)
     }
 
+    @Test
+    fun `the speech overlay yields while a tool sheet is open`() {
+        compose.setContent {
+            EditorScreen(
+                preview = testImage(),
+                selectedTool = Tool.Direct,
+                onToolClick = {},
+                canUndo = false,
+                canRedo = false,
+                canCompare = false,
+                onBack = {},
+                onUndo = {},
+                onRedo = {},
+                onCompareChange = {},
+                onExport = {},
+                initialToolsRevealed = false,
+                sheet = {
+                    Box(
+                        modifier = Modifier
+                            .testTag(fakeSheetTag)
+                            .fillMaxWidth()
+                            .height(fakeSheetHeight),
+                    )
+                },
+            )
+        }
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(fakeSheetTag).assertExists()
+        compose.onNodeWithTag(VibePromptTestTag).assertDoesNotExist()
+    }
 
     @Test
     fun `a finished utterance returns the speak control to speak`() {
@@ -203,12 +234,12 @@ class EditorShellTest {
                 onExport = {},
                 initialToolsRevealed = false,
                 vibeTranscript = "나무를 더 푸르게",
-                vibeStatus = "무엇을 할지 생각하는 중",
+                vibeStatus = "뭐을 할지 생각하는 중",
             )
         }
         compose.waitForIdle()
 
-        compose.onNodeWithText("무엇을 할지 생각하는 중").assertExists()
+        compose.onNodeWithText("뭐을 할지 생각하는 중").assertExists()
         compose.onNodeWithText("나무를 더 푸르게").assertDoesNotExist()
     }
 
@@ -249,8 +280,6 @@ class EditorShellTest {
     private fun assertToolsReachable(level: ToolGroup) {
         compose.onNodeWithTag(ToolStripTestTag).assertExists()
         stripItems(level).filterIsInstance<StripItem.OfTool>().map { it.tool }.forEach { tool ->
-            // The strip is a LazyRow (DESIGN.md §4: horizontally scrollable), so a tool past the
-            // viewport is only composed once scrolled to.
             compose.onNodeWithTag(ToolStripTestTag)
                 .performScrollToNode(hasTestTag(labelOf(tool)))
             compose.onNodeWithTag(labelOf(tool)).assertExists()
@@ -321,7 +350,6 @@ class EditorShellTest {
                         onBack = {}, onUndo = {}, onRedo = {}, onReset = {},
                         onCompareChange = {}, onExport = {},
                     )
-                    // The same pill with nothing competing for the row: its natural width.
                     PrimaryPill(
                         text = labelOf(R.string.editor_export),
                         onClick = {},
