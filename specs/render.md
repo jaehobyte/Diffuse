@@ -19,7 +19,7 @@ Both run on `Dispatchers.Default` and check cancellation between operations.
 ## Pipeline order
 1. Decode `source` at the requested size (preview) or full size.
 2. **If `operations[0]` is an `Outpaint`** (T63): allocate the expanded canvas, draw its `resultRef` scaled to fill it, then draw the decoded source into the interior rect over the top, with an alpha ramp of `OUTPAINT_BLEND_PX` at the boundary. The original pixels therefore survive at full resolution and only the invented border comes from the model. See outpaint.md §4.
-3. Walk `operations` **once, in list order** (T49), dispatching `Adjust`, `GenerativeErase`, `GenerativeFill` and `CutOut` as they are met. `Mask` and `Outpaint` contribute no pixels here.
+3. Walk `operations` **once, in list order** (T49), dispatching `Adjust`, `GenerativeErase`, `GenerativeFill`, `CutOut` and `MultiShot` (multishot.md §4–§5) as they are met. `Mask` and `Outpaint` contribute no pixels here.
 4. Apply `Crop` last, regardless of list position, so adjustments are visible inside the crop. Saved order is not changed.
 
 ## Operation math (v1, CPU; all in one `Ops.kt`)
@@ -33,6 +33,7 @@ Both run on `Dispatchers.Default` and check cancellation between operations.
 - Vignette: radial darkening from 70% radius to corners, max `value × 0.6` EV.
 - Crop: rotate by `angleDeg` about center, then crop `rect`; expand canvas as needed so no black corners inside the rect (the crop tool guarantees the rect stays inside the rotated image).
 - `GenerativeErase` and `GenerativeFill`: `out = lerp(in, result, maskAlpha)`. One composite each, no per-pixel math; the two share a branch shape and differ only in which file they load.
+- `MultiShot`: each shot's RGBA subject drawn Porter–Duff source-over — in list order for the free layout, in the confirmed time order for the time layout — with paint alpha = opacity, through one matrix (contain fit × scale, rotation about the photo centre, normalized offset). The time layout then restores the op's input inside its hero mask (`lerp(composite, input, mask)` on premultiplied pixels, once). A subject or hero file that will not decode, or a hero mask of another size or shape, fails the render with `MissingSource`. See multishot.md §4–§6.
 - `Outpaint`: the composite in Pipeline order step 2. It is not an in-list operation and has no math here.
 
 Every op clamps to `[0, 1]` per channel. Keep the math in `Ops.kt` so it can be ported — the AGSL backend is specs/gpu_render.md (T66), which is gated on a minSdk bump and a benchmark number and takes these goldens as its judge.
@@ -43,6 +44,7 @@ Every op clamps to `[0, 1]` per channel. Keep the math in `Ops.kt` so it can be 
   project, and two documents with the same operations — an empty list, for every
   freshly imported project — otherwise collide and serve each other's pixels.
 - Base decode cache keyed by `(source, size)`, 2 entries.
+- Multi-shot subject cache keyed by `(subjectRef, size)`, 5 entries (`MAX_SHOTS`), preview sizes only, each decode scaled to the preview size; export decodes each subject in turn uncached.
 - A new preview request cancels the in-flight one for the same document.
 
 ## Performance budget

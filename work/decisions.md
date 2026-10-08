@@ -8,6 +8,286 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+## D091 - 지시 sentence suggestions: read-only, explicit, catalog ids only, input only
+
+Status: Accepted (2026-10-07, work/tasks.md 사진 맞춤 추천 문장 넛지). specs/vibe_edit.md §14.
+
+Decision:
+The 지시 sheet shows three general example sentences at once and sends a photo for tailored ones
+only on the explicit `사진에 맞는 문장 보기` tap. The model (`gemini-2.5-flash`, existing settings,
+HTTP, error mapping and `GeminiImageCodec`) answers with one forced `suggest_directions(ids)` call
+over an eight-id reviewed catalog; the app keeps the model's order, drops unknown ids and every
+later id of an already-shown conflict group, and shows at most three. Labels and sentences are app
+resources. A pick only fills the bar (`RequestSource.Suggestion`); sending still goes through the one
+`EditPlanProvider` call, validation, step list and 적용. State and job live in `DirectSuggestions`,
+a collaborator owned by `DirectController`. A request is keyed by the document the preview was
+rendered from (`EditorUiState.renderedDocument`) and a generation counter; one in-memory answer is
+cached for the current document. Any sentence change invalidates the waiting plan and drops a late
+one (`planSeq`).
+
+Reason:
+Free generation would put unreviewed Korean and unsupported edits in front of the user and could
+not be checked; ids from a closed catalog keep every suggestion executable by the current planner
+and every failure on a known fallback. Sending a photo is a cost and a privacy step, so it is never
+implicit. Keying on the rendered document — not on the preview bitmap alone — is what keeps an older
+render or a failed one from being described as the current photo.
+
+Consequences:
+Expression is limited to whole-photo tone/colour/one style; object-level, skin or body suggestions,
+home-screen nudges and personalisation are later decisions. Suggestion progress is inline in the
+sheet (DESIGN.md §4 exception), not the canvas overlay. `EditorAi` gains `promptSuggestion`;
+`DirectController` takes the provider and the Gemini settings flow. The `direct_sheet_open` golden
+now shows the suggestion area; `direct_suggest_loading` and `direct_suggest_tailored` are added.
+
+## D090 - 멀티샷 one press: several photos per pick, extract all in the shown order, lay out once at the end
+
+Status: Accepted (2026-10-02, work/tasks.md 시간 순서 배치 일괄 추출·자동 배치). Replaces D086/D087's
+"confirm the order, extract each photo, then place" as the required path of the time layout; D088's
+math and D089's server boundary stand.
+
+Decision:
+The time layout picks several photos at once (`PickMultipleVisualMedia`, limit = places left; one
+left → the single picker). Each launch is a session request (`requestPick`/`onPicked` with an id); a
+foreign or late answer is dropped, an over-limit list refused whole, the returned order kept. One
+main action — 모두 추출하고 자동 배치 / 남은 사진… / 이 순서로 자동 배치 / 자동 다시 배치 — confirms the
+order shown and runs, in the controller session, the hero first then the photos in that order through
+the existing `SegmentationProvider`, one session at a time. Exactly one non-empty "person" answer is
+taken and saved; none or several pause the run on that photo until its 추출 완료, which resumes it.
+Any failure ends the run there; pressing again goes on from it. When every item is saved the order is
+laid out once (`MultiShotLayout` positions + time profile, the existing placement code) and the
+layout step is shown. The separate "이 순서가 맞아요" button and `confirmOrder()` are removed; 이 순서로
+위치 배치 / 현재 위치 유지 stay in the layout step as advanced controls. A read failure in a batch keeps the
+photo as `ShotStatus.Unreadable` for 교체/삭제. The free layout is unchanged (one photo per pick,
+per-photo extraction, no run).
+
+Reason:
+The user asked for 시간 순서 배치 선택 | 여러장 추출 | 즉시 자동 배치: subjects were left stacked in the
+centre because extraction never placed and placing was a separate, easily missed step. Making the
+press itself the confirmation keeps "nothing is sent before an explicit press" (§2) and "the order is
+the user's" (no capture-time guess), while a pause on ambiguity keeps "never take a first guess". The
+server API (D089) returns a flat PNG, which would lose per-subject editing, undo and offline reopening,
+so the app keeps its own local pipeline.
+
+Consequences:
+A run with N moments sends N uploads one after another; the reference SAM 3 limit (6 per 60 s) allows
+one six-moment run per minute — a rate-limit failure stops the run on that photo for a retry. The
+layout is triggered only by the run's last save or the press with nothing left, never by observing
+state, so later hand corrections survive until the user presses again. The timeline golden changes
+(run row instead of the order check) and `multishot_sheet_run` is added.
+
+## D089 - 멀티샷 API: a separate server, the last input is background and hero, multipart order is time order
+
+Status: Accepted (2026-10-01, work/tasks.md 3–6장 멀티샷 API). Adds a server contract
+(specs/multishot_api.md); the app's multishot (D085–D088) is unchanged.
+
+Decision:
+`server/multishot/` is its own FastAPI process, token, port (8086), venv and spool, beside
+`server/retouch/` and SAM 3; it loads no model and calls SAM 3 over HTTP with a server-side URL and
+token. `POST /v1/multishot` takes 3–6 repeated `images` parts; their order in the body is the time
+order and is never re-derived. `images[N−1]` is the background and the hero; the others take D088's
+slots in input order, with the app's opacity profile, feather, source-over and premultiplied hero
+protection reproduced in NumPy (scale 1, rotation 0). Each image needs exactly one subject (text
+`person`, or one foreground point per image from `metadata.subject_points`); none or several is a
+422 on that image, never a guess, a union or a skipped photo. The response is one PNG plus diagnostic
+metadata in a synchronous multipart 200. Defaults: 1 running, 0 waiting, 300 s for the whole request.
+
+Reason:
+The user asked for 3–6 images whose given order is the multishot's order. The app's newest moment is
+its current photo, kept in place; with only an ordered list the last item is that moment, and the
+app's even layout already fixes where every other moment goes. A separate process keeps retouch's
+model loading and wire out of it, and the retouch parser is one-part-per-name, which cannot carry a
+repeated field. Points per image are the only way to name one person in a crowd without inventing
+identity matching. The pixel contract is the app's, so the two can be compared, but no Android code is
+shared or changed.
+
+Consequences:
+Left → right on the result is not input order for the hero (middle slot). A six-photo request uses six
+SAM 3 uploads; the reference SAM 3 deployment allows 6 per 60 s per client, so a second request
+within that window fails `segmentation_unavailable` until the bucket refills. Wide subjects in
+portrait canvases are routinely cut (`subject_clipped`) because nothing is clamped or scaled.
+Android integration, async jobs, and identity/club extraction remain out of scope.
+
+## D088 - 멀티샷 장수별 균등 배치: N counts the current photo, the hero's slot is fixed in the middle
+
+Status: Accepted (2026-10-01, work/tasks.md 장수별 균등 배치). Adds an arrangement to D086/D087; the path
+stays for stored timelines and as a choice.
+
+Decision:
+`TimelineLayout` gains `arrangement` (`Path` | `Even`) and `spacing` (0..1). A new proposal is
+`Even`: with N = added + 1, the hero keeps its own place as slot `k = ⌊(N − 1)/2⌋` and the added
+photos, in the confirmed time order, take the other slots at `x = hx + (j − k)·spacing/N`, `y = hy`
+(anchors on the hero's height), solved through the existing `placedAt`. `MAX_SHOTS` becomes 5 (six
+moments in all) across model, controller, sheet, JSON check and the subject cache. JSON writes
+`"arrangement":"even"` and `spacing` only for the even arrangement; a timeline without them is the
+path, an unknown arrangement or a missing/out-of-range spacing refuses the op.
+
+Reason:
+The user asked for three in thirds and six in sixths with the original in the middle and the others
+in order at its height. The original cannot move (it is the background's own pixels, protected in
+place), so "middle" is the hero's slot and the group of W/N columns is centred on it — exact screen
+columns only when the hero is at its column's centre; the sheet says so instead of clamping. An even
+N has two middles; the left one is a fixed rule, not a time guess. Keeping the path as an
+arrangement, and reading a missing field as the path, leaves every saved timeline as it rendered.
+
+Consequences:
+The even arrangement shows no direction (the hero is newest but central) and draws a baseline and
+the hero's slot instead of a path. The sixth moment's default anchor lands on the right edge for a
+centred hero and that subject is cut, announced. The subject preview cache holds five
+preview-sized decodes. Tests that assumed the path default now pin `Path`.
+
+## D087 - 멀티샷 위치 배치: a common placement step, left → right by default, settle before 적용
+
+Status: Accepted (2026-10-01, work/tasks.md 위치 배치). Changes D086's flow; its model and render stand.
+
+Decision:
+The time layout's direction, distance, strength and placing move out of the hero tile into a common
+**배치 위치** step reachable from any tile. **이 순서로 위치 배치** confirms the order shown and lays it
+out (위치 다시 배치 once settled); **현재 위치 유지** confirms it and keeps the positions. 적용 needs the
+positions settled for the confirmed order. Confirmation (`Timeline.orderConfirmed`, stored) and
+"settled for this order" (`laidOutOrder` / `keptPositions`, in memory) are separate; a stored time
+layout reopens settled for its order, since D086's 적용 already required its layout. A new proposal
+runs left → right (`DEFAULT_DIRECTION_DEG = 0f`). The overlay draws the path and numbered slots in
+that step only; a slot is filled only while its photo's anchor is on it.
+
+Reason:
+tasks.md requirements 1–16: checking the order was mistaken for placing, so a result could be
+applied with the subjects still overlapping; the controls were found only by tapping the hero. The
+user's example is oldest on the left. Every stored timeline node carries `directionDeg` (a missing
+one is refused), so the new default changes no saved document. No new stored field: a free composite
+that kept an unsettled timeline is asked again when it returns to the time layout.
+
+Consequences:
+D086's 시간 순서대로 배치 and its place in the hero tile are gone; the hero tile keeps 기준점 조정 and 주인공
+다시 선택. The timeline golden now shows the layout step with an afterimage selected.
+
+## D086 - 멀티샷 시간 순서 배치: four shots, a confirmed time order, a protected hero
+
+Status: Accepted (2026-10-01, work/tasks.md 시간 순서 배치). Extends D085; D085 stays true for the
+free layout.
+
+Decision:
+`Operation.MultiShot` gains `mode` (`Free` | `Timeline`, absent = `Free`), an optional `timeline`
+(confirmed order of shot ids, layout settings, hero mask) and `Shot.anchor`; up to four shots. The
+time layout keeps the current photo as the last moment: its mask (selected with SAM 3 on the op's
+own input — `multiShotBase()`, the ops before it without `Crop`) is stored as a `shot_<id>.png`
+whose alpha is the feathered mask, and the renderer restores the input inside it after the shots
+(`lerp(composite, input, mask)`; since the 2026-10-01 review on premultiplied pixels in
+`MultiShotOp.protect`, because `MaskBlend` interpolates straight colour and darkened soft edges over a
+transparent input — `MaskBlend` itself is unchanged for its existing callers). Placement is a one-off, local, pure
+computation (`MultiShotLayout`) that solves the existing §4 transform for the offset putting each
+shot's anchor (bottom centre of its mask bounds, user-correctable) on an even slot of a straight
+path ending at the hero's anchor; the stored transforms remain the only render input. Time order is
+separate data from the free drawing order and must be confirmed by the user before it is laid out.
+Whether the order is confirmed is a flag on the timeline (`orderConfirmed`), separate from keeping
+the hero and settings: a free-layout photo change clears only the flag (review 2026-10-01 R2). The
+default SAM 3 concept becomes `person`. `HistoryStack.publish` now sets the availability flows
+before `current`.
+
+Reason:
+tasks.md requirements 1–31: the reference picture needs more moments, an explicit time order, and a
+sharp last moment that source-over alone cannot guarantee. Restoring the input (rather than copying
+the hero's RGB) keeps earlier adjustments on the hero and needs no extra file beyond the mask. Reusing
+the subject file format reuses its ownership, discard, load check and duplicate rewrite. `person`
+is what the device validation found answered; the UI text stays Korean. The history reorder is the
+smallest fix for the device-observed disabled Undo after 적용 (REVIEW N1): the editor reads the
+availability inside its `current` collector, which an immediate dispatcher runs inside the assignment.
+
+Consequences:
+Documents written before this load unchanged (no `mode`, no `timeline`, no anchors are written for
+them unless the user confirms an order). The free 잔상 preset generalises to 35 → 65% for 3–4 shots
+and is hidden in the time layout. The subject preview cache grows to four entries, each scaled to
+the preview size. Hero selection re-renders the input locally; a hero mask of another size or shape
+is a broken op (load `Unsupported`, render `MissingSource`). Sheet goldens for the empty state and the
+free arrangement change (layout choice / layout row); a time-layout golden is added.
+
+## D085 - 멀티샷: one in-list op, subjects stored as RGBA PNGs, appended and edited in place
+
+Status: Accepted (2026-09-29, work/tasks.md 멀티샷)
+
+Decision:
+The composite is one `Operation.MultiShot(id, shots)` per document with 1–2 `Shot`s (stable id,
+`shot_<fileId>.png` RGBA subject, EXIF-upright working size, placement). It is appended at the end
+of the list when new and replaced in place when edited; removing every shot removes the op. The
+renderer walks it in order (source-over, `MultiShotOp`), so earlier ops touch the background only
+and later ones the composite; `Crop` still runs last. Placement is stored against the un-cropped
+canonical canvas (expanded by an `Outpaint`), from an initial contain fit; while the sheet is open
+the preview drops the `Crop` so screen drags map to it directly. The alpha (`photoAlpha ×
+2 px-feathered mask`) is baked into the PNG at 추출 완료, which is also when the file is written;
+the op reaches history only on 적용, as one entry. The session owns the files it wrote until then
+and discards the uncommitted ones. `MultiShot` blocks `canOutpaint`. A known but broken `multiShot`
+node is kept invalid so the load fails instead of partly restoring it. `duplicate` now rewrites
+every reference in the original folder (source included), not only the skin retouch's, and
+`Sam3SegmentationProvider.close` closes only the still-live session.
+
+Reason:
+tasks.md requirements 11–21 ask for a real-pixel composite that survives undo, save, reopen,
+export and duplication without a general layer model. Writing the subject when extraction finishes
+keeps one working-size photo in memory at a time and makes 적용 a pure document change. The source
+rewrite in `duplicate` is the shared-reference defect the task names: without it a copy's composite
+could not be reopened or exported after the original was deleted. Two tools can each hold a
+`SegSession` now, so a late close must not kill the other's.
+
+Consequences:
+An `Adjust` made before the composite keeps applying to the background only when it is changed
+later, because adjusts update in place (specs/multishot.md §3). An added photo's original is not
+kept: re-extracting a stored subject means 교체. Files written by a session that dies with the
+process stay in the project folder (no global GC). The skin test that pinned the old "source still
+points at the original" behaviour was updated with the new rule.
+
+## D084 - Skin retouch: only gate-passed kinds are supported; admission before the body
+
+Status: Accepted (2026-09-15, work/REVIEW.md R1/R2)
+
+Decision:
+Whether the app may offer a kind is decided in server code, not by deployment settings.
+`server/retouch/app/config.py` `QUALIFIED_KINDS` lists kinds whose SR1 gate passed (currently
+none) and changes only together with the evidence in `work/retouch_evaluation.md`.
+`RETOUCH_ENABLED_KINDS` defaults to that list and refuses anything outside it; unqualified engines
+are loaded with `RETOUCH_EVALUATION_KINDS`, reported under health `evaluation_engines` and callable
+for smoke/evaluation, never in `supported_kinds`/`engines`. The request limit (1 running + 4
+waiting) is taken right after auth and the declared-length check, before the body is read, and held
+through decode, engine, enforce and encode; a still-running engine thread keeps it after a 504 or
+disconnect. A 429 therefore carries no `request_id`.
+
+Reason:
+D083 let the operator's setting stand in for the quality gate (tasks.md requirements 5 and 19),
+and the default enabled all four engines, three of which had failed. Admission after decoding let
+refused requests hold full bodies and decoded images first.
+
+Consequences:
+The deployment loads blemish as evaluation-only and the app shows every kind as 미지원 until a gate
+passes, so the Corrected device path (apply, undo/redo, reopen, export) cannot be exercised through
+the app until then. This supersedes D083's last sentence of Decision and its "enables `blemish`
+only" consequence.
+
+## D083 - Skin retouch server and public test port
+
+Status: Accepted (2026-09-14)
+
+Decision:
+At the explicit user request (work/tasks.md, 2026-09-14), 피부 보정 runs its detection and
+correction on a dedicated server, `server/retouch/` (FastAPI, ONNX Runtime CUDA EP), bound to
+127.0.0.1:8084 and published through its own Caddy HTTP test proxy on :8094 (`admin off`,
+`persist_config off`). This replaces D080's on-device-first rule for this feature only; the app
+never falls back from local to server or back, uploads only on an explicit 미리보기, and ships no
+address or token. The app prepares face geometry, ROI and per-kind allowed masks (ML Kit contours,
+`SkinAllowedMask`); the server owns defect detection and correction. Wire contract v1 is
+specs/skin_retouch_pipeline.md §8.1. Which kinds the app offers is the server's `/health`
+`supported_kinds`, which the operator sets with `RETOUCH_ENABLED_KINDS`.
+
+Reason:
+The only on-device measurement (work/retouch_evaluation.md §3A.7) was over the latency and
+memory budgets, and the user asked for a MonetGPT-style externally reachable server verified on a
+phone.
+
+Consequences:
+Both services are systemd user units with linger enabled. Security group sg-09e915674a6bd5375
+rule sgr-0b2cf130f609f5c0b allows TCP 8094 from 210.94.41.89/32 only (the phone network's egress;
+a 0.0.0.0/0 rule was refused by the session's permission policy). HTTP is unencrypted; HTTPS
+migration is in server/retouch/deploy/README.md. The first real-photo smoke showed the three tone
+engines (shine, dark_circles, shaving_shadow) produce severe deformations, so the deployment
+enables `blemish` only, and no kind has passed the SR1 quality gate.
+
 ## D082 - MonetGPT external test access
 
 Status: Accepted

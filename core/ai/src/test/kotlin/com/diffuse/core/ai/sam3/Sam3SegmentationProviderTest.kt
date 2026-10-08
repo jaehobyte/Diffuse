@@ -88,6 +88,23 @@ class Sam3SegmentationProviderTest {
         assertEquals("/v1/images/one", server.takeRequest().path)
     }
 
+    @Test
+    fun `closing a session that was already replaced leaves the live one open`() = runTest {
+        server.enqueue(uploadResponse("one", UPLOAD_SIZE, UPLOAD_SIZE))
+        server.enqueue(MockResponse().setResponseCode(204))
+        server.enqueue(uploadResponse("two", UPLOAD_SIZE, UPLOAD_SIZE))
+        server.enqueue(MockResponse().setResponseCode(204))
+        val first = provider.open(image(WORKING_SIZE)).success()
+        val second = provider.open(image(WORKING_SIZE)).success()
+        repeat(3) { server.takeRequest() }
+
+        provider.close(first)
+        provider.close(second)
+
+        assertEquals("/v1/images/two", server.takeRequest().path)
+        assertEquals(4, server.requestCount)
+    }
+
     // ---- masks -----------------------------------------------------------
 
     @Test

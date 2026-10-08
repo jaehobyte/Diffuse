@@ -17,6 +17,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.diffuse.core.ai.monet.MonetConfig
 import com.diffuse.core.ai.monet.isValidMonetBaseUrl
+import com.diffuse.core.ai.retouch.server.RetouchServerConfig
+import com.diffuse.core.ai.retouch.server.isValidRetouchBaseUrl
 import com.diffuse.core.ai.sam3.Sam3Config
 import com.diffuse.core.ui.components.EditSheet
 import com.diffuse.core.ui.theme.LocalAppColors
@@ -29,6 +31,8 @@ const val Sam3TokenFieldTestTag = "Sam3Token"
 const val GeminiKeyFieldTestTag = "GeminiKey"
 const val MonetBaseUrlFieldTestTag = "MonetBaseUrl"
 const val MonetTokenFieldTestTag = "MonetToken"
+const val RetouchBaseUrlFieldTestTag = "RetouchBaseUrl"
+const val RetouchTokenFieldTestTag = "RetouchToken"
 
 /**
  * specs/segmentation.md §6, generative_erase.md §8 and auto_enhance.md §4. One 서버 설정 sheet
@@ -49,7 +53,12 @@ fun Sam3SettingsSheet(
     ) -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
+    /** specs/skin_retouch_pipeline.md §8: the skin retouch server, its own address and token. */
+    retouchConfig: RetouchServerConfig = RetouchServerConfig(""),
+    onSaveRetouch: (baseUrl: String, token: String) -> Unit = { _, _ -> },
 ) {
+    var retouchBaseUrl by remember(retouchConfig) { mutableStateOf(retouchConfig.baseUrl) }
+    var retouchToken by remember(retouchConfig) { mutableStateOf(retouchConfig.token) }
     var baseUrl by remember(config) { mutableStateOf(config.baseUrl) }
     var token by remember(config) { mutableStateOf(config.token) }
     var apiKey by remember(geminiApiKey) { mutableStateOf(geminiApiKey) }
@@ -59,14 +68,17 @@ fun Sam3SettingsSheet(
     EditSheet(
         title = stringResource(R.string.sam3_settings_title),
         onCancel = onCancel,
-        onApply = { onSave(baseUrl, token, apiKey, monetBaseUrl, monetToken) },
+        onApply = {
+            onSaveRetouch(retouchBaseUrl, retouchToken)
+            onSave(baseUrl, token, apiKey, monetBaseUrl, monetToken)
+        },
         applyLabel = stringResource(R.string.sam3_settings_save),
         // Either server is reason enough to save: 자동 보정 is usable without SAM 3, and SAM 3
         // without 자동 보정, so gating on SAM 3's address alone would lock one of them out.
         // specs/auto_enhance.md §4: a malformed 자동 보정 address is refused here rather than saved
         // and discovered on the next tap.
-        applyEnabled = (baseUrl.isNotBlank() || monetBaseUrl.isNotBlank()) &&
-            isValidMonetBaseUrl(monetBaseUrl),
+        applyEnabled = (baseUrl.isNotBlank() || monetBaseUrl.isNotBlank() || retouchBaseUrl.isNotBlank()) &&
+            isValidMonetBaseUrl(monetBaseUrl) && isValidRetouchBaseUrl(retouchBaseUrl),
         modifier = modifier.testTag(Sam3SettingsSheetTestTag),
     ) {
         Sam3BaseUrlField(value = baseUrl, onValueChange = { baseUrl = it })
@@ -96,7 +108,33 @@ fun Sam3SettingsSheet(
             singleLine = true,
             modifier = Modifier.testTag(MonetTokenFieldTestTag).fillMaxWidth(),
         )
+        RetouchFields(retouchBaseUrl, { retouchBaseUrl = it }, retouchToken, { retouchToken = it })
     }
+}
+
+/** specs/skin_retouch_pipeline.md §8: never prefilled from MonetGPT's or SAM 3's values. */
+@Composable
+private fun RetouchFields(
+    baseUrl: String,
+    onBaseUrlChange: (String) -> Unit,
+    token: String,
+    onTokenChange: (String) -> Unit,
+) {
+    OutlinedTextField(
+        value = baseUrl,
+        onValueChange = onBaseUrlChange,
+        label = { Text(stringResource(R.string.retouch_settings_base_url)) },
+        singleLine = true,
+        isError = !isValidRetouchBaseUrl(baseUrl),
+        modifier = Modifier.testTag(RetouchBaseUrlFieldTestTag).fillMaxWidth(),
+    )
+    OutlinedTextField(
+        value = token,
+        onValueChange = onTokenChange,
+        label = { Text(stringResource(R.string.retouch_settings_token)) },
+        singleLine = true,
+        modifier = Modifier.testTag(RetouchTokenFieldTestTag).fillMaxWidth(),
+    )
 }
 
 /** The one field with a hint under it, lifted out to keep the sheet under detekt's ceiling. */

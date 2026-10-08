@@ -10,6 +10,8 @@ import androidx.compose.ui.test.onRoot
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.diffuse.core.ai.EditPlan
 import com.diffuse.core.ai.PlanStep
+import com.diffuse.core.ai.PromptSuggestionId
+import com.diffuse.core.ai.speech.FakeSpeechInput
 import com.diffuse.core.imaging.model.AdjustKind
 import com.diffuse.core.ui.ScreenshotOptions
 import com.diffuse.core.ui.components.PromptBar
@@ -24,7 +26,10 @@ import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
-/** specs/vibe_edit.md §12: the two goldens. No render golden — this feature adds no renderer path. */
+/**
+ * specs/vibe_edit.md §12: the sheet goldens, plus §14's suggestion states. No render golden — this
+ * feature adds no renderer path.
+ */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(qualifiers = RobolectricDeviceQualifiers.Pixel6a)
@@ -33,11 +38,38 @@ class DirectGoldenTest {
     @get:Rule
     val compose = createComposeRule()
 
+    /** §14: the sheet as it opens — the general examples and the explicit request. */
     @Test
     fun directSheetOpen() {
-        show(DirectState())
+        show(DirectState(suggestions = SuggestionState(frameReady = true)))
 
         capture("direct_sheet_open")
+    }
+
+    @Test
+    fun directSuggestLoading() {
+        show(DirectState(suggestions = SuggestionState(phase = SuggestionPhase.Loading, frameReady = true)))
+
+        capture("direct_suggest_loading")
+    }
+
+    @Test
+    fun directSuggestTailored() {
+        show(
+            DirectState(
+                suggestions = SuggestionState(
+                    phase = SuggestionPhase.Tailored,
+                    ids = listOf(
+                        PromptSuggestionId.LiftShadows,
+                        PromptSuggestionId.Warm,
+                        PromptSuggestionId.VividColor,
+                    ),
+                    frameReady = true,
+                ),
+            ),
+        )
+
+        capture("direct_suggest_tailored")
     }
 
     @Test
@@ -73,6 +105,16 @@ class DirectGoldenTest {
                                     onSubmit = {},
                                     placeholder = PLACEHOLDER,
                                     onMicClick = {},
+                                )
+                            },
+                            suggestions = {
+                                DirectSuggestionArea(
+                                    state = state,
+                                    speech = FakeSpeechInput(),
+                                    onFind = {},
+                                    onCancel = {},
+                                    onHide = {},
+                                    onPick = {},
                                 )
                             },
                         )

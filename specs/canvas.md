@@ -34,7 +34,7 @@ The canvas exposes `LocalCanvasTransform` (screen ↔ image pixel coordinates) s
 | One- or two-finger drag | Pan. Clamp so at least 25% of the image stays on screen |
 | Double-tap | If `scale == fitScale` → 2 × fitScale centered on the tap; else → fit |
 
-- When an `overlay` is present and it consumes the touch (crop handles), the canvas does not pan. Overlay reports consumption via `PointerInputChange.consume()`.
+- When an `overlay` is present and it consumes the touch (crop handles, the 멀티샷 one-finger drag of multishot.md §2), the canvas does not pan. The 멀티샷 overlay stops consuming as soon as a second finger lands, so pinch and two-finger pan stay the canvas's. Overlay reports consumption via `PointerInputChange.consume()`.
 - Fit is recomputed when the canvas size or bitmap size changes; if the user had not zoomed, stay fitted.
 - No inertia/fling.
 

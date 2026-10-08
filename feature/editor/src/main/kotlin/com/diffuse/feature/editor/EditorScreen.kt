@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.SnackbarHost
@@ -203,11 +204,15 @@ private fun ShowMessage(
     }
 }
 
-/** DESIGN.md §4: the sheet rises above the tool strip rather than pushing it off screen. */
+/**
+ * DESIGN.md §4: the sheet rises above the tool strip rather than pushing it off screen, and
+ * above the keyboard while one is open, so the bar and the pinned [취소 | 적용] stay in view.
+ * Measured with the keyboard included, so the canvas refits into what is left.
+ */
 @Composable
 private fun BoxScope.SheetOverlay(sheet: @Composable () -> Unit, onHeight: (Int) -> Unit) {
     Box(
-        modifier = Modifier.align(Alignment.BottomCenter).onSizeChanged { onHeight(it.height) },
+        modifier = Modifier.align(Alignment.BottomCenter).onSizeChanged { onHeight(it.height) }.imePadding(),
     ) { sheet() }
 }
 

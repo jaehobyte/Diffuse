@@ -33,6 +33,14 @@ class ProjectFiles(private val filesDir: File) {
     fun outpaintFile(projectId: String, outpaintId: String): File =
         File(projectDir(projectId), "outpaint_$outpaintId.png")
 
+    /** specs/skin_retouch_pipeline.md §6: the baked result; its support is a [maskFile]. */
+    fun retouchFile(projectId: String, retouchId: String): File =
+        File(projectDir(projectId), "retouch_$retouchId.png")
+
+    /** specs/multishot.md §7: one extracted subject per file, named by a fresh id per extraction. */
+    fun shotFile(projectId: String, fileId: String): File =
+        File(projectDir(projectId), "$SHOT_PREFIX$fileId.png")
+
     /** The source keeps whatever extension it was written with; find it rather than guess. */
     fun findSource(id: String): File? =
         projectDir(id).listFiles { file -> file.nameWithoutExtension == "source" }?.firstOrNull()
@@ -58,5 +66,6 @@ class ProjectFiles(private val filesDir: File) {
     private companion object {
         const val PROJECTS = "projects"
         const val TEMP_SUFFIX = ".tmp"
+        const val SHOT_PREFIX = "shot_"
     }
 }

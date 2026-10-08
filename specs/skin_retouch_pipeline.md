@@ -1,6 +1,6 @@
 # 피부 보정 처리 계약
 
-Status: Planned. 신규 구현 계약이며 현재 제공되는 API가 아니다.
+Status: 서버 경로 구현(D083, §8.1). Provider `RetouchServerSkinRetouchProvider`; 품질 gate는 미통과.
 Related: [product](skin_retouch.md), [validation](skin_retouch_validation.md)
 
 ## 1. 경계와 엔진 선정
@@ -16,7 +16,7 @@ ML Kit Play-services는 얼굴 기하에 재사용한다. 피부 문제 검출/�
 
 StyleRetoucher는 자동 피부 보정과 특징 혼합 강도 제어를 연구한 비교/설계 참고 후보다. 확인한 논문/저자 페이지에서 공식 코드·가중치 배포를 찾지 못했다. 추후 확보되면 checkpoint/라이선스/재현 경로를 검증하고 같은 사진으로 비교한다. 확보 전에는 필수 의존성으로 두거나 재현/재학습을 이 작업에 포함하지 않는다. 내부 attention은 네 기능별 정답 mask가 아니며 논문의 강도 제어도 네 기능 독립 제어가 아니다. 서버에서 실행할 수 있어도 이 제어 문제는 별도로 해결해야 한다.
 
-평가 기록에 알고리즘, checkpoint/버전/해시, 코드·가중치 라이선스, 런타임, 입출력/전처리, 지원 기능, 품질, 기기 지연/메모리를 남긴다. 증거가 없으면 선정 미완료다. 서버가 유리하면 같은 경계로 구현하고 명시적으로 설정한다. APK 15MB/no-bundled-model 원칙과 충돌하는 asset/runtime은 크기 측정과 별도 결정 기록이 필요하다.
+평가 기록에 알고리즘, checkpoint/버전/해시, 코드·가중치 라이선스, 런타임, 입출력/전처리, 지원 기능, 품질, 기기 지연/메모리를 남긴다. 증거가 없으면 선정 미완료다. 서버가 유리하면 같은 경계로 구현하고 명시적으로 설정한다. 현행 specs/architecture.md(release arm64 APK <1000MB, 모델 미번들, editor peak <250MB)와 충돌하는 asset/runtime은 크기 측정과 별도 결정 기록이 필요하다.
 
 ### 1.1 MI-GAN adapter
 
@@ -25,7 +25,7 @@ StyleRetoucher는 자동 피부 보정과 특징 혼합 강도 제어를 연구�
 - 공식 ONNX pipeline의 입력은 uint8 RGB `[1,3,H,W]`, binary mask `[1,1,H,W]`이며 **255=보존, 0=복원**이다. 앱의 defect mask(255=변경)를 adapter에서 반전한다. empty defect mask는 모델을 호출하지 않고 NoChange다.
 - 공식 wrapper는 masked bbox 주변을 crop하고 고정 모델 크기로 resize한다. 서로 멀리 떨어진 잡티를 한 bbox에 묶으면 작은 결함이 축소될 수 있으므로 가까운 결함끼리 묶은 context patch를 비교한다. patch 크기/context/병합 규칙은 평가 후 고정한다. 같은 base에서 처리하고 overlap 순서를 결정적으로 정하며 보호 영역을 침범하지 않는다.
 - ONNX wrapper는 resize와 blending까지 수행한다. 아래 provider 후보 계약에 맞춰 이미 혼합된 결과에 feather를 또 곱하지 않는다. wrapper 후처리로 결함 주변이 바뀔 수 있으므로 adapter가 최종 support 밖과 보호 영역을 원본으로 되돌린다. 원본 bitmap/tensor를 공유해 in-place로 변경하지 않는다.
-- Android에는 현재 ONNX runtime 의존성이 없다. 공식 ONNX를 출발점으로 실제 tensor/연산 호환성, CPU/가능한 가속 경로, 모델 로드 및 전후처리 포함 지연, 메모리/배포 크기를 측정한 뒤 런타임을 채택한다. ONNX 공개가 Android 가속 호환성을 보장하지는 않는다.
+- Android release에는 ONNX runtime이 없다(debug variant만 SR1-B 측정용으로 포함). 공식 ONNX를 출발점으로 실제 tensor/연산 호환성, CPU/가능한 가속 경로, 모델 로드 및 전후처리 포함 지연, 메모리/배포 크기를 측정한 뒤 런타임을 채택한다. ONNX 공개가 Android 가속 호환성을 보장하지는 않는다.
 - 논문 속도는 순수 모델 기준이며 공식 ONNX wrapper 전후처리 시간이 제외돼 있다. 서버로 옮기면 속도/메모리 제약을 바꿀 수 있지만 동일 모델/입력의 복원 품질 향상을 보장하지 않는다.
 
 ## 2. Provider 논리 계약
@@ -38,8 +38,10 @@ FaceAnalysis = faces(bounds, ephemeralId, perKindEligibility, geometry)
 
 SkinRetouchProvider
   availability: StateFlow<Availability>
+  checking: StateFlow<Boolean>
   executionLocation: Local | RetouchServer
-  supportedKinds: Set<Blemish | Shine | DarkCircles | ShavingShadow>
+  supportedKinds: StateFlow<Set<Blemish | Shine | DarkCircles | ShavingShadow>>
+  refresh()
   prepare(faceRoi, allowedMask, kind)
     -> Result<PreparedCorrection(candidateRoi, changeSupport, outcome, engineVersion)>
 outcome = Corrected | NoChange
@@ -121,6 +123,62 @@ segmentation의 suspend/availability/error 패턴을 따르되 SAM 3 session ID/
 SR1에서 실제 서버와 wire 계약을 확정한다. 최소 request ID/contract version/kind/engine version/ROI dimensions/image/allowed mask가 필요하다. response는 §2와 같은 feather 완료 candidate/binary support, outcome/종류별 engine version/대응 ID다. 실제 결함 검출이 기기/서버 중 어디서 실행되는지도 명시한다. body/pixel limit, timeout, auth, cancellation 또는 유한 job TTL, 과부하/재시도를 문서화하고 MockWebServer/실제 서버를 모두 테스트한다.
 
 주소/credential은 런타임 설정이며 SAM 3 credential을 자동 복사하지 않는다. 사진/mask를 로그·영구 파일·학습 데이터로 보관하지 않는다. 임시 데이터는 응답/취소/TTL 후 정리한다. 숨은 재업로드/로컬→서버 fallback은 없다. 서버가 없으면 Unavailable이고 fake 성공으로 대체하지 않는다.
+
+### 8.1 Wire contract v1 (2026-09-14, D083)
+
+구현은 `server/retouch/`(서버)와 `core:ai` `retouch.server` package(클라이언트)이며 같은 내용이 `server/retouch/README.md`에 있다. 양쪽 계약 테스트가 이 절을 검증한다.
+
+**역할.** 앱: 방향 정규화, canonical working base, 얼굴 선택/기하(ML Kit), ROI crop, 종류별 allowed mask(눈·눈썹·입술·콧구멍·타인 제외), 최종 support 교집합과 합성. 서버: 종류별 **실제 결함 검출과 보정**(잡티 검출기+복원 모델, 유분광/다크서클/면도자국 검출·색조 보정), 영역 제한과 feather 1회. 서버는 얼굴 검출/eligibility를 하지 않는다.
+
+**Kind wire name.** `blemish`, `shine`, `dark_circles`, `shaving_shadow`.
+
+**인증.** 모든 endpoint는 `Authorization: Bearer <token>`. header 없음/Bearer 형식 아님 → `401`, 형식은 맞지만 token 불일치 → `403`. token은 서버 전용이며 MonetGPT/SAM 3와 공유하지 않는다.
+
+**`GET /health`.** 모델 load와 warm-up 추론이 끝난 뒤에만 `200`:
+
+```json
+{"contract_version":1,"status":"ready","supported_kinds":["blemish"],"engines":{"blemish":"<engine version>"},"evaluation_engines":{}}
+```
+
+load 중/실패는 `503`이며 `status`는 `loading`|`failed`, `supported_kinds`는 `[]`, `engines`/`evaluation_engines`는 `{}`. 프로세스 기동만으로 ready를 반환하지 않는다. `supported_kinds`(와 `engines`)는 **SR1 품질 gate를 통과한 종류**(서버 코드 `QUALIFIED_KINDS`, 평가 증거와 함께 코드로 변경) 중 운영자가 활성화하고 load에 성공한 종류이며 앱은 이것만 활성화한다. `evaluation_engines`는 평가용으로 load한 미통과 종류(`RETOUCH_EVALUATION_KINDS`)로, smoke/평가 도구의 `/v1/retouch` 호출은 받지만 앱의 지원 종류가 아니다. 설정 생략이 미통과 engine을 활성화하지 않는다.
+
+**`POST /v1/retouch` 요청.** `multipart/form-data`, 아래 part 이름이 정확히 한 번씩:
+
+| part | Content-Type | 내용 |
+|---|---|---|
+| `metadata` | `application/json` | `{"request_id":"<[A-Za-z0-9_-]{1,64}>","contract_version":1,"kind":"blemish","expected_engine_version":"<health의 값>","width":W,"height":H}` |
+| `image` | `image/png` | 8-bit **RGBA**(color type 6), W×H, straight alpha, 방향 정규화된 ROI |
+| `allowed_mask` | `image/png` | 8-bit **grayscale**(color type 0), W×H, 값은 0 또는 255만. **255 = 변경 허용**, 0 = 보존 |
+
+**`200` 응답.** `multipart/form-data`, part 이름 동일 규칙:
+
+| part | 조건 | 내용 |
+|---|---|---|
+| `metadata` | 항상 | `{"request_id","contract_version":1,"kind","engine_version","outcome":"corrected"\|"no_change","width","height","timing_ms":{...}}` |
+| `candidate` | `corrected`만 | 8-bit RGBA PNG W×H. 강도 100, 영역 제한/feather 1회 완료. alpha는 입력과 동일 |
+| `change_support` | `corrected`만 | 8-bit grayscale PNG W×H, 0/255. 255 = 후보가 달라질 수 있는 영역 |
+
+`no_change`는 `metadata` part **하나만** 있고 `candidate`/`change_support`가 없다. 서버 보장: support ⊆ allowed ∩ (입력 alpha > 0), support 밖 candidate RGBA = 입력, `corrected`면 support 비어 있지 않음. allowed mask가 비어 있거나 검출 결과가 비면 모델 호출 없이 `no_change`. 클라이언트 검증: 응답 `request_id`/`contract_version`/`kind`/`engine_version`/크기/채널/binary 불일치는 실패이며 support를 다시 allowed ∩ 원본 alpha>0과 교집합하고 support 밖과 alpha를 입력으로 되돌린다.
+
+**오류.** body `{"error":"<code>","request_id":"<있으면>"}`. 이미지/mask/token은 포함하지 않는다.
+
+| status | code | 의미 | 앱 |
+|---|---|---|---|
+| 400 | `invalid_request` | part 누락/중복, JSON/ID 오류, PNG decode 실패, 채널·크기 불일치, 비binary mask | Invalid |
+| 400 | `unsupported_contract` | contract_version ≠ 1 | Invalid |
+| 401 / 403 | `unauthorized` / `forbidden` | token 없음 / 불일치 | Unauthorized → 서버 설정 |
+| 409 | `engine_mismatch` | expected_engine_version ≠ 현재 | health 재확인 후 명시적 재시도 |
+| 413 | `too_large` | body > 90 MiB, 한 변 > 4096, W×H > 16,777,216 | TooLarge |
+| 422 | `unsupported_kind` | 비활성 종류 | Unsupported |
+| 429 | `overloaded` | 처리 중 요청(실행 1 + 대기 4) 초과, `Retry-After`. body를 읽기 전에 거절하므로 `request_id` 없음 | Unavailable, 명시적 재시도 |
+| 503 | `not_ready` | load 중/실패 | Unavailable |
+| 504 | `timeout` | 대기+실행 55초 초과 | Unavailable |
+
+**상한 계산.** working long edge 4096 → ROI 최대 4096×4096 = 16,777,216 px. RGBA PNG 최악(무압축 deflate): 4·W·H + H(filter byte) + deflate stored-block 5 B/65,535 B + chunk ≈ 67,125,000 B; grayscale mask ≈ 16,790,000 B; multipart/JSON < 2 KB → 최악 ≈ 83.9 MB(80.0 MiB). 요청/응답 body 상한 **90 MiB(94,371,840 B)**, proxy 동일. decoded pixel은 part별로 IHDR에서 decode 전에 검사한다.
+
+**Timeout/동시성/취소.** 앱 health connect/read/call 5 s, 추론 connect 10 s·call 60 s. proxy read/write 65 s. 서버 job deadline 55 s(대기+실행), 동시 실행 1, 대기 4. 동시 요청 제한은 body 수신 전에 적용되며 수신·파싱·디코딩·engine·enforce·응답 인코딩까지 한 요청의 자원으로 센다. 오류/연결 종료/timeout 경로 모두 자리를 반납하고, 504·연결 종료 뒤에도 실행 중인 engine thread는 끝날 때까지 자리를 유지한다. client 연결 종료 시 대기 job은 제거하고 실행 중 job 결과는 폐기한다. GPU 실행은 중단하지 못하지만 engine별 patch/연산 수가 유한해 slot을 무한 점유하지 않는다. 요청 데이터는 메모리에서만 처리하며 임시 파일을 만들지 않는다.
+
+**로그.** request ID, kind, status, 단계별 ms만 기록한다. body/image/mask/Authorization은 로그·파일·학습에 남기지 않는다. 배포 서버는 실제 engine만 load하며 fake engine은 테스트 코드에서만 주입된다.
 
 ## 9. 참고 자료
 

@@ -21,7 +21,7 @@ import kotlinx.coroutines.flow.StateFlow
  */
 class FakeSkinRetouchProvider(
     ready: Boolean = true,
-    override val supportedKinds: Set<SkinRetouchKind> = SkinRetouchKind.entries.toSet(),
+    supportedKinds: Set<SkinRetouchKind> = SkinRetouchKind.entries.toSet(),
     override val executionLocation: ExecutionLocation = ExecutionLocation.Local,
 ) : SkinRetouchProvider {
 
@@ -29,6 +29,36 @@ class FakeSkinRetouchProvider(
         if (ready) Availability.Ready else Availability.Unavailable(AppError.Unavailable),
     )
     override val availability: StateFlow<Availability> = _availability
+
+    override val checking: StateFlow<Boolean> = MutableStateFlow(false)
+
+    private val _supportedKinds = MutableStateFlow(supportedKinds)
+    override val supportedKinds: StateFlow<Set<SkinRetouchKind>> = _supportedKinds
+
+    var refreshCount: Int = 0
+        private set
+
+    override fun refresh() {
+        refreshCount++
+    }
+
+    fun setSupportedKinds(kinds: Set<SkinRetouchKind>) {
+        _supportedKinds.value = kinds
+    }
+
+    /**
+     * Each queued gate holds one [prepare], in call order, until it completes — for race tests. A
+     * gate completed after its caller was cancelled lets the fake answer anyway, which is exactly
+     * the provider that ignores cancellation (skin_retouch_validation.md §4 경합).
+     */
+    val gates: ArrayDeque<kotlinx.coroutines.CompletableDeferred<Unit>> = ArrayDeque()
+
+    /** Kinds answered with [CorrectionOutcome.NoChange] whatever the pixels are. */
+    var noChangeKinds: Set<SkinRetouchKind> = emptySet()
+
+    fun setAvailability(availability: Availability) {
+        _availability.value = availability
+    }
 
     var prepareCount: Int = 0
         private set
@@ -56,19 +86,21 @@ class FakeSkinRetouchProvider(
         if (allowedMask.width != faceRoi.width || allowedMask.height != faceRoi.height) {
             return Result.Failure(AppError.Invalid("allowed mask is not the roi size"))
         }
-        if (kind !in supportedKinds) return Result.Failure(AppError.Unsupported)
+        if (kind !in _supportedKinds.value) return Result.Failure(AppError.Unsupported)
+        prepareCount++
+        _preparedKinds += kind
+        gates.removeFirstOrNull()?.let { gate ->
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { gate.await() }
+        }
         failure?.let {
             failure = null
             return Result.Failure(it)
         }
 
-        prepareCount++
-        _preparedKinds += kind
-
         val candidate = faceRoi.copy(Bitmap.Config.ARGB_8888, true)
         val support = MaskBitmaps.empty(faceRoi.width, faceRoi.height)
         var changed = false
-        for (y in 0 until faceRoi.height) {
+        for (y in 0 until if (kind in noChangeKinds) 0 else faceRoi.height) {
             for (x in 0 until faceRoi.width) {
                 if (MaskBitmaps.alphaAt(allowedMask, x, y) != MaskBitmaps.OPAQUE) continue
                 val base = faceRoi.getPixel(x, y)

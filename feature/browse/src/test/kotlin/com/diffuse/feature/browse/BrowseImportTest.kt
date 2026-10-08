@@ -73,6 +73,37 @@ class BrowseImportTest {
         ): Result<com.diffuse.core.imaging.model.ImageRef> =
             Result.Success(com.diffuse.core.imaging.model.ImageRef("/outpaint_$outpaintId.png"))
 
+        override suspend fun saveSkinRetouch(
+            projectId: String,
+            retouchId: String,
+            maskId: String,
+            result: android.graphics.Bitmap,
+            support: android.graphics.Bitmap,
+        ): Result<com.diffuse.core.data.SkinRetouchFiles> = Result.Success(
+            com.diffuse.core.data.SkinRetouchFiles(
+                com.diffuse.core.imaging.model.ImageRef("/retouch_$retouchId.png"),
+                com.diffuse.core.imaging.model.ImageRef("/mask_$maskId.png"),
+            ),
+        )
+
+        override suspend fun discardSkinRetouch(
+            projectId: String,
+            retouchId: String,
+            maskId: String,
+        ): Result<Unit> = Result.Success(Unit)
+
+        override suspend fun saveShotSubject(
+            projectId: String,
+            fileId: String,
+            subject: android.graphics.Bitmap,
+        ): Result<com.diffuse.core.imaging.model.ImageRef> =
+            Result.Success(com.diffuse.core.imaging.model.ImageRef("/p/shot_$fileId.png"))
+
+        override suspend fun discardShotSubjects(
+            projectId: String,
+            fileIds: List<String>,
+        ): Result<Unit> = Result.Success(Unit)
+
         override suspend fun duplicate(id: String) = Result.Success("copy")
         override suspend fun delete(id: String) = Result.Success(Unit)
     }
