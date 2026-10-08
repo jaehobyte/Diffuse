@@ -1,5 +1,7 @@
 package com.diffuse.feature.editor
 
+import com.diffuse.core.ai.speech.SpeechState
+
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -122,6 +124,42 @@ class EditorShellTest {
         assertEquals(listOf(true, false), events)
     }
 
+
+    @Test
+    fun `a finished utterance returns the speak control to speak`() {
+        var speech by mutableStateOf<SpeechState>(SpeechState.Listening("나무"))
+        compose.setContent {
+            EditorScreen(
+                preview = testImage(),
+                selectedTool = null,
+                onToolClick = {},
+                canUndo = false,
+                canRedo = false,
+                canCompare = false,
+                onBack = {},
+                onUndo = {},
+                onRedo = {},
+                onCompareChange = {},
+                onExport = {},
+                initialToolsRevealed = false,
+                speechState = speech,
+            )
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText(
+            androidx.test.core.app.ApplicationProvider
+                .getApplicationContext<android.content.Context>()
+                .getString(R.string.vibe_listening),
+        ).assertExists()
+
+        speech = SpeechState.Final("나무를 더 푸르게")
+        compose.waitForIdle()
+        compose.onNodeWithText(
+            androidx.test.core.app.ApplicationProvider
+                .getApplicationContext<android.content.Context>()
+                .getString(R.string.vibe_speak),
+        ).assertExists()
+    }
 
     @Test
     fun `the vibe overlay shows the direct planner transcript`() {

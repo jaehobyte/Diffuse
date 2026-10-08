@@ -1,5 +1,8 @@
 package com.diffuse.feature.editor
 
+import com.diffuse.core.ai.speech.SpeechState
+import com.diffuse.core.common.AppError
+
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -53,3 +56,21 @@ class VibeSpeechTest {
         assertTrue(vibeChromeVisible(sheetOpen = false))
     }
 }
+
+    @Test
+    fun `a finished utterance returns the speak control to idle`() {
+        assertFalse(vibeListeningAfterSpeech(localListening = true, speech = SpeechState.Final("나무")))
+        assertFalse(
+            vibeListeningAfterSpeech(
+                localListening = true,
+                speech = SpeechState.Failed(AppError.Unavailable),
+            ),
+        )
+    }
+
+    @Test
+    fun `a live partial keeps the speak control listening`() {
+        assertTrue(vibeListeningAfterSpeech(localListening = false, speech = SpeechState.Listening("나")))
+        assertTrue(vibeListeningAfterSpeech(localListening = true, speech = SpeechState.Idle))
+    }
+

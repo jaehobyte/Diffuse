@@ -51,6 +51,7 @@ fun EditorRoute(
     viewModel: EditorViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val speechState by viewModel.speech.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val document = state.document
 
@@ -118,6 +119,7 @@ fun EditorRoute(
             onVibeListen = { listening -> applyVibeSpeech(listening, viewModel) },
             vibeTranscript = state.direct.request,
             vibeStatus = vibePlannerStatus(state),
+            speechState = speechState,
         )
     }
 }

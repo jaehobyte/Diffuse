@@ -38,6 +38,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.diffuse.core.ai.speech.SpeechState
 import com.diffuse.core.ui.theme.AppTheme
 import com.diffuse.core.ui.theme.ThemeMode
 import com.diffuse.core.ui.theme.Tokens
@@ -113,6 +114,11 @@ fun EditorScreen(
      * failure). Wins over [vibeTranscript] so the overlay and the sheet stay one path.
      */
     vibeStatus: String = "",
+    /**
+     * Recogniser the direct sheet already owns. A final or a failure returns the speak
+     * control to 말하기; a partial keeps 듣는 중. Idle does not override the local toggle.
+     */
+    speechState: SpeechState = SpeechState.Idle,
 ) {
     // DESIGN.md §1: the editor is always warm-dark chrome, never the browse palette.
     AppTheme(mode = ThemeMode.Edit) {
@@ -148,6 +154,9 @@ fun EditorScreen(
         var toolStripHeightPx by remember { mutableIntStateOf(0) }
         var toolsRevealed by rememberSaveable { mutableStateOf(initialToolsRevealed) }
         var listening by rememberSaveable { mutableStateOf(false) }
+        LaunchedEffect(speechState) {
+            listening = vibeListeningAfterSpeech(listening, speechState)
+        }
         val sheetInset = canvasInset(sheet != null, sheetHeightPx, toolStripHeightPx)
         Box(modifier = modifier.testTag(EditorScreenTestTag).fillMaxSize()) {
             EditorBody(
