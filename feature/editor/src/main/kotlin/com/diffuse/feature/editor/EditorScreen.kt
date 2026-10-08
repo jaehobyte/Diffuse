@@ -122,6 +122,7 @@ fun EditorScreen(
     /**
      * Recogniser the direct sheet already owns. A final or a failure returns the speak
      * control to 말하기; a partial keeps 듣는 중. Idle does not override the local toggle.
+     * A non-blank partial is also the overlay line until the sheet copies it into the request.
      */
     speechState: SpeechState = SpeechState.Idle,
 ) {
@@ -193,6 +194,7 @@ fun EditorScreen(
                     listening = listening,
                     transcript = vibeTranscript,
                     status = vibeStatus,
+                    speechState = speechState,
                     onToggleTools = { toolsRevealed = !toolsRevealed },
                     onToggleListen = {
                         listening = !listening
@@ -268,6 +270,7 @@ private fun BoxScope.VibeChrome(
     listening: Boolean,
     transcript: String,
     status: String,
+    speechState: SpeechState,
     onToggleTools: () -> Unit,
     onToggleListen: () -> Unit,
     onPrompt: () -> Unit,
@@ -304,7 +307,7 @@ private fun BoxScope.VibeChrome(
             )
         }
         val hint = stringResource(R.string.vibe_prompt_hint)
-        val line = vibeOverlayLine(status, transcript, hint)
+        val line = vibeOverlayLine(status, transcript, hint, vibeHeardLine(speechState))
         Text(
             text = line,
             color = if (line == hint) Tokens.editInkSecondary else Tokens.editInk,

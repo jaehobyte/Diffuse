@@ -31,11 +31,27 @@ fun vibeSpeechArmsSheetMic(listening: Boolean): Boolean =
 
 /**
  * One line on the speech overlay. Planner status (planning, running, not understood,
- * failure) wins over the request the sheet already holds; a blank pair falls back to
- * the hint. No second planner — both strings come from DirectState.
+ * failure) wins over everything the recogniser is saying. A live partial wins over the
+ * request the sheet already holds, because that request is the previous utterance until
+ * VoicePromptBar copies the partial in. A blank triple falls back to the hint.
+ * No second planner — status and transcript come from DirectState, partial from SpeechState.
  */
-fun vibeOverlayLine(status: String, transcript: String, hint: String): String =
-    status.ifBlank { transcript.ifBlank { hint } }
+fun vibeOverlayLine(
+    status: String,
+    transcript: String,
+    hint: String,
+    partial: String = "",
+): String = status.ifBlank { partial.ifBlank { transcript.ifBlank { hint } } }
+
+/**
+ * The partial the direct sheet's recogniser already owns. Idle and failure have nothing
+ * to show; a final is the utterance VoicePromptBar is about to submit.
+ */
+fun vibeHeardLine(speech: SpeechState): String = when (speech) {
+    is SpeechState.Listening -> speech.partial
+    is SpeechState.Final -> speech.text
+    is SpeechState.Failed, SpeechState.Idle -> ""
+}
 
 /**
  * Speak opens the direct sheet, which already owns [VoicePromptBar]. The overlay sits
