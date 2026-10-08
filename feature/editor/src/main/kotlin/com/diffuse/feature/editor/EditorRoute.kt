@@ -102,6 +102,7 @@ fun EditorRoute(
             canvasOverlay = canvasOverlay(state, viewModel),
             sheet = sheetFor(state, document, viewModel, armDirectMic) { armDirectMic = false },
             onVibeListen = { listening -> applyVibeSpeech(listening, viewModel) { armDirectMic = it } },
+            onVibePrompt = { applyVibePrompt(viewModel) },
             vibeTranscript = state.direct.request,
             vibeStatus = vibePlannerStatus(state),
             speechState = speechState,
@@ -268,4 +269,10 @@ private fun applyVibeSpeech(listening: Boolean, viewModel: EditorViewModel, onAr
     if (command.openDirect) viewModel.onToolClick(Tool.Direct)
     onArmMic(command.startSpeech)
     if (command.stopSpeech) viewModel.speech.stop()
+}
+
+/** Overlay line → existing 지시 sheet, typing only. Speak still arms the mic. */
+private fun applyVibePrompt(viewModel: EditorViewModel) {
+    val command = vibePromptCommand()
+    if (command.openDirect) viewModel.onToolClick(Tool.Direct)
 }

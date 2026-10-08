@@ -105,6 +105,11 @@ fun EditorScreen(
      */
     onVibeListen: (Boolean) -> Unit = {},
     /**
+     * Tapping the overlay line opens the existing 지시 planner for typing.
+     * It does not arm the mic; speak still owns that path.
+     */
+    onVibePrompt: () -> Unit = {},
+    /**
      * Transcript the direct planner already holds. Shown on the overlay so the speech
      * control and the sheet stay one path. Blank falls back to the hint.
      */
@@ -193,6 +198,7 @@ fun EditorScreen(
                         listening = !listening
                         onVibeListen(listening)
                     },
+                    onPrompt = onVibePrompt,
                 )
             }
             SnackbarHost(
@@ -264,6 +270,7 @@ private fun BoxScope.VibeChrome(
     status: String,
     onToggleTools: () -> Unit,
     onToggleListen: () -> Unit,
+    onPrompt: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -304,7 +311,8 @@ private fun BoxScope.VibeChrome(
             modifier = Modifier
                 .weight(1f)
                 .padding(horizontal = 8.dp)
-                .testTag(VibeTranscriptTestTag),
+                .testTag(VibeTranscriptTestTag)
+                .clickable(role = Role.Button, onClick = onPrompt),
         )
         Box(
             modifier = Modifier

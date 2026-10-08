@@ -57,3 +57,10 @@ fun vibeListeningAfterSpeech(localListening: Boolean, speech: SpeechState): Bool
         is SpeechState.Final, is SpeechState.Failed -> false
         SpeechState.Idle -> localListening
     }
+
+/**
+ * The overlay line opens 지시 so the user can type on the sheet that already submits.
+ * It does not arm the mic and does not stop a recognition speak already started.
+ */
+fun vibePromptCommand(): VibeSpeechCommand =
+    VibeSpeechCommand(openDirect = true, startSpeech = false, stopSpeech = false)

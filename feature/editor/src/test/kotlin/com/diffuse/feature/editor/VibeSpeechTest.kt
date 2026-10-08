@@ -78,4 +78,12 @@ class VibeSpeechTest {
         assertTrue(vibeListeningAfterSpeech(localListening = false, speech = SpeechState.Listening("나")))
         assertTrue(vibeListeningAfterSpeech(localListening = true, speech = SpeechState.Idle))
     }
+
+    @Test
+    fun `the overlay line opens the planner without arming the mic`() {
+        assertEquals(
+            VibeSpeechCommand(openDirect = true, startSpeech = false, stopSpeech = false),
+            vibePromptCommand(),
+        )
+    }
 }
