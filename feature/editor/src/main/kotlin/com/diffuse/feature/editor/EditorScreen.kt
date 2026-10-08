@@ -157,7 +157,9 @@ fun EditorScreen(
         LaunchedEffect(speechState) {
             listening = vibeListeningAfterSpeech(listening, speechState)
         }
-        val sheetInset = canvasInset(sheet != null, sheetHeightPx, toolStripHeightPx)
+        // The route always passes a sheet lambda. Only a measured slot is an open sheet.
+        val sheetOccupies = sheet != null && sheetHeightPx > 0
+        val sheetInset = canvasInset(sheetOccupies, sheetHeightPx, toolStripHeightPx)
         Box(modifier = modifier.testTag(EditorScreenTestTag).fillMaxSize()) {
             EditorBody(
                 preview = preview,
@@ -180,7 +182,7 @@ fun EditorScreen(
             )
             if (busy) SelectionProgressOverlay(onCancel = onCancelWork, labelRes = busyLabelRes)
             if (sheet != null) SheetOverlay(sheet) { sheetHeightPx = it }
-            if (vibeChromeVisible(sheet != null)) {
+            if (vibeChromeVisible(sheetOccupies)) {
                 VibeChrome(
                     toolsRevealed = toolsRevealed,
                     listening = listening,
