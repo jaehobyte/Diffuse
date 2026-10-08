@@ -51,22 +51,18 @@ fun EditorRoute(
     viewModel: EditorViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val speechState by viewModel.speech.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val document = state.document
 
-    // specs/tool_groups.md §3: the open level is UI state, not document state, and it resets to
-    // `Root` on every entry to the screen — a user coming back to a photo sees the whole app.
     var toolLevel by rememberSaveable { mutableStateOf(ToolGroup.Root) }
+    var armDirectMic by rememberSaveable { mutableStateOf(false) }
 
-    // §4: committing or cancelling a sheet returns to the root, because the next thing a user does
-    // is usually not another AI call. Keyed on the sheet **closing**, so opening one does not, and
-    // so a disabled child — which opens nothing — leaves the level alone.
     val selectedTool = state.selectedTool
     LaunchedEffect(selectedTool) {
         if (selectedTool == null) toolLevel = ToolGroup.Root
     }
 
-    // §4: system back closes the level before it leaves the screen.
     BackHandler(enabled = toolLevel != ToolGroup.Root) { toolLevel = ToolGroup.Root }
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -93,48 +89,30 @@ fun EditorRoute(
             overlayTransform = overlayTransform(state),
             disabledTools = disabledTools(state),
             toolLevel = toolLevelState(toolLevel, state) { toolLevel = it },
-            gestureMode = if (state.selectedTool == Tool.Select) {
-                CanvasGestureMode.SelectPoint
-            } else {
-                CanvasGestureMode.Pan
-            },
-            pointTaps = if (state.selectedTool != Tool.Select) {
-                null
-            } else {
-                CanvasPointTaps(
-                    onForeground = { viewModel.selection.addPoint(it.x, it.y, foreground = true) },
-                    onBackground = { viewModel.selection.addPoint(it.x, it.y, foreground = false) },
-                )
-            },
-            // specs/selection_tool.md §5: while `busy` the previous mask stays; only the
-            // one-off `open` earns the overlay.
+            gestureMode = if (state.selectedTool == Tool.Select) CanvasGestureMode.SelectPoint else CanvasGestureMode.Pan,
+            pointTaps = if (state.selectedTool != Tool.Select) null else CanvasPointTaps(
+                onForeground = { viewModel.selection.addPoint(it.x, it.y, foreground = true) },
+                onBackground = { viewModel.selection.addPoint(it.x, it.y, foreground = false) },
+            ),
             busy = isBusy(state),
             busyLabelRes = busyLabel(state),
             onCancelWork = { cancelWork(viewModel) },
             message = message(state),
             onMessageShown = { clearMessages(viewModel) },
             canvasOverlay = canvasOverlay(state, viewModel),
-            sheet = sheetFor(state, document, viewModel),
+            sheet = sheetFor(state, document, viewModel, armDirectMic) { armDirectMic = false },
+            onVibeListen = { listening -> applyVibeSpeech(listening, viewModel) { armDirectMic = it } },
+            onVibePrompt = { applyVibePrompt(viewModel) },
+            vibeTranscript = state.direct.request,
+            vibeStatus = vibePlannerStatus(state),
+            speechState = speechState,
         )
     }
 }
 
-/**
- * work/decisions.md T79: what the strip is bound to — the level the user opened, and the ordering
- * the photograph earned.
- *
- * The profile only reorders, so a detection that lands while a sheet is open changes nothing the
- * user is looking at: the sheet stays open, the selected tool stays selected, and the new order is
- * there underneath it. A file-level function rather than four lines inline, because `EditorRoute`
- * is at detekt's method-length limit.
- */
-private fun toolLevelState(
-    level: ToolGroup,
-    state: EditorUiState,
-    onChange: (ToolGroup) -> Unit,
-) = ToolLevelState(level, onChange, menuProfileFor(state.portrait))
+private fun toolLevelState(level: ToolGroup, state: EditorUiState, onChange: (ToolGroup) -> Unit) =
+    ToolLevelState(level, onChange, menuProfileFor(state.portrait))
 
-/** DESIGN.md §7: the overlay's cancel button reaches whichever tool is working. */
 private fun cancelWork(viewModel: EditorViewModel) {
     viewModel.selection.cancelWork()
     viewModel.erase.cancel()
@@ -144,7 +122,6 @@ private fun cancelWork(viewModel: EditorViewModel) {
     viewModel.direct.cancelWork()
 }
 
-/** One snackbar, so the one that was shown is cleared wherever it came from. */
 private fun clearMessages(viewModel: EditorViewModel) {
     viewModel.selection.onMessageShown()
     viewModel.erase.onMessageShown()
@@ -155,26 +132,19 @@ private fun clearMessages(viewModel: EditorViewModel) {
     viewModel.direct.onMessageShown()
 }
 
-/** DESIGN.md §7: every AI call shows progress and a way out, so they share one flag. */
 private fun isBusy(state: EditorUiState): Boolean =
     state.selection.working || state.erase.busy || state.fill.busy || state.expand.busy ||
         state.auto.busy || state.style.matching || state.direct.working
 
-/** specs/selection_tool.md §1 and generative_erase.md §5: a tool that cannot work is greyed. */
 private fun disabledTools(state: EditorUiState): Set<Tool> = buildSet {
     if (!state.selection.enabled) add(Tool.Select)
     if (!state.erase.enabled || state.document?.activeMaskId == null) add(Tool.Erase)
-    // specs/generative_fill.md §6: the same two reasons, and the same greyed-but-tappable rule.
     if (!state.fill.enabled || state.document?.activeMaskId == null) add(Tool.Fill)
-    // specs/outpaint.md §6: the key, and the document's own mask-op guard.
     if (!state.expand.enabled || state.document?.canOutpaint == false) add(Tool.Expand)
-    // specs/auto_enhance.md §6: the probe alone. 자동 needs nothing from the document.
     if (!state.auto.enabled) add(Tool.Auto)
-    // specs/vibe_edit.md §10: the key alone. A plan with no `Select` needs no SAM 3 server.
     if (!state.direct.enabled) add(Tool.Direct)
 }
 
-/** DESIGN.md §4 State display: the overlay says what is actually happening. */
 private fun busyLabel(state: EditorUiState): Int = when {
     state.direct.planning -> R.string.direct_planning
     state.direct.running -> R.string.direct_running
@@ -187,282 +157,122 @@ private fun busyLabel(state: EditorUiState): Int = when {
     else -> R.string.select_preparing
 }
 
-/**
- * specs/vibe_edit.md §10: `direct_not_found` is the one line that names the word that failed,
- * so the direct tool's message carries its argument.
- */
 @Composable
 private fun message(state: EditorUiState): String? {
     val direct = state.direct.message
     return when {
         direct?.arg != null -> stringResource(direct.res, direct.arg)
         direct != null -> stringResource(direct.res)
-        else -> (
-            state.selection.message ?: state.erase.message ?: state.fill.message
-                ?: state.expand.message ?: state.auto.message ?: state.style.message
-            )?.let { stringResource(it) }
+        else -> (state.selection.message ?: state.erase.message ?: state.fill.message
+            ?: state.expand.message ?: state.auto.message ?: state.style.message)?.let { stringResource(it) }
     }
 }
 
-/** specs/canvas.md: one overlay slot, claimed by whichever tool is open. */
 @Composable
-private fun canvasOverlay(
-    state: EditorUiState,
-    viewModel: EditorViewModel,
-): (@Composable androidx.compose.foundation.layout.BoxScope.() -> Unit)? = when (state.selectedTool) {
-    Tool.Crop -> cropOverlaySlot(
-        rect = state.cropState.rect,
-        onRectChange = { viewModel.onCropChange(state.cropState.copy(rect = it)) },
-        aspect = state.cropState.preset,
-    )
-    Tool.Select -> selectionOverlaySlot(
-        mask = state.selection.mask,
-        points = state.selection.points,
-        labels = state.selection.labels,
-    )
-    // specs/outpaint.md §6: the pending area is the canvas's own checkerboard, drawn by
-    // `OverlayTransform.margins`; the overlay itself is the four handles.
-    Tool.Expand -> {
-        {
-            ExpandOverlay(
-                margins = state.expand.margins,
-                onMarginsChange = viewModel.expand::setMargins,
-            )
-        }
-    }
-    // specs/selection_tool.md §8.1: while a masked adjustment is being made, the scrim shows
-    // where it will land. Toggle off and it disappears.
+private fun canvasOverlay(state: EditorUiState, viewModel: EditorViewModel): (@Composable androidx.compose.foundation.layout.BoxScope.() -> Unit)? = when (state.selectedTool) {
+    Tool.Crop -> cropOverlaySlot(rect = state.cropState.rect, onRectChange = { viewModel.onCropChange(state.cropState.copy(rect = it)) }, aspect = state.cropState.preset)
+    Tool.Select -> selectionOverlaySlot(mask = state.selection.mask, points = state.selection.points, labels = state.selection.labels)
+    Tool.Expand -> {{ ExpandOverlay(margins = state.expand.margins, onMarginsChange = viewModel.expand::setMargins) }}
     null -> null
-    else -> state.activeMask
-        ?.takeIf { state.maskedAdjust }
-        ?.let { selectionOverlaySlot(mask = it, points = emptyList(), labels = emptyList()) }
+    else -> state.activeMask?.takeIf { state.maskedAdjust }?.let { selectionOverlaySlot(mask = it, points = emptyList(), labels = emptyList()) }
 }
 
-/**
- * The settings sheet wins over any tool sheet: it is the only way out of an unconfigured
- * provider (specs/segmentation.md §6).
- */
 @Composable
-private fun sheetFor(
-    state: EditorUiState,
-    document: com.diffuse.core.imaging.model.EditDocument?,
-    viewModel: EditorViewModel,
-): (@Composable () -> Unit)? {
+private fun sheetFor(state: EditorUiState, document: com.diffuse.core.imaging.model.EditDocument?, viewModel: EditorViewModel, armDirectMic: Boolean = false, onDirectMicArmed: () -> Unit = {}): (@Composable () -> Unit)? {
     if (state.selection.showSettings) {
-        return {
-            Sam3SettingsSheet(
-                config = state.selection.config,
-                geminiApiKey = state.selection.geminiApiKey,
-                monetConfig = state.selection.monetConfig,
-                onSave = viewModel.selection::saveSettings,
-                onCancel = { viewModel.selection.setSettingsVisible(false) },
-            )
-        }
+        return { Sam3SettingsSheet(config = state.selection.config, geminiApiKey = state.selection.geminiApiKey, monetConfig = state.selection.monetConfig, onSave = viewModel.selection::saveSettings, onCancel = { viewModel.selection.setSettingsVisible(false) }) }
     }
     return document?.let { doc ->
         {
             when (state.selectedTool) {
                 Tool.Crop -> CropToolSheet(state = state, viewModel = viewModel)
-                Tool.Select -> SelectSheet(
-                    state = state.selection,
-                    onModeChange = viewModel.selection::setMode,
-                    onInvert = viewModel.selection::invert,
-                    onClear = viewModel.selection::clear,
-                    onCutOut = { viewModel.applySelection(cutOut = true) },
-                    onCancel = viewModel::cancelSheet,
-                    onApply = viewModel::applySheet,
-                    promptBar = {
-                        VoicePromptBar(
-                            value = state.selection.phrase,
-                            onValueChange = viewModel.selection::setPhrase,
-                            onSubmit = viewModel.selection::submitPhrase,
-                            speech = viewModel.speech,
-                            enabled = !state.selection.phraseBusy,
-                            onMessage = viewModel.selection::showMessage,
-                        )
-                    },
-                )
+                Tool.Select -> SelectSheet(state = state.selection, onModeChange = viewModel.selection::setMode, onInvert = viewModel.selection::invert, onClear = viewModel.selection::clear, onCutOut = { viewModel.applySelection(cutOut = true) }, onCancel = viewModel::cancelSheet, onApply = viewModel::applySheet, promptBar = { VoicePromptBar(value = state.selection.phrase, onValueChange = viewModel.selection::setPhrase, onSubmit = viewModel.selection::submitPhrase, speech = viewModel.speech, enabled = !state.selection.phraseBusy, onMessage = viewModel.selection::showMessage) })
                 Tool.Fill -> FillToolSheet(state = state, viewModel = viewModel)
                 Tool.Expand -> ExpandToolSheet(state = state, viewModel = viewModel)
                 Tool.Auto -> AutoToolSheet(state = state, viewModel = viewModel)
                 Tool.Style -> StyleToolSheet(state = state, viewModel = viewModel)
-                Tool.Direct -> DirectToolSheet(state = state, viewModel = viewModel)
-                else -> ToolSheetHost(
-                    maskOption = MaskOption(
-                        available = doc.activeMaskId != null,
-                        maskedOnly = state.maskedAdjust,
-                        onMaskedOnlyChange = viewModel::onMaskedAdjustChange,
-                    ),
-                    selectedTool = state.selectedTool,
-                    document = doc,
-                    onValueChange = viewModel::onAdjust,
-                    onValueChangeFinished = viewModel::onAdjustFinished,
-                    onCancel = viewModel::cancelSheet,
-                    onApply = viewModel::applySheet,
-                )
+                Tool.Direct -> DirectToolSheet(state = state, viewModel = viewModel, armMic = armDirectMic, onMicArmed = onDirectMicArmed)
+                else -> ToolSheetHost(maskOption = MaskOption(available = doc.activeMaskId != null, maskedOnly = state.maskedAdjust, onMaskedOnlyChange = viewModel::onMaskedAdjustChange), selectedTool = state.selectedTool, document = doc, onValueChange = viewModel::onAdjust, onValueChangeFinished = viewModel::onAdjustFinished, onCancel = viewModel::cancelSheet, onApply = viewModel::applySheet)
             }
         }
     }
 }
 
-/**
- * The canvas-level previews neither tool has committed yet: 자르기's rotation (T24) and 확대's
- * pending margins (outpaint.md §6). Cancel closes the sheet, which removes both with it.
- */
 private fun overlayTransform(state: EditorUiState): OverlayTransform = when (state.selectedTool) {
-    Tool.Crop -> OverlayTransform(
-        quarterTurns = state.cropState.quarterTurns,
-        straightenDeg = state.cropState.straightenDeg,
-    )
+    Tool.Crop -> OverlayTransform(quarterTurns = state.cropState.quarterTurns, straightenDeg = state.cropState.straightenDeg)
     Tool.Expand -> OverlayTransform(margins = state.expand.margins)
     else -> OverlayTransform.None
 }
 
-/** The bare source's shape: what outpaint.md §6's ratio readout is measured against. */
 private fun sourceAspect(state: EditorUiState): Float {
     val source = state.source
     return if (source == null || source.height <= 0) 1f else source.width.toFloat() / source.height
 }
 
-/**
- * specs/generative_fill.md §6: the bar supplies the noun and the IME Done key does what 적용
- * does, so submitting from the keyboard commits rather than only dismissing it.
- */
 @Composable
 private fun FillToolSheet(state: EditorUiState, viewModel: EditorViewModel) {
-    FillSheet(
-        state = state.fill,
-        onCancel = viewModel::cancelSheet,
-        onApply = viewModel::applySheet,
-        promptBar = {
-            VoicePromptBar(
-                value = state.fill.prompt,
-                onValueChange = viewModel.fill::setPrompt,
-                onSubmit = { viewModel.applySheet() },
-                speech = viewModel.speech,
-                placeholder = stringResource(R.string.fill_placeholder),
-                enabled = !state.fill.busy,
-                onMessage = viewModel.fill::showMessage,
-            )
-        },
-    )
+    FillSheet(state = state.fill, onCancel = viewModel::cancelSheet, onApply = viewModel::applySheet, promptBar = { VoicePromptBar(value = state.fill.prompt, onValueChange = viewModel.fill::setPrompt, onSubmit = { viewModel.applySheet() }, speech = viewModel.speech, placeholder = stringResource(R.string.fill_placeholder), enabled = !state.fill.busy, onMessage = viewModel.fill::showMessage) })
 }
 
-/** specs/outpaint.md §6: no prompt bar — 확대 continues a scene the model can already see. */
 @Composable
 private fun ExpandToolSheet(state: EditorUiState, viewModel: EditorViewModel) {
-    ExpandSheet(
-        state = state.expand,
-        sourceAspect = sourceAspect(state),
-        onCancel = viewModel::cancelSheet,
-        onApply = viewModel::applySheet,
-    )
+    ExpandSheet(state = state.expand, sourceAspect = sourceAspect(state), onCancel = viewModel::cancelSheet, onApply = viewModel::applySheet)
 }
 
-/**
- * specs/style_match.md §4, §5: tiles of the user's own photograph, one 강도 slider, and the pill
- * that hands a reference photograph in. The picker is the system one, so nothing is granted and
- * nothing is stored — §10's rule falls out of using it.
- */
 @Composable
 private fun StyleToolSheet(state: EditorUiState, viewModel: EditorViewModel) {
     val context = LocalContext.current
-    val picker = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickVisualMedia(),
-    ) { uri ->
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         uri?.let { chosen ->
-            // The controller is called straight from here: `EditorViewModel` is at detekt's
-            // function ceiling (T65, T78), and this reads the same state the route already holds.
             decodeReference(context, chosen)?.let { reference ->
-                viewModel.style.matchReference(
-                    reference = reference,
-                    image = state.preview?.asAndroidBitmap(),
-                    document = state.document,
-                )
+                viewModel.style.matchReference(reference = reference, image = state.preview?.asAndroidBitmap(), document = state.document)
             } ?: viewModel.style.showFailure()
         }
     }
-    StyleSheet(
-        state = state.style,
-        onSelect = viewModel.style::select,
-        onVariantSelect = viewModel.style::selectVariant,
-        onIntensityChange = viewModel.style::setIntensity,
-        onPickReference = {
-            picker.launch(
-                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-            )
-        },
-        onCancel = viewModel::cancelSheet,
-        onApply = viewModel::applySheet,
-    )
+    StyleSheet(state = state.style, onSelect = viewModel.style::select, onVariantSelect = viewModel.style::selectVariant, onIntensityChange = viewModel.style::setIntensity, onPickReference = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, onCancel = viewModel::cancelSheet, onApply = viewModel::applySheet)
 }
 
-/**
- * Decoded here rather than in the ViewModel: it is one `ContentResolver` read of a `Uri` the
- * picker just handed this composable, and routing it through the graph would add a dependency for
- * a bitmap that lives for one call (§10).
- */
 private fun decodeReference(context: android.content.Context, uri: android.net.Uri) =
-    runCatching {
-        context.contentResolver.openInputStream(uri).use {
-            android.graphics.BitmapFactory.decodeStream(it)
-        }
-    }.getOrNull()
+    runCatching { context.contentResolver.openInputStream(uri).use { android.graphics.BitmapFactory.decodeStream(it) } }.getOrNull()
 
-/**
- * specs/auto_enhance.md §6: the sheet arrives **after** the call, holding the result. Changing a
- * chip costs another call; the 강도 slider costs none, because it scales a plan already here.
- */
 @Composable
 private fun AutoToolSheet(state: EditorUiState, viewModel: EditorViewModel) {
-    AutoSheet(
-        state = state.auto,
-        onStyleChange = viewModel.auto::setStyle,
-        onIntensityChange = viewModel.auto::setIntensity,
-        onCancel = viewModel::cancelSheet,
-        onApply = viewModel::applySheet,
-    )
+    AutoSheet(state = state.auto, onStyleChange = viewModel.auto::setStyle, onIntensityChange = viewModel.auto::setIntensity, onCancel = viewModel::cancelSheet, onApply = viewModel::applySheet)
 }
 
-/** specs/vibe_edit.md §3: the bar, the step list, and [취소 | 적용] with 적용 the one accent. */
 @Composable
-private fun DirectToolSheet(state: EditorUiState, viewModel: EditorViewModel) {
-    DirectSheet(
-        state = state.direct,
-        onCancel = viewModel::cancelSheet,
-        onApply = viewModel::applySheet,
-        promptBar = {
-            VoicePromptBar(
-                value = state.direct.request,
-                onValueChange = viewModel.direct::setRequest,
-                onSubmit = viewModel.direct::submit,
-                speech = viewModel.speech,
-                placeholder = stringResource(R.string.direct_placeholder),
-                enabled = !state.direct.working,
-                onMessage = viewModel.direct::showMessage,
-            )
-        },
-    )
+private fun DirectToolSheet(state: EditorUiState, viewModel: EditorViewModel, armMic: Boolean = false, onMicArmed: () -> Unit = {}) {
+    DirectSheet(state = state.direct, onCancel = viewModel::cancelSheet, onApply = viewModel::applySheet, promptBar = { VoicePromptBar(value = state.direct.request, onValueChange = viewModel.direct::setRequest, onSubmit = viewModel.direct::submit, speech = viewModel.speech, placeholder = stringResource(R.string.direct_placeholder), enabled = !state.direct.working, onMessage = viewModel.direct::showMessage, armMic = armMic, onArmConsumed = onMicArmed) })
 }
 
 @Composable
 private fun CropToolSheet(state: EditorUiState, viewModel: EditorViewModel) {
-    CropSheet(
-        preset = state.cropState.preset,
-        straightenDeg = state.cropState.straightenDeg,
-        onPresetChange = { preset ->
-            viewModel.onCropChange(state.cropState.withPreset(preset))
-        },
-        onStraightenChange = { degrees ->
-            viewModel.onCropChange(
-                state.cropState.straightened(
-                    degrees.coerceIn(-STRAIGHTEN_MAX_DEG, STRAIGHTEN_MAX_DEG),
-                ),
-            )
-        },
-        onStraightenFinished = {},
-        onRotate = { quarters -> viewModel.onCropChange(state.cropState.rotated(quarters)) },
-        onCancel = viewModel::cancelSheet,
-        onApply = viewModel::applySheet,
-    )
+    CropSheet(preset = state.cropState.preset, straightenDeg = state.cropState.straightenDeg, onPresetChange = { preset -> viewModel.onCropChange(state.cropState.withPreset(preset)) }, onStraightenChange = { degrees -> viewModel.onCropChange(state.cropState.straightened(degrees.coerceIn(-STRAIGHTEN_MAX_DEG, STRAIGHTEN_MAX_DEG))) }, onStraightenFinished = {}, onRotate = { quarters -> viewModel.onCropChange(state.cropState.rotated(quarters)) }, onCancel = viewModel::cancelSheet, onApply = viewModel::applySheet)
+}
+
+@Composable
+private fun vibePlannerStatus(state: EditorUiState): String {
+    val direct = state.direct
+    val message = direct.message
+    return when {
+        direct.planning -> stringResource(R.string.direct_planning)
+        direct.running -> stringResource(R.string.direct_running)
+        direct.notUnderstood -> stringResource(R.string.direct_not_understood)
+        message?.arg != null -> stringResource(message.res, message.arg)
+        message != null -> stringResource(message.res)
+        else -> ""
+    }
+}
+
+private fun applyVibeSpeech(listening: Boolean, viewModel: EditorViewModel, onArmMic: (Boolean) -> Unit) {
+    val command = vibeSpeechCommand(listening)
+    if (command.openDirect) viewModel.onToolClick(Tool.Direct)
+    onArmMic(command.startSpeech)
+    if (command.stopSpeech) viewModel.speech.stop()
+}
+
+/** Overlay line → existing 지시 sheet, typing only. Speak still arms the mic. */
+private fun applyVibePrompt(viewModel: EditorViewModel) {
+    val command = vibePromptCommand()
+    if (command.openDirect) viewModel.onToolClick(Tool.Direct)
 }

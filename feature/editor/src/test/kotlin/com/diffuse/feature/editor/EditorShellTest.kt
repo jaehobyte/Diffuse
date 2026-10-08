@@ -1,5 +1,7 @@
 package com.diffuse.feature.editor
 
+import com.diffuse.core.ai.speech.SpeechState
+
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -10,6 +12,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasTestTag
@@ -57,6 +60,7 @@ class EditorShellTest {
         canUndo: Boolean = false,
         canRedo: Boolean = false,
         canCompare: Boolean = false,
+        initialToolsRevealed: Boolean = true,
     ) {
         compose.setContent {
             EditorScreen(
@@ -71,9 +75,172 @@ class EditorShellTest {
                 onRedo = {},
                 onCompareChange = { compareStates += it },
                 onExport = {},
+                initialToolsRevealed = initialToolsRevealed,
             )
         }
         compose.waitForIdle()
+    }
+
+    @Test
+    fun `vibe editing hides the tool strip until tools are revealed`() {
+        showShell(initialToolsRevealed = false)
+
+        compose.onNodeWithTag(ToolStripTestTag).assertDoesNotExist()
+        compose.onNodeWithTag(VibePromptTestTag).assertExists()
+        compose.onNodeWithTag(VibeToolsRevealTestTag).performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(ToolStripTestTag).assertExists()
+    }
+
+    @Test
+    fun `the speak control reports listening to the planner hook`() {
+        val events = mutableListOf<Boolean>()
+        compose.setContent {
+            EditorScreen(
+                preview = testImage(),
+                selectedTool = null,
+                onToolClick = {},
+                canUndo = false,
+                canRedo = false,
+                canCompare = false,
+                onBack = {},
+                onUndo = {},
+                onRedo = {},
+                onCompareChange = {},
+                onExport = {},
+                initialToolsRevealed = false,
+                onVibeListen = { events += it },
+            )
+        }
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(VibeSpeakTestTag).performClick()
+        compose.waitForIdle()
+        assertEquals(listOf(true), events)
+
+        compose.onNodeWithTag(VibeSpeakTestTag).performClick()
+        compose.waitForIdle()
+        assertEquals(listOf(true, false), events)
+    }
+
+    @Test
+    fun `the speech overlay yields while a tool sheet is open`() {
+        compose.setContent {
+            EditorScreen(
+                preview = testImage(),
+                selectedTool = Tool.Direct,
+                onToolClick = {},
+                canUndo = false,
+                canRedo = false,
+                canCompare = false,
+                onBack = {},
+                onUndo = {},
+                onRedo = {},
+                onCompareChange = {},
+                onExport = {},
+                initialToolsRevealed = false,
+                sheet = {
+                    Box(
+                        modifier = Modifier
+                            .testTag(fakeSheetTag)
+                            .fillMaxWidth()
+                            .height(fakeSheetHeight),
+                    )
+                },
+            )
+        }
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(fakeSheetTag).assertExists()
+        compose.onNodeWithTag(VibePromptTestTag).assertDoesNotExist()
+    }
+
+    @Test
+    fun `a finished utterance returns the speak control to speak`() {
+        var speech by mutableStateOf<SpeechState>(SpeechState.Listening("나무"))
+        compose.setContent {
+            EditorScreen(
+                preview = testImage(),
+                selectedTool = null,
+                onToolClick = {},
+                canUndo = false,
+                canRedo = false,
+                canCompare = false,
+                onBack = {},
+                onUndo = {},
+                onRedo = {},
+                onCompareChange = {},
+                onExport = {},
+                initialToolsRevealed = false,
+                speechState = speech,
+            )
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText(
+            androidx.test.core.app.ApplicationProvider
+                .getApplicationContext<android.content.Context>()
+                .getString(R.string.vibe_listening),
+        ).assertExists()
+
+        speech = SpeechState.Final("나무를 더 푸르게")
+        compose.waitForIdle()
+        compose.onNodeWithText(
+            androidx.test.core.app.ApplicationProvider
+                .getApplicationContext<android.content.Context>()
+                .getString(R.string.vibe_speak),
+        ).assertExists()
+    }
+
+    @Test
+    fun `the vibe overlay shows the direct planner transcript`() {
+        compose.setContent {
+            EditorScreen(
+                preview = testImage(),
+                selectedTool = null,
+                onToolClick = {},
+                canUndo = false,
+                canRedo = false,
+                canCompare = false,
+                onBack = {},
+                onUndo = {},
+                onRedo = {},
+                onCompareChange = {},
+                onExport = {},
+                initialToolsRevealed = false,
+                vibeTranscript = "나무를 더 푸르게",
+            )
+        }
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(VibeTranscriptTestTag).assertExists()
+        compose.onNodeWithText("나무를 더 푸르게").assertExists()
+    }
+
+    @Test
+    fun `planner status replaces the transcript on the vibe overlay`() {
+        compose.setContent {
+            EditorScreen(
+                preview = testImage(),
+                selectedTool = null,
+                onToolClick = {},
+                canUndo = false,
+                canRedo = false,
+                canCompare = false,
+                onBack = {},
+                onUndo = {},
+                onRedo = {},
+                onCompareChange = {},
+                onExport = {},
+                initialToolsRevealed = false,
+                vibeTranscript = "나무를 더 푸르게",
+                vibeStatus = "뭐을 할지 생각하는 중",
+            )
+        }
+        compose.waitForIdle()
+
+        compose.onNodeWithText("뭐을 할지 생각하는 중").assertExists()
+        compose.onNodeWithText("나무를 더 푸르게").assertDoesNotExist()
     }
 
     @Test
@@ -101,6 +268,7 @@ class EditorShellTest {
                 onCompareChange = {},
                 onExport = {},
                 toolLevel = ToolLevelState(ToolGroup.Ai),
+                initialToolsRevealed = true,
             )
         }
         compose.waitForIdle()
@@ -112,8 +280,6 @@ class EditorShellTest {
     private fun assertToolsReachable(level: ToolGroup) {
         compose.onNodeWithTag(ToolStripTestTag).assertExists()
         stripItems(level).filterIsInstance<StripItem.OfTool>().map { it.tool }.forEach { tool ->
-            // The strip is a LazyRow (DESIGN.md §4: horizontally scrollable), so a tool past the
-            // viewport is only composed once scrolled to.
             compose.onNodeWithTag(ToolStripTestTag)
                 .performScrollToNode(hasTestTag(labelOf(tool)))
             compose.onNodeWithTag(labelOf(tool)).assertExists()
@@ -184,7 +350,6 @@ class EditorShellTest {
                         onBack = {}, onUndo = {}, onRedo = {}, onReset = {},
                         onCompareChange = {}, onExport = {},
                     )
-                    // The same pill with nothing competing for the row: its natural width.
                     PrimaryPill(
                         text = labelOf(R.string.editor_export),
                         onClick = {},
@@ -222,6 +387,7 @@ class EditorShellTest {
                 onToolClick = {},
                 canUndo = false, canRedo = false, canCompare = false,
                 onBack = {}, onUndo = {}, onRedo = {}, onCompareChange = {}, onExport = {},
+                initialToolsRevealed = true,
                 sheet = {
                     if (open()) {
                         Box(

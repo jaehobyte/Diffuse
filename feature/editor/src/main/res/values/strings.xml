@@ -9,6 +9,11 @@
 
     <string name="editor_canvas_edited">편집한 사진</string>
     <string name="editor_canvas_source">원본 사진</string>
+    <string name="vibe_speak">말하기</string>
+    <string name="vibe_listening">듣는 중</string>
+    <string name="vibe_prompt_hint">말로 편집하기</string>
+    <string name="vibe_show_tools">도구</string>
+    <string name="vibe_hide_tools">도구 숨기기</string>
 
     <string name="editor_tool_light">라이트</string>
     <string name="editor_tool_color">색상</string>
@@ -232,7 +237,7 @@
     <string name="style_variant_faded_matte_1">웜 매트</string>
     <string name="style_variant_faded_matte_2">쿨 매트</string>
     <string name="style_variant_faded_matte_3">IN 매트 룩</string>
-    <string name="style_variant_cinematic_teal_1">딥 틸&amp;오렌지</string>
+    <string name="style_variant_cinematic_teal_1">딥 틸\u0026오렌지</string>
     <string name="style_variant_cinematic_teal_2">블리치 바이패스</string>
     <string name="style_variant_cinematic_teal_3">네오 누아르</string>
     <string name="style_variant_cinematic_teal_4">그린 디스토피아</string>

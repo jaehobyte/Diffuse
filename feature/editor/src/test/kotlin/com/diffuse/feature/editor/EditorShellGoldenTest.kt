@@ -44,6 +44,8 @@ class EditorShellGoldenTest {
                 onCompareChange = {},
                 onExport = {},
                 toolLevel = ToolLevelState(level),
+                // Classic shell goldens stay recorded. The vibe shell is covered by EditorShellTest.
+                initialToolsRevealed = true,
             )
         }
         compose.waitForIdle()
