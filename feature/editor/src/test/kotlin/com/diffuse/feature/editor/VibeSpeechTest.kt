@@ -29,9 +29,9 @@ class VibeSpeechTest {
     @Test
     fun `planner status wins over the transcript on the overlay`() {
         assertEquals(
-            "무엇을 할지 생각하는 중",
+            "뭐을 할지 생각하는 중",
             vibeOverlayLine(
-                status = "무엇을 할지 생각하는 중",
+                status = "뭐을 할지 생각하는 중",
                 transcript = "나무를 더 푸르게",
                 hint = "말로 편집하기",
             ),
@@ -55,7 +55,6 @@ class VibeSpeechTest {
         assertFalse(vibeChromeVisible(sheetOpen = true))
         assertTrue(vibeChromeVisible(sheetOpen = false))
     }
-}
 
     @Test
     fun `a finished utterance returns the speak control to idle`() {
@@ -73,4 +72,4 @@ class VibeSpeechTest {
         assertTrue(vibeListeningAfterSpeech(localListening = false, speech = SpeechState.Listening("나")))
         assertTrue(vibeListeningAfterSpeech(localListening = true, speech = SpeechState.Idle))
     }
-
+}
