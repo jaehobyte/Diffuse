@@ -87,6 +87,30 @@ class VibeSpeechTest {
     }
 
     @Test
+    fun `a recogniser failure uses the sheet copy and beats the stored request`() {
+        val failure = "음성을 알아듣지 못했어요"
+        assertEquals(failure, vibeHeardLine(SpeechState.Failed(AppError.Unavailable), failure))
+        assertEquals(
+            failure,
+            vibeOverlayLine(
+                status = "",
+                transcript = "이전 지시",
+                hint = "말로 편집하기",
+                partial = vibeHeardLine(SpeechState.Failed(AppError.Unavailable), failure),
+            ),
+        )
+        assertEquals(
+            "생각하는 중",
+            vibeOverlayLine(
+                status = "생각하는 중",
+                transcript = "이전 지시",
+                hint = "말로 편집하기",
+                partial = vibeHeardLine(SpeechState.Failed(AppError.Unavailable), failure),
+            ),
+        )
+    }
+
+    @Test
     fun `the speech overlay yields while the direct sheet is open`() {
         assertFalse(vibeChromeVisible(sheetOpen = true))
         assertTrue(vibeChromeVisible(sheetOpen = false))
