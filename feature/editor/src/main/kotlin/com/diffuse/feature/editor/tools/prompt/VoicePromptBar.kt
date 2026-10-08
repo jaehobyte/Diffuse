@@ -40,6 +40,12 @@ fun VoicePromptBar(
     placeholder: String = stringResource(CoreUiR.string.prompt_placeholder),
     enabled: Boolean = true,
     onMessage: (Int) -> Unit = {},
+    /**
+     * Vibe speak arms this bar instead of starting recognition itself.
+     * The same permission and submit path as a mic tap. Consumed once.
+     */
+    armMic: Boolean = false,
+    onArmConsumed: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val speechState by speech.state.collectAsState()
@@ -71,6 +77,16 @@ fun VoicePromptBar(
     SpeechResults(speech, onValueChange, onSubmit, onMessage)
 
     val listening = speechState is SpeechState.Listening
+    LaunchedEffect(armMic) {
+        if (!armMic) return@LaunchedEffect
+        when {
+            !speech.isAvailable || hideMic -> onMessage(R.string.prompt_mic_permission)
+            listening -> Unit
+            granted -> speech.start()
+            else -> launcher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+        onArmConsumed()
+    }
     PromptBar(
         value = value,
         onValueChange = onValueChange,

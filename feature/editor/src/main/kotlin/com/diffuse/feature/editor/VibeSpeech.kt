@@ -4,8 +4,10 @@ import com.diffuse.core.ai.speech.SpeechState
 
 /**
  * What the vibe speak control should do with the existing direct planner.
- * Listening opens 지시 and starts the recogniser the sheet already consumes.
- * Stopping only ends recognition; the sheet stays so a partial can still be sent.
+ * Listening opens 지시 and arms the mic on the sheet's VoicePromptBar.
+ * That bar already asks for permission and submits a final utterance.
+ * Speak does not start recognition itself. Stopping only ends recognition;
+ * the sheet stays so a partial can still be sent.
  */
 data class VibeSpeechCommand(
     val openDirect: Boolean,
@@ -19,6 +21,13 @@ fun vibeSpeechCommand(listening: Boolean): VibeSpeechCommand =
     } else {
         VibeSpeechCommand(openDirect = false, startSpeech = false, stopSpeech = true)
     }
+
+/**
+ * [VibeSpeechCommand.startSpeech] arms the direct sheet's mic. The recogniser
+ * starts inside VoicePromptBar so permission and submit stay one path.
+ */
+fun vibeSpeechArmsSheetMic(listening: Boolean): Boolean =
+    vibeSpeechCommand(listening).startSpeech && vibeSpeechCommand(listening).openDirect
 
 /**
  * One line on the speech overlay. Planner status (planning, running, not understood,

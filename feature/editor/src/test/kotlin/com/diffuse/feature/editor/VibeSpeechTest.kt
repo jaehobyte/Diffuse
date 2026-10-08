@@ -27,6 +27,12 @@ class VibeSpeechTest {
     }
 
     @Test
+    fun `speak arms the sheet mic instead of starting recognition itself`() {
+        assertTrue(vibeSpeechArmsSheetMic(listening = true))
+        assertFalse(vibeSpeechArmsSheetMic(listening = false))
+    }
+
+    @Test
     fun `planner status wins over the transcript on the overlay`() {
         assertEquals(
             "뭐을 할지 생각하는 중",
