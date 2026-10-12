@@ -183,7 +183,6 @@ private fun EditorBody(
             disabledTools = disabledTools,
             level = toolLevel.level,
             onLevelChange = toolLevel.onChange,
-            profile = toolLevel.profile,
             modifier = Modifier.navigationBarsPadding().onSizeChanged { onToolStripHeight(it.height) },
         )
     }

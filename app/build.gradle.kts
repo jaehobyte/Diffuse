@@ -19,6 +19,10 @@ android {
             versionNameSuffix = "-local"
         }
     }
+
+    // The back-priority test drives the real editor route, so it builds an EditorViewModel
+    // over the shared AI fakes (specs/ai_provider.md §6).
+    sourceSets.getByName("test").java.srcDir(rootProject.file("core/ai/src/testShared/kotlin"))
 }
 
 dependencies {
@@ -41,5 +45,6 @@ dependencies {
 
 dependencies {
     testImplementation(libs.hilt.android.testing)
+    testImplementation(projects.core.ai)
     kspTest(libs.hilt.compiler)
 }

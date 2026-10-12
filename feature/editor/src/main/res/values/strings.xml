@@ -15,8 +15,6 @@
     <string name="editor_tool_mix">혼합</string>
     <string name="editor_tool_crop">자르기</string>
     <string name="editor_tool_detail">디테일</string>
-    <!-- specs/skin_retouch.md §2: shown only on a portrait, in 디테일's place -->
-    <string name="editor_tool_skin_retouch">피부 보정</string>
     <string name="editor_tool_select">선택</string>
     <string name="editor_tool_erase">지우기</string>
     <string name="editor_tool_fill">채우기</string>
@@ -197,45 +195,6 @@
     <string name="crop_straighten">수평</string>
     <string name="crop_rotate_left">왼쪽으로 90도 회전</string>
     <string name="crop_rotate_right">오른쪽으로 90도 회전</string>
-
-    <!-- specs/skin_retouch.md §1, §4 -->
-    <string name="skin_retouch_title">피부 보정</string>
-    <string name="skin_retouch_location">선택한 얼굴 부분만 미리보기를 누를 때 보정 서버(%1$s)로 보내 처리해요</string>
-    <string name="skin_retouch_checking">피부 보정 서버를 확인하는 중이에요</string>
-    <string name="skin_retouch_server_ready">피부 보정 서버에 연결됐어요</string>
-    <string name="skin_retouch_needs_server">설정에서 피부 보정 서버 주소를 입력해주세요</string>
-    <string name="skin_retouch_invalid_address">피부 보정 서버 주소를 확인해주세요</string>
-    <string name="skin_retouch_unauthorized">피부 보정 토큰이 맞지 않아요. 서버 설정에서 확인해주세요</string>
-    <string name="skin_retouch_not_ready">피부 보정 서버가 준비 중이에요. 잠시 후 다시 시도해주세요</string>
-    <string name="skin_retouch_unreachable">피부 보정 서버에 연결하지 못했어요</string>
-    <string name="skin_retouch_timeout">피부 보정 서버의 응답이 늦어요. 다시 시도해주세요</string>
-    <string name="skin_retouch_too_large">얼굴 영역이 너무 커서 보낼 수 없어요</string>
-    <string name="skin_retouch_recheck">다시 확인</string>
-    <string name="skin_retouch_settings">서버 설정</string>
-    <string name="skin_retouch_analyzing">얼굴을 찾는 중이에요</string>
-    <string name="skin_retouch_no_face">보정할 얼굴을 찾지 못했어요</string>
-    <string name="skin_retouch_analysis_failed">얼굴 분석을 준비하지 못했어요</string>
-    <string name="skin_retouch_retry">다시 시도</string>
-    <string name="skin_retouch_face">얼굴 %1$d</string>
-    <string name="skin_retouch_face_too_small">얼굴이 작아요</string>
-    <string name="skin_retouch_extreme_angle">얼굴 각도가 커요</string>
-    <string name="skin_retouch_missing_regions">가려진 부분이 있어요</string>
-    <string name="skin_retouch_preview">미리보기</string>
-    <string name="skin_retouch_needs_preview">미리보기를 눌러 보정을 준비해주세요</string>
-    <string name="skin_retouch_local_strength">강도는 기기에서 바로 조절돼요</string>
-    <string name="skin_retouch_working">피부를 보정하는 중</string>
-    <string name="skin_retouch_applying">보정 결과를 저장하는 중</string>
-    <string name="skin_retouch_no_change">보정할 부분을 찾지 못했어요</string>
-    <string name="skin_retouch_failed">피부 보정에 실패했어요. 다시 시도해주세요</string>
-    <string name="skin_retouch_save_failed">보정 결과를 저장하지 못했어요. 다시 시도해주세요</string>
-    <string name="skin_retouch_export_blocked">피부 보정을 적용하거나 취소한 뒤 내보낼 수 있어요</string>
-    <string name="retouch_settings_base_url">피부 보정 서버 주소</string>
-    <string name="retouch_settings_token">피부 보정 토큰</string>
-    <string name="skin_retouch_unsupported">미지원</string>
-    <string name="skin_retouch_blemish">잡티·여드름 제거</string>
-    <string name="skin_retouch_shine">유분광 제거</string>
-    <string name="skin_retouch_dark_circles">다크서클 완화</string>
-    <string name="skin_retouch_shaving_shadow">면도자국 완화</string>
 
     <string name="detail_title">디테일</string>
     <string name="detail_sharpen">선명도</string>

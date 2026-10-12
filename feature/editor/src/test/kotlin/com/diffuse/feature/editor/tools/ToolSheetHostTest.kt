@@ -106,7 +106,7 @@ class ToolSheetHostTest {
         mixKinds(HslBand.Red).forEach { compose.onNodeWithTag(adjustSliderTag(it)).assertExists() }
     }
 
-    /** 디테일 is untouched by 피부 보정 taking its place in the portrait menu (skin_retouch.md §2). */
+    /** work/decisions.md D092: 디테일 is a root tool for every photograph. */
     @Test
     fun `tapping 디테일 opens the detail sheet with its two sliders`() {
         showEditor()

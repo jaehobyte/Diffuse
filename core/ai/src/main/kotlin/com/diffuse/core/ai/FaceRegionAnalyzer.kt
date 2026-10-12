@@ -70,12 +70,8 @@ data class FaceDetail(
 )
 
 /**
- * specs/skin_retouch_pipeline.md §1, §3. Face geometry for retouching, deliberately separate from
- * [PortraitDetector].
- *
- * The detector answers a menu question about the source photo with a box count; this answers a
- * pixel question about the document being edited, in canonical coordinates, with contours. Sharing
- * one interface would let a menu hint decide what may be corrected, which §1 forbids.
+ * specs/skin_retouch_pipeline.md §1, §3. Face geometry for retouching: a pixel question about the
+ * document being edited, in canonical coordinates, with contours.
  *
  * Two calls rather than one because ML Kit only returns contours for the most prominent face: the
  * whole canvas gives boxes, and the selected face's ROI — where it *is* the prominent face — gives

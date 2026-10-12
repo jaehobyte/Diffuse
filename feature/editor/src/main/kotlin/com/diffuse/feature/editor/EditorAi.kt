@@ -6,11 +6,7 @@ import com.diffuse.core.ai.EraseProvider
 import com.diffuse.core.ai.FillProvider
 import com.diffuse.core.ai.MatchStyleProvider
 import com.diffuse.core.ai.OutpaintProvider
-import com.diffuse.core.ai.FaceRegionAnalyzer
-import com.diffuse.core.ai.PortraitDetector
 import com.diffuse.core.ai.PromptSuggestionProvider
-import com.diffuse.core.ai.SkinRetouchProvider
-import com.diffuse.core.ai.retouch.server.RetouchServerSettings
 import com.diffuse.core.ai.SegmentationProvider
 import com.diffuse.core.ai.gemini.GeminiSettings
 import com.diffuse.core.ai.monet.MonetSettings
@@ -40,12 +36,6 @@ class EditorAi @Inject constructor(
     val monetSettings: MonetSettings,
     val autoEnhance: AutoEnhanceProvider,
     val matchStyle: MatchStyleProvider,
-    /** work/decisions.md T79: not a tool's provider — the signal the tool *menu* is built on. */
-    val portrait: PortraitDetector,
-    /** specs/skin_retouch_pipeline.md §1, §8: 피부 보정's engine, face geometry and server fields. */
-    val skinRetouch: SkinRetouchProvider,
-    val faceRegions: FaceRegionAnalyzer,
-    val retouchServerSettings: RetouchServerSettings,
     /** specs/vibe_edit.md §14: 지시's read-only sentence suggestions. */
     val promptSuggestion: PromptSuggestionProvider,
 )

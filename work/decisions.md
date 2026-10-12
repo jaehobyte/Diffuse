@@ -8,6 +8,43 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+## D092 - One tool menu for every photograph; 피부 보정 is no longer offered as a new edit
+
+Status: Accepted (2026-10-12, work/tasks.md 피부 보정·face detect 메뉴 분기 제거). Supersedes T79's
+portrait profile and specs/skin_retouch.md §2–§5 for the app. T79, D080, D083 and D084 stay as the
+record of what was decided then.
+
+Decision:
+Every photograph gets specs/tool_groups.md §2's two lists in enum order — root 라이트 · 색상 · 혼합 ·
+자르기 · 디테일 · AI; AI ← · 선택 · 지우기 · 채우기 · 확대 · 스타일 · 자동 · 멀티샷 · 지시.
+`ToolMenuProfile`, `menuProfileFor`, `EditorUiState.portrait`, `PortraitDetector` (and its ML Kit
+implementation, fake and binding) and the manifest's face-model pre-download are removed; nothing
+analyses faces on entry. `renderSource()` still renders the bare source for compare and 확대.
+`Tool.SkinRetouch`, `tools/retouch`, the skin draft/busy/message/cancel/apply/export-block wiring
+and the 서버 설정 sheet's retouch address/token are removed. `EditorAi` no longer carries
+`SkinRetouchProvider`, `FaceRegionAnalyzer` or `RetouchServerSettings`, and `AiModule` no longer
+binds them or provides `RetouchServerClient`, so no retouch health/capability/correction request
+can be made by the app. Stored retouch settings are left in preferences untouched (no migration).
+
+Kept for saved projects (the app runs this): `Operation.SkinRetouch`, its JSON codec, renderer,
+result/support files and the repository's copy/delete/cleanup rules — an existing project opens,
+renders, saves after other edits and exports the same pixels; undo/redo/reset are unchanged.
+Kept but not run by the app: `core:ai`'s retouch engine/client/geometry code and tests
+(`MlKitFaceRegionAnalyzer`, `RetouchServerSkinRetouchProvider`, `RetouchServerClient`,
+`SkinAllowedMask`, ONNX debug detector), `ProjectRepository.saveSkinRetouch/discardSkinRetouch`,
+and `server/retouch`. The ML Kit face dependency stays because `MlKitFaceRegionAnalyzer` still
+compiles against it.
+
+Reason:
+User request (2026-10-12): remove 피부 보정 and the face-detection menu branch. A menu that changes
+with a background detector is harder to learn than one fixed order, and the retouch quality gate
+(D084) has not been passed, so offering it as a new edit is withdrawn. Deleting saved operations
+would destroy users' finished work, so compatibility is the boundary.
+
+Consequences:
+디테일 is always on the root and 자동 always at the AI level. Bringing 피부 보정 back is a new
+decision: a new tool entry, sheet and DI wiring over the kept engine code, and its own quality gate.
+
 ## D091 - 지시 sentence suggestions: read-only, explicit, catalog ids only, input only
 
 Status: Accepted (2026-10-07, work/tasks.md 사진 맞춤 추천 문장 넛지). specs/vibe_edit.md §14.

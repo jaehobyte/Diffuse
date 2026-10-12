@@ -15,6 +15,7 @@ import com.diffuse.core.data.file.ProjectFiles
 import com.diffuse.core.imaging.load.ImageLoader
 import com.diffuse.core.imaging.load.MaskIo
 import com.diffuse.core.imaging.load.SourceImage
+import com.diffuse.core.imaging.model.AdjustKind
 import com.diffuse.core.imaging.model.EditDocumentJson
 import com.diffuse.core.imaging.model.RetouchKind
 import com.diffuse.core.imaging.model.SkinRetouchSettings
@@ -195,6 +196,31 @@ class SkinRetouchPersistenceTest {
         }
     }
 
+    /**
+     * work/decisions.md D092: the app no longer makes a retouch, but a project that has one keeps
+     * it. A later edit saved over it leaves the op, its files and its pixels where they were.
+     */
+    @Test
+    fun `a later edit saved over a retouch keeps its op, files and pixels after reopening`() = runTest {
+        val repository = repository()
+        val id = repository.create(sourceImage()).value()
+        val renderer = renderer()
+        val saved = commitRetouch(repository, id)
+        val retouched = repository.load(id).value()
+
+        val edited = retouched.withAdjust(AdjustKind.Exposure, EXPOSURE)
+        repository.save(edited).value()
+        val reopened = repository.load(id).value()
+
+        assertEquals(retouched.skinRetouches(), reopened.skinRetouches())
+        assertEquals(retouched.mask("s"), reopened.mask("s"))
+        assertTrue(File(saved.resultRef.path).isFile)
+        assertTrue(File(saved.maskRef.path).isFile)
+        val expected = (renderer.full(edited) as Result.Success).value
+        val output = (renderer.full(reopened) as Result.Success).value
+        assertTrue(expected.sameAs(output))
+    }
+
     // ---- fixtures --------------------------------------------------------
 
     private suspend fun commitRetouch(repository: DefaultProjectRepository, id: String): SkinRetouchFiles {
@@ -272,5 +298,6 @@ class SkinRetouchPersistenceTest {
         const val WIDTH = 120
         const val HEIGHT = 90
         val FILL = Color.rgb(20, 160, 90)
+        const val EXPOSURE = 0.3f
     }
 }

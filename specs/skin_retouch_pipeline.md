@@ -1,6 +1,6 @@
 # 피부 보정 처리 계약
 
-Status: 서버 경로 구현(D083, §8.1). Provider `RetouchServerSkinRetouchProvider`; 품질 gate는 미통과.
+Status: 앱 신규 실행 제거(2026-10-12, D092). **현재 앱이 실행하는 부분은 §6 저장 호환(기존 `Operation.SkinRetouch` 디코드·렌더·저장·복제·삭제)뿐이다.** §1–§5, §7, §8의 Provider·얼굴 기하·세션·서버 연결은 앱 DI/편집기에서 분리됐고 코드·테스트는 참조 구현으로만 남는다. 서버(`server/retouch/`)와 §8.1 wire 계약은 보존한다. 이전 상태: 서버 경로 구현(D083, §8.1), 품질 gate 미통과.
 Related: [product](skin_retouch.md), [validation](skin_retouch_validation.md)
 
 ## 1. 경계와 엔진 선정

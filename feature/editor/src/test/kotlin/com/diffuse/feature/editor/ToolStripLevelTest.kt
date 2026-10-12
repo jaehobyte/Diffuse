@@ -2,9 +2,12 @@ package com.diffuse.feature.editor
 
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
 import com.diffuse.core.ui.theme.AppTheme
@@ -34,20 +37,23 @@ class ToolStripLevelTest {
 
     // ---- the lists, without a screenshot ---------------------------------
 
-    /**
-     * §7, for the profile these tests bind — the general one. 피부 보정 is the single tool it
-     * leaves out (specs/skin_retouch.md §2); which profile shows it, and that the two profiles
-     * together show everything, is `PortraitToolMenuTest`'s.
-     */
+    /** §7: and work/decisions.md D092 — one menu for every photograph, so every tool, once. */
     @Test
-    fun `every general tool appears at exactly one level`() {
+    fun `every tool appears at exactly one level`() {
         val shown = ToolGroup.entries.flatMap { stripItems(it) }
             .filterIsInstance<StripItem.OfTool>()
             .map { it.tool }
-        val general = Tool.entries - Tool.SkinRetouch
 
-        assertEquals(general.size, shown.size)
-        assertEquals(general.toSet(), shown.toSet())
+        assertEquals(Tool.entries.size, shown.size)
+        assertEquals(Tool.entries.toSet(), shown.toSet())
+    }
+
+    /** D092: 디테일 is a root tool for every photograph. */
+    @Test
+    fun `the root level holds the adjust tools in order`() {
+        val root = stripItems(ToolGroup.Root).filterIsInstance<StripItem.OfTool>().map { it.tool }
+
+        assertEquals(listOf(Tool.Light, Tool.Color, Tool.Mix, Tool.Crop, Tool.Detail), root)
     }
 
     @Test
@@ -83,8 +89,11 @@ class ToolStripLevelTest {
         compose.onNodeWithText("라이트").assertExists()
         compose.onNodeWithText("자르기").assertExists()
         compose.onNodeWithText("AI").assertExists()
+        compose.onNodeWithText("디테일").assertExists()
         compose.onNodeWithText("지우기").assertDoesNotExist()
+        compose.onNodeWithText("자동").assertDoesNotExist()
         compose.onNodeWithText("뒤로").assertDoesNotExist()
+        compose.onNodeWithText("피부 보정").assertDoesNotExist()
     }
 
     /** §4: tapping AI is navigation, not a tool — it selects nothing. */
@@ -106,7 +115,20 @@ class ToolStripLevelTest {
         compose.onNodeWithText("지우기").assertExists()
         compose.onNodeWithText("확대").assertExists()
         compose.onNodeWithText("라이트").assertDoesNotExist()
+        compose.onNodeWithText("디테일").assertDoesNotExist()
         compose.onNodeWithText("AI").assertDoesNotExist()
+        compose.onNodeWithText("피부 보정").assertDoesNotExist()
+    }
+
+    /** D092: 자동, 멀티샷 and 지시 are reached at the AI level, past the lazy strip's first screen. */
+    @Test
+    fun `the AI level reaches 자동, 멀티샷 and 지시`() {
+        show(ToolGroup.Ai)
+
+        listOf("자동", "멀티샷", "지시").forEach { label ->
+            compose.onNodeWithTag(ToolStripTestTag).performScrollToNode(hasText(label))
+            compose.onNodeWithText(label).assertExists()
+        }
     }
 
     @Test
@@ -187,7 +209,6 @@ class ToolStripLevelTest {
         Tool.Mix -> "혼합"
         Tool.Crop -> "자르기"
         Tool.Detail -> "디테일"
-        Tool.SkinRetouch -> "피부 보정"
         Tool.Select -> "선택"
         Tool.Erase -> "지우기"
         Tool.Fill -> "채우기"

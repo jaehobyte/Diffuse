@@ -12,7 +12,6 @@ import com.diffuse.core.ai.FakeFillProvider
 import com.diffuse.core.ai.FakeMatchStyleProvider
 import com.diffuse.core.ai.FakeOutpaintProvider
 import com.diffuse.core.ai.FakePlanProvider
-import com.diffuse.core.ai.FakePortraitDetector
 import com.diffuse.core.ai.FakeSegmentationProvider
 import com.diffuse.core.ai.gemini.GeminiSettings
 import com.diffuse.core.ai.monet.MonetSettings
@@ -316,12 +315,6 @@ class GenerativeEraseToolTest {
             monetSettings,
             FakeAutoEnhanceProvider(),
             FakeMatchStyleProvider(),
-            FakePortraitDetector(),
-            com.diffuse.core.ai.FakeSkinRetouchProvider(),
-            com.diffuse.core.ai.FakeFaceRegionAnalyzer(),
-            com.diffuse.core.ai.retouch.server.RetouchServerSettings(
-                androidx.test.core.app.ApplicationProvider.getApplicationContext(),
-            ),
             com.diffuse.core.ai.FakePromptSuggestionProvider(),
         ),
         dispatchers = TestDispatchers,

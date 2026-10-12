@@ -83,7 +83,7 @@ fun DiffuseNavHost(
 }
 
 @Composable
-private fun EditorWithExport(
+internal fun EditorWithExport(
     viewModel: EditorViewModel,
     exporter: Exporter,
     settingsStore: ExportSettingsStore,
@@ -119,6 +119,14 @@ private fun EditorWithExport(
         }
     }
 
+    // specs/tool_groups.md §4: registered before `EditorRoute`, so the route's handler — which
+    // closes the AI level — wins while that level is open. Back callbacks run last-added first.
+    fun leave() = scope.launch {
+        viewModel.onLeave()
+        onBack()
+    }
+    BackHandler(enabled = true) { leave() }
+
     Box(modifier = Modifier.fillMaxSize()) {
         EditorRoute(
             onBack = onBack,
@@ -126,6 +134,7 @@ private fun EditorWithExport(
                 settings = settings.autoFormatFor(state.document?.hasAlpha == true)
                 sheetOpen = true
             },
+            viewModel = viewModel,
         )
         if (sheetOpen) {
             ExportSheetSlot(
@@ -142,15 +151,15 @@ private fun EditorWithExport(
     }
 
     // specs/editor_shell.md: back with an export running is a destructive confirmation.
-    BackHandler(enabled = true) {
-        when (backAction(exportJob != null, sheetOpen, state.selectedTool != null)) {
+    // Registered after `EditorRoute`, so it outranks the route's tool-level handler; it stands
+    // aside for `LeaveEditor`, which the handler above takes once the level is back at the root.
+    val action = backAction(exportJob != null, sheetOpen, state.selectedTool != null)
+    BackHandler(enabled = action != BackAction.LeaveEditor) {
+        when (action) {
             BackAction.ConfirmAbortExport -> confirmAbort = true
             BackAction.CloseExportSheet -> sheetOpen = false
             BackAction.CancelTool -> viewModel.cancelSheet()
-            BackAction.LeaveEditor -> scope.launch {
-                viewModel.onLeave()
-                onBack()
-            }
+            BackAction.LeaveEditor -> Unit
         }
     }
 
@@ -160,10 +169,7 @@ private fun EditorWithExport(
                 exportJob?.cancel()
                 exportJob = null
                 confirmAbort = false
-                scope.launch {
-                    viewModel.onLeave()
-                    onBack()
-                }
+                leave()
             },
             onDismiss = { confirmAbort = false },
         )

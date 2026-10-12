@@ -4,6 +4,135 @@
 
 CHANGES_REQUESTED
 
+2026-10-12 Codex 독립 리뷰 — 현재 `work/tasks.md`의 **피부 보정·얼굴 감지 메뉴 분기 제거**.
+최신 APK를 AWS `127.0.0.1:15039`의 실제 SM-S948U에 설치해 검증했다.
+삭제 범위·고정 메뉴·저장 보정 호환성에서는 차단 결함을 발견하지 못했다.
+다만 요구 8의 시스템 Back → Root 복귀가 실제 앱에서 동작하지 않아 R1 수정을 요청한다.
+**R1의 충돌 코드는 HEAD에도 존재한다. 이번 삭제 diff가 만든 회귀라는 판정은 아니며,
+현재 작업의 명시적 메뉴 탐색 검증 조건을 충족하지 못한 것으로 구분한다.**
+
+## Blocking
+
+### R1 시스템 Back이 AI 메뉴를 닫지 않고 편집기를 나감
+
+Location:
+`app/src/main/kotlin/com/diffuse/navigation/DiffuseNavHost.kt:145`
+관련: `feature/editor/src/main/kotlin/com/diffuse/feature/editor/EditorRoute.kt:78`
+
+Problem:
+시트 없이 AI 메뉴가 열린 상태에서 시스템 Back(`adb shell input keyevent 4`)을 한 번 누르면
+Root 메뉴 대신 프로젝트 목록으로 이동한다. 비인물 및 저장 보정 fixture에서 두 번 재현했다.
+`EditorRoute`에는 메뉴 복귀 BackHandler가 있지만, 뒤에 구성되는 `EditorWithExport`의
+항상 활성인 BackHandler가 메뉴 레벨을 모르는 `backAction`으로 `LeaveEditor`를 실행한다.
+AI 행의 명시적 ‘뒤로’ 버튼은 Root로 정상 복귀한다.
+
+Impact:
+사용자가 AI 메뉴만 닫으려다 편집 화면을 이탈한다.
+`work/tasks.md` 요구 8 및 `specs/tool_groups.md` §4의 시스템 Back 계약 불충족.
+저장 데이터 손실은 이번 검증에서 발견하지 않았다.
+
+Required fix:
+실제 앱의 Back 우선순위를 조정해 export/도구 시트의 기존 취소·확인 동작을 보존하면서,
+시트가 없고 AI 메뉴가 열린 경우 첫 Back은 Root, 다음 Back은 편집기 이탈이 되게 한다.
+별도 메뉴 구현을 만들지 말고 현재 상태 소유권과 navigation 연결에서 해결한다.
+
+재현 증거: `/tmp/removal-device-review/back-repro-ai.xml` → `back-repro-after.xml`.
+명시적 버튼 성공 대조: `explicit-back-root.xml`.
+
+## Tests Missing
+
+### R2 실제 navigation wrapper를 포함한 Back 통합 회귀 검사
+
+도구 목록/단독 Compose 테스트만으로는 위 상위 BackHandler 충돌을 잡지 못한다.
+`EditorWithExport`와 `EditorRoute`를 함께 사용하는 조건에서 AI → 시스템 Back → Root 유지,
+다음 Back → Browse, 열린 도구/내보내기 시트의 취소 우선순위를 검증한다.
+이번 변경의 다른 자동 검사에서는 실패를 발견하지 못했다.
+
+## Non-blocking
+
+None. 이전 작업의 미완료 범위는 아래에 별도로 보존한다.
+
+## Validation Notes
+
+### 직접 실행한 검사 및 코드 검토
+
+- tasks/RESULT/기존 REVIEW, DESIGN, tool_groups·피부 보정 관련 명세와 D092,
+  실제 diff, EditorRoute/ViewModel/Tool/EditorAi, DI/manifest/설정, 메뉴·진입·영속성 테스트를 대조했다.
+- `./gradlew --offline --quiet :app:assembleDebug` → **exit 0**.
+- `scripts/check.sh` → **exit 0**. 증분·캐시 실행 포함. SDK XML 버전 경고는 있었으나 검사 실패는 없었다.
+- 최초 sandbox 실행은 `~/.gradle` lock 쓰기 제한으로 실패했다. 권한을 확보한 재실행이 위 성공 결과다.
+- `git diff --check` → **exit 0**.
+- 모델/JSON/renderer 및 core/data production 저장 경로에는 diff가 없다.
+  새 `EditorEntryTest`와 `SkinRetouchPersistenceTest`의 보정 연산·파일·픽셀 보존 assertion을 검토했다.
+- PortraitDetector/메뉴 프로필/controller/EditorAi·DI 연결과 manifest 얼굴 모델 metadata 제거를 확인했다.
+  얼굴 분석 및 retouch 네트워크 부재는 실행 경로 검토에 근거하며, 패킷 캡처로 0건을 측정한 것은 아니다.
+
+### 기기와 fixture
+
+- ADB `127.0.0.1:15039`, serial **R3CYA0AVYAP**, **SM-S948U**, Android **16**, 1440×3120.
+  이전 REVIEW의 다른 serial/해상도 결과와 구별한다.
+- 최신 debug APK `install -r` **Success**.
+  SHA-256: `23755ad9d802a0e73e0d5c048d9d9ef693afd62ec00759738bff3eb2ffefd4c8`.
+- 공개 NASA 초상 `jsc2011e017045.jpg`를 614×768로 축소한 인물 fixture,
+  저장소 `test/kodim23.png` 앵무새 fixture를 사용했다. 개인 사진은 편집/업로드하지 않았다.
+- 검증용 프로젝트: `review-removal-portrait`, `review-removal-parrots`, `review-removal-legacy`.
+  앱을 정지하고 debug run-as로 파일과 Room 목록을 준비했다. 기존 DB/WAL/SHM을 먼저
+  `/tmp/removal-device-review/index-original.db*`에 백업하고 기존 행은 유지했다.
+  따라서 Photo Picker 신규 가져오기 경로를 검증한 것으로 보고하지 않는다.
+- legacy는 저장 JSON 계약으로 만든 **합성 호환성 fixture**다. 인물 사진 위 101×101 녹색 표시를
+  baked result에 넣고 전체 support mask와 SkinRetouch 연산을 저장했다.
+  과거 서버가 만든 실제 보정 프로젝트나 피부 품질의 검증으로 간주하지 않는다.
+
+### 실기기 확인 결과
+
+| 항목 | 결과 |
+| --- | --- |
+| 인물/비인물 Root | 둘 다 라이트·색상·혼합·자르기·디테일·AI, 피부 보정 없음 |
+| 인물/비인물 AI | 가로 스크롤로 뒤로·선택·지우기·채우기·확대·스타일·자동·멀티샷·지시 확인 |
+| 디테일 | 인물에서 시트 진입/취소, legacy에서 선명도 변경·적용 후 Root 복귀 |
+| 자동 | AI에서 탭 → 서버 미설정 안내 및 설정 시트. 서버 호출/보정 결과 생성은 미실행 |
+| 서버 설정 | 상단부터 끝까지 SAM 주소/토큰, Gemini 키, 자동 보정 주소/토큰 확인. 피부 보정 필드 없음. 빈 설정 저장 disabled |
+| disabled-but-tappable | 선택 없는 지우기 탭 시 ‘먼저 영역을 선택해주세요’ 안내 |
+| AI 행 ‘뒤로’ | Root 복귀 성공 |
+| 시스템 Back | **실패 — R1** |
+| 저장 SkinRetouch 열기/최초 PNG | 성공. 실제 PNG 614×768 RGB를 기대 baked result와 비교해 모든 픽셀 일치 |
+| 추가 편집·Undo/Redo | 선명도 0.73212177 적용 후 0.3714447로 변경. 안정화 후 Undo=0.73212177, Redo=0.3714447 저장 JSON 확인 |
+| 프로세스 재시작 | force-stop/재실행/재열기 후 최종 operations가 Redo 저장 상태와 정확히 일치 |
+| 참조 파일 | result/support 존재 및 SkinRetouch 설정·참조 보존 확인 |
+
+- 실제 출력: `/sdcard/Pictures/Diffuse/IMG_20261012_194440.png` (635,855 bytes),
+  추가 선명도 0.73212177 적용 후 재시작·재열기에서 `IMG_20261012_194616.png`도 저장/회수/디코드했다.
+  두 번째 출력의 조정 후 모든 픽셀을 독립 renderer와 비교한 것은 아니다.
+- 최초 빠른 Undo/Redo 직후 JSON 읽기는 비동기 저장보다 빨라 이전 상태를 관찰했다.
+  해당 `legacy-undo.json`/`legacy-redo.json`은 통과 근거에서 제외하고 UI dump 후 저장 안정화된
+  `legacy-{undo,redo}-settled.json`과 최종 `legacy-final-reopen.json`으로 검증했다.
+- 증거: `/tmp/removal-device-review/`의 portrait/parrots 메뉴 XML, `portrait-root.png`,
+  `parrots-confirmed.png`, `legacy-open.png`, settings XML, `export-0.png`, `export-1.png`,
+  저장 JSON 및 `verification.txt`. 임시 파일이며 영구 평가 자료로 간주하지 않는다.
+- 검증용 프로젝트 3개와 PNG 2개는 기기에 남겼다. 마지막 화면은 legacy 편집기 Root다.
+  서버/키/네트워크 설정은 변경하지 않았다. 저장소는 **work/REVIEW.md만 작성**했으며 구현 수정·commit은 없다.
+
+### 미실행 및 이전 미해결 인계
+
+- TalkBack 실제 읽기, 큰 글자/회전, 강제 네트워크 차단, 12MP/PSS, 실제 과거 서버 보정 사진,
+  자동 보정 API 실행은 이번 검증에 포함하지 않는다.
+- 지시 추천 이전 R1(Loading 취소 표시)/R2(IME 버튼 가림)는 RESULT의 수정 보고와 별개로
+  수정 후 독립 실기기 재확인 미완료. 사진 6종·8문장·음성·오류 경로 미완료도 유지한다.
+- 서버 멀티샷 ASGI 취소 후 후속 추출/큰 정수 metadata 500, Jev, 전체 품질·offline·성능 검증은 별도 미완료다.
+- 피부 보정 D084 지원 종류 0개 및 서버 품질/lifecycle 평가 미완료는 그대로다.
+  제거된 앱 피부 보정 draft 검증은 기능 제거로 비적용이며 서버 문제 해소를 뜻하지 않는다.
+- 아래 이전 리뷰는 과거 증거/미해결 근거 보존용이다. 그 Status를 이번 판정으로 읽지 않는다.
+
+---
+
+# 이전 리뷰 기록 — 지시 추천 및 이전 작업
+
+# Review
+
+## Status
+
+CHANGES_REQUESTED
+
 2026-10-07 Codex 독립 확인. **지시 도구 사진 맞춤 추천 문장 넛지**의 R1·R2 수정이 필요하다.
 사용자 연결 복구 후 `127.0.0.1:15039`의 SM-S948U에 최신 APK 설치 및 실기기 smoke를 수행했다.
 실제 Gemini 추천·계획·노출 적용/Undo 정상 경로는 확인했지만, 추천 취소 표시 소실과 키보드 가림을 재현하여 승인하지 않는다.

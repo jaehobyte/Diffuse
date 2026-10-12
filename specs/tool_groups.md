@@ -24,6 +24,10 @@ rest      [라이트][색상][혼합][자르기][디테일][ AI ]
 AI open   [  ←  ][선택][지우기][채우기][확대][스타일][자동][멀티샷][지시]
 ```
 
+This is the only menu (work/decisions.md D092): every photograph gets these two lists in this order.
+Nothing — faces, a detector, a model's readiness or loading time — reorders or filters them. T79's
+portrait profile and skin_retouch.md §2's menu table are superseded.
+
 - **The strip's height, item size and scrolling are unchanged.** DESIGN.md §4's 72dp / 64dp / 24dp
   icon + `label` all still hold; what changes is which list is bound to it.
 - **One surface, so still one accent.** DESIGN.md §1 counts the strip as one surface and allows it

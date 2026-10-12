@@ -38,11 +38,11 @@ fun ToolSheetHost(
         Tool.Detail -> DetailSheet(
             document, onValueChange, onValueChangeFinished, onCancel, onApply, modifier, maskOption,
         )
-        // Crop, Select, Fill, Expand, Style, Auto, Direct, 피부 보정 and 멀티샷 carry their own state, so
-        // the route hosts them alongside the editor's. Erase has no sheet at all: tapping it runs
+        // Crop, Select, Fill, Expand, Style, Auto, Direct and 멀티샷 carry their own state, so the
+        // route hosts them alongside the editor's. Erase has no sheet at all: tapping it runs
         // (generative_erase.md §5), and 자동's sheet arrives only after its call does (§6).
         Tool.Crop, Tool.Select, Tool.Erase, Tool.Fill, Tool.Expand, Tool.Style, Tool.Auto,
-        Tool.Direct, Tool.SkinRetouch, Tool.MultiShot,
+        Tool.Direct, Tool.MultiShot,
         null,
         -> Unit
     }

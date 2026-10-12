@@ -33,7 +33,6 @@ import com.diffuse.feature.editor.R
 import com.diffuse.feature.editor.Tool
 import com.diffuse.feature.editor.ToolGroup
 import com.diffuse.feature.editor.ToolLevelState
-import com.diffuse.feature.editor.ToolMenuProfile
 import com.diffuse.feature.editor.ToolStripTestTag
 import com.diffuse.feature.editor.canvas.testImage
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
@@ -330,13 +329,8 @@ class MultiShotSheetTest {
     }
 
     @Test
-    fun `멀티샷 opens from the AI level of the general menu`() = opensFrom(ToolMenuProfile.General)
-
-    @Test
-    fun `멀티샷 opens from the AI level of the portrait menu`() = opensFrom(ToolMenuProfile.Portrait)
-
-    private fun opensFrom(profile: ToolMenuProfile) {
-        showEditor(profile)
+    fun `멀티샷 opens from the AI level`() {
+        showEditor()
         compose.onNodeWithTag(EditSheetTestTag).assertDoesNotExist()
 
         // The strip is lazy: bring the item in before tapping it, as a thumb would.
@@ -366,7 +360,7 @@ class MultiShotSheetTest {
         compose.waitForIdle()
     }
 
-    private fun showEditor(profile: ToolMenuProfile) {
+    private fun showEditor() {
         compose.setContent {
             var selected by remember { mutableStateOf<Tool?>(null) }
             EditorScreen(
@@ -381,7 +375,7 @@ class MultiShotSheetTest {
                 onRedo = {},
                 onCompareChange = {},
                 onExport = {},
-                toolLevel = ToolLevelState(level = ToolGroup.Ai, profile = profile),
+                toolLevel = ToolLevelState(level = ToolGroup.Ai),
                 sheet = { if (selected == Tool.MultiShot) MultiShotSheet(MultiShotState(open = true), actions()) },
             )
         }

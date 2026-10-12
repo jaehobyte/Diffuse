@@ -23,15 +23,6 @@
         android:theme="@style/Theme.Diffuse">
 
         <!--
-            work/decisions.md T79: asks Play to fetch the face model at install time, so the
-            portrait gate is usually ready on first launch. Not being ready is not an error —
-            the detector answers Unknown and the general menu stands.
-        -->
-        <meta-data
-            android:name="com.google.mlkit.vision.DEPENDENCIES"
-            android:value="face" />
-
-        <!--
             Edge-to-edge: the keyboard arrives as an inset the editor sheet pads for, instead of
             the window panning and leaving the pinned [취소 | 적용] row behind the keyboard.
         -->

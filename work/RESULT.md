@@ -1,5 +1,113 @@
 # Result
 
+## REVIEW 수정 패스 — R1 시스템 Back / R2 통합 회귀 검사 (2026-10-12)
+
+### Status
+
+DONE — 자동 검사 통과. 실기기 Back 재확인은 미실행.
+
+### Changed
+
+- R1: `EditorWithExport`의 단일 BackHandler를 등록 순서로 둘로 분리. 편집기 이탈 handler는 `EditorRoute` **이전**에 등록(최저 우선순위),
+  내보내기 진행/시트·도구 시트 handler는 **이후**에 등록하고 `backAction != LeaveEditor`일 때만 활성. 결과 우선순위:
+  내보내기 중단 확인 > 내보내기 시트 닫기 > 도구 취소 > AI 레벨 → Root(`EditorRoute` 기존 handler) > 편집기 이탈.
+  별도 메뉴 상태 없이 기존 소유권 유지. `leave()` 지역 함수로 이탈 경로(Back·중단 확인) 공유(detekt LongMethod 대응).
+- `EditorRoute`에 같은 `viewModel`을 명시 전달(운영에서는 동일 NavBackStackEntry 인스턴스라 동작 동일, 테스트 주입용).
+- R2: `app` `EditorBackTest`(Robolectric Compose, 실제 `EditorWithExport`+`EditorRoute`+`EditorViewModel`/fake): AI→Back→Root 유지→Back 이탈,
+  AI에서 도구 열림→Back 도구 취소→Back 이탈, AI에서 내보내기 시트→Back 시트 닫힘(AI 유지)→Back Root→Back 이탈.
+  수정 전 코드에 적용 시 3개 중 2개 실패 확인.
+
+### Files
+
+- `app/src/main/kotlin/com/diffuse/navigation/DiffuseNavHost.kt` (`EditorWithExport` private→internal)
+- `app/src/test/kotlin/com/diffuse/navigation/EditorBackTest.kt` (신규)
+- `app/build.gradle.kts` (test 전용: `core/ai/src/testShared` srcDir, `testImplementation(projects.core.ai)`; 신규 외부 의존성 없음)
+
+### Validation
+
+- `./gradlew --offline :app:testDebugUnitTest --tests 'com.diffuse.navigation.*'` → 통과(EditorBackTest 3/3, BackActionTest).
+- 수정 전 `DiffuseNavHost` 대상 `EditorBackTest` → 2 failed(회귀 검출 확인) 후 수정본 복원.
+- `scripts/check.sh` → exit 0 (최초 실행은 detekt LongMethod 63/60 → 수정 후 통과).
+- `git diff --check` → 이상 없음.
+
+### Known Issues
+
+- 실기기(SM-S948U) 시스템 Back 재확인 미실행. 아래 이전 섹션의 미실행 항목 유지.
+
+---
+
+## 피부 보정·face detect 메뉴 분기 제거 (2026-10-12, work/tasks.md)
+
+### Status
+
+PARTIAL — 코드·자동 테스트·APK 빌드·canonical 검사는 통과. 실기기 메뉴/기존 보정 프로젝트 확인은 미실행(아래 Known Issues).
+
+### Changed
+
+- 모든 사진이 같은 2단계 메뉴: Root 라이트·색상·혼합·자르기·디테일·AI / AI 뒤로·선택·지우기·채우기·확대·스타일·자동·멀티샷·지시.
+  `stripItems(level)`은 enum 순서만 사용. `ToolMenuProfile`·`menuProfileFor`·Portrait 목록/필터·`ToolLevelState.profile`·
+  `EditorToolStrip(profile)`·`EditorUiState.portrait` 제거.
+- `EditorViewModel.renderSource()`는 원본 preview 렌더만 수행(비교 보기·확대 입력용). detector 주입·job·detect 호출 제거.
+- `Tool.SkinRetouch`, `tools/retouch/`(controller/sheet/state), VM의 skin draft·busy·document-change·open·close·apply·preview 분기,
+  Route의 시트·취소·메시지·busy 라벨·export 차단 제거. 피부 보정 문자열(메뉴·시트·설정) 제거.
+- 서버 설정 시트: 피부 보정 주소/토큰 필드·검증·저장 연결 제거. 저장 가능 조건은 피부 보정 추가 이전과 동일
+  (`SAM3 또는 MonetGPT 주소` && MonetGPT 주소 유효). 기존 저장값 마이그레이션 없음.
+- `core:ai`: `PortraitDetector`/`MlKitPortraitDetector`/`FakePortraitDetector`/`PortraitDetectorTest` 삭제. `AiModule`에서 portrait·
+  faceRegions·skinRetouch·retouchServerConfig 바인딩과 `RetouchServerClient` provider 제거. `EditorAi`에서 portrait·skinRetouch·
+  faceRegions·retouchServerSettings 제거 → 앱 그래프에서 얼굴 분석·retouch health/보정 요청 경로 없음.
+- `AndroidManifest.xml`: ML Kit 얼굴 모델 사전 다운로드 metadata 제거(다른 소비자 없음).
+- 문서: `specs/tool_groups.md` §2(단일 메뉴, T79 대체), `specs/skin_retouch.md`(Status·§2 대체 표시), `skin_retouch_pipeline.md`
+  (앱 실행 부분은 §6 저장 호환뿐), `skin_retouch_validation.md`(UI/draft 실기기 검증 비적용, D084 보존), `specs/multishot.md` §2 진입.
+  `work/decisions.md` D092 추가(T79/D080/D083/D084 원문 유지). `editor_shell.md`·`ai_provider.md`·`DESIGN.md`는 충돌 서술이 없어 미변경.
+
+### Files
+
+- main: `feature/editor/.../{Tool,EditorToolStrip,EditorScreen,EditorRoute,EditorViewModel,EditorAi}.kt`, `tools/ToolSheetHost.kt`,
+  `tools/select/{Sam3SettingsSheet,SelectionController,SelectionState}.kt`, `res/values/strings.xml`; 삭제 `tools/retouch/*`;
+  `core/ai/.../{AiModule,FaceRegionAnalyzer}.kt`, `mlkit/MlKitFaceRegionAnalyzer.kt`(KDoc만); 삭제 `PortraitDetector.kt`,
+  `mlkit/MlKitPortraitDetector.kt`; `app/src/main/AndroidManifest.xml`
+- test: `ToolStripLevelTest`(고정 메뉴 계약: 모든 Tool 정확히 한 번, Root/AI 순서, 디테일 Root·자동/멀티샷/지시 AI 스크롤 도달, 피부 보정 부재),
+  `PortraitDetectionTest` → `EditorEntryTest`(진입 시 preview·source 렌더, 연산/저장/메시지 없음, 디테일 적용, 기존 SkinRetouch 연산이
+  다른 편집 후 유지), `SkinRetouchPersistenceTest`(+ 보정 프로젝트에 노출 편집 저장·재열기 → 연산·mask·파일·픽셀 동일),
+  `MultiShotSheetTest`/`MultiShotToolTest`(profile 인자 제거), 8개 VM 테스트의 `EditorAi` 생성자, `ToolSheetHostTest` 주석;
+  삭제 `PortraitToolMenuTest`, `tools/retouch/SkinRetouch{Sheet,Tool}Test`, `core/ai` `PortraitDetectorTest`, `FakePortraitDetector`
+- docs: `specs/{tool_groups,multishot,skin_retouch,skin_retouch_pipeline,skin_retouch_validation}.md`, `work/decisions.md`, `work/RESULT.md`
+
+### Validation
+
+| 명령 | 결과 |
+| --- | --- |
+| `./gradlew --offline --quiet :feature:editor:testDebugUnitTest` | 통과(521 tests, 0 failures) |
+| `./gradlew --offline --quiet :core:imaging:testDebugUnitTest --tests '*SkinRetouch*' --tests '*EditDocumentJsonTest*' --tests '*OperationOrderTest*'` | 통과 |
+| `./gradlew --offline --quiet :core:data:testDebugUnitTest --tests '*SkinRetouchPersistenceTest*'` | 통과(9 tests, 신규 1 포함) |
+| `./gradlew --offline --quiet :core:ai:testDebugUnitTest` | 통과 |
+| `./gradlew --offline --quiet :app:assembleDebug` | 통과 |
+| `scripts/check.sh` (lint, detekt, testDebugUnitTest, verifyRoborazziDebug, dependencyGuard) | **exit 0** — 골든 변경 없음(기존 골든은 이미 General 메뉴, 설정 시트 골든 없음) |
+| `git diff --check` | 통과 |
+| `adb -H 127.0.0.1 -P 15039 install -r app-debug.apk` (SM-S948U) | 설치 성공. 기기가 잠금 화면이라 앱 화면 확인 미실행 |
+
+### Review Notes
+
+- 메뉴가 얼굴 유무와 무관하다는 점은 감지 API 자체 삭제(코드·DI)로 보장한다. 제거 API를 테스트용으로 재도입하지 않았다.
+- 남긴 미호출 코드(저장 호환 외): `MlKitFaceRegionAnalyzer`·`FaceRegionAnalyzer`·`SkinAllowedMask`·`SkinRetouchProvider`·
+  `retouch/server/*`(`RetouchServerSettings` 포함)·ONNX debug detector와 테스트·testShared fake, `ProjectRepository.saveSkinRetouch/
+  discardSkinRetouch`, `core/ai` BuildConfig `RETOUCH_*`, `server/retouch`. 앱 DI에 바인딩되지 않아 실행되지 않는다(D092).
+- ML Kit face dependency·ONNX debug dependency는 `MlKitFaceRegionAnalyzer`/debug detector가 여전히 컴파일에 사용하므로 유지.
+  Gradle/catalog/baseline 변경 없음.
+- `architecture/projetoverview.md`는 피부 보정을 제품 기능(BG-05)으로 서술한다. 이번 수정 허용 범위 밖이라 그대로 두었다 — 정합 필요 여부 판단 요청.
+- 이전 RESULT Review Notes의 “피부 보정 `close()` 재렌더” 항목은 기능 제거로 해당 없음.
+
+### Known Issues
+
+- 실기기 확인(인물 1장/비인물 1장 동일 메뉴, 디테일·자동 진입, 서버 설정에 피부 보정 필드 부재, 기존 보정 프로젝트 열기/내보내기) 미실행:
+  APK는 설치됐으나 기기가 잠겨 있었다. 자동 테스트와 구분한다.
+- 피부 보정 draft 실기기 검증은 “기능 제거로 비적용”. D084 지원 종류 0개·품질/lifecycle 평가는 미해결 그대로(제거로 해결된 것이 아님).
+- 이전 인계 유지: 지시 추천 R1·R2는 REVIEW CHANGES_REQUESTED 상태이며 수정 후 실기기 재확인(사진 6종·8문장, TalkBack·음성·오류 경로,
+  R2 키보드) 미실행. 서버 멀티샷 R1(ASGI 취소 후 후속 추출)/R2(큰 정수 metadata 500), Jev 미구현, 전체 사진 품질·offline·12MP/PSS 평가
+  미완료 — 아래 이전 기록, `work/REVIEW.md`, `work/retouch_evaluation.md`.
+
+---
+
 ## Review Fix Pass (2026-10-08, work/REVIEW.md R1·R2)
 
 ### Status

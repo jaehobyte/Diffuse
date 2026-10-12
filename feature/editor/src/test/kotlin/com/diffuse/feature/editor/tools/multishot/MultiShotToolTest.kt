@@ -9,18 +9,13 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.diffuse.core.ai.FakeAutoEnhanceProvider
 import com.diffuse.core.ai.FakeEraseProvider
-import com.diffuse.core.ai.FakeFaceRegionAnalyzer
 import com.diffuse.core.ai.FakeFillProvider
 import com.diffuse.core.ai.FakeMatchStyleProvider
 import com.diffuse.core.ai.FakeOutpaintProvider
 import com.diffuse.core.ai.FakePlanProvider
-import com.diffuse.core.ai.FakePortraitDetector
 import com.diffuse.core.ai.FakeSegmentationProvider
-import com.diffuse.core.ai.FakeSkinRetouchProvider
-import com.diffuse.core.ai.PortraitResult
 import com.diffuse.core.ai.gemini.GeminiSettings
 import com.diffuse.core.ai.monet.MonetSettings
-import com.diffuse.core.ai.retouch.server.RetouchServerSettings
 import com.diffuse.core.ai.sam3.Sam3Settings
 import com.diffuse.core.ai.speech.FakeSpeechInput
 import com.diffuse.core.common.Result
@@ -40,7 +35,6 @@ import com.diffuse.feature.editor.StripItem
 import com.diffuse.feature.editor.TestDispatchers
 import com.diffuse.feature.editor.Tool
 import com.diffuse.feature.editor.ToolGroup
-import com.diffuse.feature.editor.ToolMenuProfile
 import com.diffuse.feature.editor.stripItems
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -85,11 +79,9 @@ class MultiShotToolTest {
     fun tearDown() = Dispatchers.resetMain()
 
     @Test
-    fun `the tool is at the AI level of both menus`() {
-        ToolMenuProfile.entries.forEach { profile ->
-            assertTrue(StripItem.OfTool(Tool.MultiShot) in stripItems(ToolGroup.Ai, profile))
-            assertFalse(StripItem.OfTool(Tool.MultiShot) in stripItems(ToolGroup.Root, profile))
-        }
+    fun `the tool is at the AI level`() {
+        assertTrue(StripItem.OfTool(Tool.MultiShot) in stripItems(ToolGroup.Ai))
+        assertFalse(StripItem.OfTool(Tool.MultiShot) in stripItems(ToolGroup.Root))
     }
 
     @Test
@@ -277,10 +269,6 @@ class MultiShotToolTest {
             MonetSettings(context),
             FakeAutoEnhanceProvider(),
             FakeMatchStyleProvider(),
-            FakePortraitDetector(PortraitResult.NotPortrait),
-            FakeSkinRetouchProvider(),
-            FakeFaceRegionAnalyzer(),
-            RetouchServerSettings(context),
             com.diffuse.core.ai.FakePromptSuggestionProvider(),
         ),
         dispatchers = TestDispatchers,

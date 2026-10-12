@@ -9,8 +9,6 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.diffuse.core.ai.PortraitDetector
-import com.diffuse.core.ai.PortraitResult
 import com.diffuse.core.ai.speech.SpeechInput
 import com.diffuse.core.common.DispatcherProvider
 import com.diffuse.core.common.Result
@@ -33,9 +31,6 @@ import com.diffuse.feature.editor.tools.style.StyleController
 import com.diffuse.feature.editor.tools.multishot.MultiShotController
 import com.diffuse.feature.editor.tools.multishot.MultiShotHost
 import com.diffuse.feature.editor.tools.multishot.MultiShotState
-import com.diffuse.feature.editor.tools.retouch.SkinRetouchController
-import com.diffuse.feature.editor.tools.retouch.SkinRetouchHost
-import com.diffuse.feature.editor.tools.retouch.SkinRetouchState
 import com.diffuse.feature.editor.tools.style.StyleState
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.diffuse.feature.editor.tools.auto.AutoController
@@ -106,14 +101,6 @@ data class EditorUiState(
     val maskedAdjust: Boolean = true,
     /** The applied mask, resolved for the scrim the adjust sheets show. */
     val activeMask: Bitmap? = null,
-    /**
-     * work/decisions.md T79: a menu hint, and nothing else. It is never written to the document,
-     * never persisted, and starts at [PortraitResult.Unknown] — which the menu reads as "general"
-     * — so the strip is right before the detector has answered as well as after it fails.
-     */
-    val portrait: PortraitResult = PortraitResult.Unknown,
-    /** specs/skin_retouch.md §4: the face, the four strengths and the draft, until 적용. */
-    val skin: SkinRetouchState = SkinRetouchState(),
     /** specs/multishot.md §2: the added photographs, their extraction and placement, until 적용. */
     val multiShot: MultiShotState = MultiShotState(),
 )
@@ -151,15 +138,10 @@ class EditorViewModel @Inject constructor(
         ai.geminiSettings,
         ai.monetSettings,
         viewModelScope,
-        ai.retouchServerSettings,
     )
 
     /** specs/prompt_input.md §3: handed straight to the prompt bar; the VM never drives it. */
     val speech: SpeechInput = ai.speech
-
-    /** work/decisions.md T79: asked once per loaded source, and never on the user's behalf. */
-    private val portrait: PortraitDetector = ai.portrait
-    private var portraitJob: Job? = null
 
     /** specs/generative_erase.md §10, T50: one commit shape for both erase paths. */
     private val eraseCommit = EraseCommit(
@@ -275,51 +257,9 @@ class EditorViewModel @Inject constructor(
     )
 
     /**
-     * specs/skin_retouch.md §4, pipeline §4–§7. The tool owns the session and its requests; the
-     * renderer, the project's files and the history are handed over the way `DirectHost` does.
-     */
-    val skin = SkinRetouchController(
-        provider = ai.skinRetouch,
-        analyzer = ai.faceRegions,
-        serverSaves = ai.retouchServerSettings.saves,
-        serverHost = ai.retouchServerSettings.config.map { it.baseUrl },
-        host = object : SkinRetouchHost {
-            override suspend fun renderBase(document: EditDocument): Bitmap? =
-                (renderer.full(document) as? Result.Success)?.value
-
-            override suspend fun save(retouchId: String, maskId: String, result: Bitmap, support: Bitmap) =
-                repository.saveSkinRetouch(projectId, retouchId, maskId, result, support)
-
-            override suspend fun discard(retouchId: String, maskId: String) {
-                repository.discardSkinRetouch(projectId, retouchId, maskId)
-            }
-
-            override fun putTransient(ref: ImageRef, bitmap: Bitmap) = renderer.putTransient(ref, bitmap)
-
-            override fun removeTransient(ref: ImageRef) = renderer.removeTransient(ref)
-
-            override fun currentDocument(): EditDocument? = history?.current?.value
-
-            override fun onDraftChanged() {
-                _uiState.value.document?.let(::requestPreview)
-            }
-
-            // §6: closed before the push, for 자동's reason — the draft is already on screen.
-            override fun commit(document: EditDocument) {
-                sheetBaseline = null
-                _uiState.value = _uiState.value.copy(selectedTool = null)
-                history?.push(document)
-            }
-        },
-        scope = viewModelScope,
-        dispatchers = dispatchers,
-        previewLongEdgePx = PREVIEW_LONG_EDGE_PX,
-    )
-
-    /**
      * specs/multishot.md §2, §8. The tool owns its photographs, SAM 3 session and files; the picked
      * photo is read through `ImageLoader` (EXIF-upright, working size) and the rest arrives the way
-     * `SkinRetouchHost` hands it over.
+     * `DirectHost` hands it over.
      */
     val multiShot = MultiShotController(
         segmentation = ai.segmentation,
@@ -377,9 +317,6 @@ class EditorViewModel @Inject constructor(
                 .collect { _uiState.value.document?.let(::requestPreview) }
         }
         viewModelScope.launch {
-            skin.state.collect { _uiState.value = _uiState.value.copy(skin = it) }
-        }
-        viewModelScope.launch {
             selection.state.collect { _uiState.value = _uiState.value.copy(selection = it) }
         }
         viewModelScope.launch {
@@ -411,11 +348,6 @@ class EditorViewModel @Inject constructor(
                 .distinctUntilChanged()
                 .collect {
                     if (auto.onDocumentChanged() && _uiState.value.selectedTool == Tool.Auto) {
-                        sheetBaseline = null
-                        _uiState.value = _uiState.value.copy(selectedTool = null)
-                    }
-                    // specs/skin_retouch.md §5: the same rule for 피부 보정's draft and requests.
-                    if (skin.onDocumentChanged(it) && _uiState.value.selectedTool == Tool.SkinRetouch) {
                         sheetBaseline = null
                         _uiState.value = _uiState.value.copy(selectedTool = null)
                     }
@@ -519,8 +451,6 @@ class EditorViewModel @Inject constructor(
             // specs/style_match.md §4: the same reason as 자동's — the style is not in the
             // document until 적용, and a tile the canvas does not follow is a swatch.
             Tool.Style -> _uiState.value.style.appliedTo(document)
-            // pipeline §4 step 5: the draft is a temporary document drawn by the real renderer.
-            Tool.SkinRetouch -> skin.draftDocument ?: document
             // specs/multishot.md §4: the draft on the un-cropped canonical canvas, so a drag on
             // screen maps to the stored offset without undoing a crop (자르기's T69 rule).
             Tool.MultiShot -> (multiShot.draftDocument() ?: document).let { draft ->
@@ -542,31 +472,12 @@ class EditorViewModel @Inject constructor(
         }
     }
 
-    /**
-     * work/decisions.md T79: the portrait gate rides along here rather than in a pass of its own.
-     * This is the one place that already holds the bare source at preview size, so the detector is
-     * handed a frame that exists instead of decoding the original a second time.
-     *
-     * Launched rather than awaited, so a slow or absent Play-services model cannot hold up the
-     * canvas; the previous job is cancelled and the answer is dropped unless the source it was
-     * asked about is still the one on screen.
-     *
-     * `internal` rather than private only so a test can render a second source and prove that
-     * guard: nothing outside this module calls it, and `load` remains its only caller.
-     */
-    internal suspend fun renderSource(document: EditDocument) {
+    /** specs/editor_shell.md: the bare source at preview size, for compare and 확대's input. */
+    private suspend fun renderSource(document: EditDocument) {
         val bare = document.copy(operations = emptyList())
         val rendered = renderer.preview(bare, PREVIEW_LONG_EDGE_PX)
         if (rendered is Result.Success) {
-            val source = rendered.value
-            _uiState.value = _uiState.value.copy(source = source.asImageBitmap())
-            portraitJob?.cancel()
-            portraitJob = viewModelScope.launch {
-                val result = portrait.detect(source)
-                if (_uiState.value.source?.asAndroidBitmap() === source) {
-                    _uiState.value = _uiState.value.copy(portrait = result)
-                }
-            }
+            _uiState.value = _uiState.value.copy(source = rendered.value.asImageBitmap())
         }
     }
 
@@ -603,8 +514,6 @@ class EditorViewModel @Inject constructor(
                 // specs/style_match.md §7: the tiles are the user's own photograph, so they can
                 // only be drawn once there is a document to draw them from.
                 if (tool == Tool.Style) style.open(document)
-                // specs/skin_retouch.md §6: the face is analysed on the device; nothing is sent.
-                if (tool == Tool.SkinRetouch) skin.open(document)
                 // specs/multishot.md §2: entering sends nothing; an existing composite is restored.
                 if (tool == Tool.MultiShot) multiShot.open(document)
             }
@@ -710,7 +619,6 @@ class EditorViewModel @Inject constructor(
         auto.close()
         style.close()
         direct.close()
-        skin.close()
         multiShot.close()
         _uiState.value = _uiState.value.copy(selectedTool = null)
     }
@@ -774,8 +682,6 @@ class EditorViewModel @Inject constructor(
             }
             // specs/vibe_edit.md §3: 적용 runs the plan; the sheet closes when the run ends.
             Tool.Direct -> direct.apply()
-            // specs/skin_retouch.md §4: 적용 saves the prepared result; the host commits and closes.
-            Tool.SkinRetouch -> skin.apply()
             // specs/multishot.md §2: the subjects are already saved; 적용 is one history entry.
             Tool.MultiShot -> multiShot.apply()
             else -> {

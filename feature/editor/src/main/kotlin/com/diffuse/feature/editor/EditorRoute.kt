@@ -38,8 +38,6 @@ import com.diffuse.feature.editor.tools.expand.ExpandSheet
 import com.diffuse.feature.editor.tools.fill.FillSheet
 import com.diffuse.feature.editor.tools.prompt.VoicePromptBar
 import com.diffuse.feature.editor.tools.select.Sam3SettingsSheet
-import com.diffuse.feature.editor.tools.retouch.SkinRetouchActions
-import com.diffuse.feature.editor.tools.retouch.SkinRetouchSheet
 import com.diffuse.feature.editor.tools.select.SelectSheet
 import com.diffuse.core.imaging.render.CanvasPoint
 import com.diffuse.feature.editor.tools.multishot.MultiShotActions
@@ -99,10 +97,10 @@ fun EditorRoute(
             onRedo = viewModel::redo,
             onReset = viewModel::reset,
             onCompareChange = {},
-            onExport = exportAction(state, viewModel, onExport),
+            onExport = onExport,
             overlayTransform = overlayTransform(state),
             disabledTools = disabledTools(state),
-            toolLevel = toolLevelState(toolLevel, state) { toolLevel = it },
+            toolLevel = ToolLevelState(toolLevel) { toolLevel = it },
             gestureMode = if (pointTaps(state, viewModel) != null) {
                 CanvasGestureMode.SelectPoint
             } else {
@@ -121,21 +119,6 @@ fun EditorRoute(
         )
     }
 }
-
-/**
- * work/decisions.md T79: what the strip is bound to — the level the user opened, and the ordering
- * the photograph earned.
- *
- * The profile only reorders, so a detection that lands while a sheet is open changes nothing the
- * user is looking at: the sheet stays open, the selected tool stays selected, and the new order is
- * there underneath it. A file-level function rather than four lines inline, because `EditorRoute`
- * is at detekt's method-length limit.
- */
-private fun toolLevelState(
-    level: ToolGroup,
-    state: EditorUiState,
-    onChange: (ToolGroup) -> Unit,
-) = ToolLevelState(level, onChange, menuProfileFor(state.portrait))
 
 /**
  * specs/multishot.md §2: while an added photo is still a photo, the canvas shows it rather than
@@ -169,17 +152,8 @@ private fun cancelWork(viewModel: EditorViewModel) {
     viewModel.expand.cancel()
     viewModel.auto.cancel()
     viewModel.direct.cancelWork()
-    viewModel.skin.cancelWork()
     viewModel.multiShot.cancelWork()
 }
-
-/** specs/skin_retouch.md §5: while a skin draft is open, export waits for 적용 or 취소. */
-private fun exportAction(state: EditorUiState, viewModel: EditorViewModel, onExport: () -> Unit): () -> Unit =
-    if (state.selectedTool == Tool.SkinRetouch) {
-        { viewModel.skin.showMessage(R.string.skin_retouch_export_blocked) }
-    } else {
-        onExport
-    }
 
 /** One snackbar, so the one that was shown is cleared wherever it came from. */
 private fun clearMessages(viewModel: EditorViewModel) {
@@ -190,14 +164,13 @@ private fun clearMessages(viewModel: EditorViewModel) {
     viewModel.auto.onMessageShown()
     viewModel.style.onMessageShown()
     viewModel.direct.onMessageShown()
-    viewModel.skin.onMessageShown()
     viewModel.multiShot.onMessageShown()
 }
 
 /** DESIGN.md §7: every AI call shows progress and a way out, so they share one flag. */
 private fun isBusy(state: EditorUiState): Boolean =
     state.selection.working || state.erase.busy || state.fill.busy || state.expand.busy ||
-        state.auto.busy || state.style.matching || state.direct.working || state.skin.busy ||
+        state.auto.busy || state.style.matching || state.direct.working ||
         state.multiShot.working
 
 /** specs/selection_tool.md §1 and generative_erase.md §5: a tool that cannot work is greyed. */
@@ -224,8 +197,6 @@ private fun busyLabel(state: EditorUiState): Int = when {
     state.fill.busy -> R.string.fill_working
     state.auto.busy -> R.string.auto_working
     state.style.matching -> R.string.style_matching
-    state.skin.preparing -> R.string.skin_retouch_working
-    state.skin.applying -> R.string.skin_retouch_applying
     state.selection.phraseBusy -> R.string.select_prompt_working
     else -> R.string.select_preparing
 }
@@ -242,7 +213,7 @@ private fun message(state: EditorUiState): String? {
         direct != null -> stringResource(direct.res)
         else -> (
             state.selection.message ?: state.erase.message ?: state.fill.message
-                ?: state.expand.message ?: state.auto.message ?: state.style.message ?: state.skin.message
+                ?: state.expand.message ?: state.auto.message ?: state.style.message
                 ?: state.multiShot.message
             )?.let { stringResource(it) }
     }
@@ -325,7 +296,6 @@ private fun sheetFor(
                 Tool.Auto -> AutoToolSheet(state = state, viewModel = viewModel)
                 Tool.Style -> StyleToolSheet(state = state, viewModel = viewModel)
                 Tool.Direct -> DirectToolSheet(state = state, viewModel = viewModel)
-                Tool.SkinRetouch -> SkinRetouchToolSheet(state = state, viewModel = viewModel)
                 Tool.MultiShot -> MultiShotToolSheet(state = state, viewModel = viewModel)
                 else -> ToolSheetHost(
                     maskOption = MaskOption(
@@ -472,27 +442,6 @@ private fun SettingsSheet(state: EditorUiState, viewModel: EditorViewModel) {
         monetConfig = state.selection.monetConfig,
         onSave = viewModel.selection::saveSettings,
         onCancel = { viewModel.selection.setSettingsVisible(false) },
-        retouchConfig = state.selection.retouchConfig,
-        onSaveRetouch = viewModel.selection::saveRetouchSettings,
-    )
-}
-
-/** specs/skin_retouch.md §4: the face, four strengths, 미리보기 and the server's own settings path. */
-@Composable
-private fun SkinRetouchToolSheet(state: EditorUiState, viewModel: EditorViewModel) {
-    val skin = viewModel.skin
-    SkinRetouchSheet(
-        state = state.skin,
-        actions = SkinRetouchActions(
-            onSelectFace = skin::selectFace,
-            onStrengthChange = skin::setStrength,
-            onPreview = skin::preview,
-            onRetryAnalysis = skin::retryAnalysis,
-            onRecheckServer = skin::refreshServer,
-            onOpenSettings = { viewModel.selection.setSettingsVisible(true) },
-            onCancel = viewModel::cancelSheet,
-            onApply = viewModel::applySheet,
-        ),
     )
 }
 

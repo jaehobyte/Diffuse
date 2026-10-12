@@ -1,6 +1,6 @@
 # 피부 보정 검증
 
-Status: 구현 시 수행할 검증. 현재 결과/성능 측정치는 없다.
+Status: 앱 신규 실행 제거(2026-10-12, D092)로 앱 UI·draft 실기기 검증은 "기능 제거로 비적용". 서버 품질 기준과 D084 기록은 보존하며 해결된 것으로 보지 않는다. 이전 상태: 구현 시 수행할 검증. 현재 결과/성능 측정치는 없다.
 Related: [product](skin_retouch.md), [pipeline](skin_retouch_pipeline.md)
 
 ## 1. 완료 판정

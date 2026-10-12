@@ -16,12 +16,6 @@ import com.diffuse.core.ai.monet.MonetClient
 import com.diffuse.core.ai.monet.MonetConfigSource
 import com.diffuse.core.ai.monet.MonetAutoEnhanceProvider
 import com.diffuse.core.ai.monet.MonetSettings
-import com.diffuse.core.ai.mlkit.MlKitFaceRegionAnalyzer
-import com.diffuse.core.ai.mlkit.MlKitPortraitDetector
-import com.diffuse.core.ai.retouch.server.RetouchServerClient
-import com.diffuse.core.ai.retouch.server.RetouchServerConfigSource
-import com.diffuse.core.ai.retouch.server.RetouchServerSettings
-import com.diffuse.core.ai.retouch.server.RetouchServerSkinRetouchProvider
 import com.diffuse.core.ai.sam3.Sam3Client
 import com.diffuse.core.ai.sam3.Sam3ConfigSource
 import com.diffuse.core.ai.sam3.Sam3SegmentationProvider
@@ -78,28 +72,6 @@ internal abstract class AiModule {
     @Binds
     abstract fun promptSuggestion(impl: GeminiSuggestionProvider): PromptSuggestionProvider
 
-    @Binds
-    abstract fun portrait(impl: MlKitPortraitDetector): PortraitDetector
-
-    /**
-     * specs/skin_retouch_pipeline.md §1. Separate from the portrait hint above on purpose: one
-     * decides a menu, the other decides which pixels may be corrected.
-     *
-     */
-    @Binds
-    abstract fun faceRegions(impl: MlKitFaceRegionAnalyzer): FaceRegionAnalyzer
-
-    /**
-     * specs/skin_retouch_pipeline.md §8, D083: the skin retouch server. Which kinds it offers is
-     * the server's `/health`, so an engine that has not been enabled there stays disabled in the
-     * sheet; the fake is never bound (skin_retouch_validation.md §1).
-     */
-    @Binds
-    abstract fun skinRetouch(impl: RetouchServerSkinRetouchProvider): SkinRetouchProvider
-
-    @Binds
-    abstract fun retouchServerConfig(impl: RetouchServerSettings): RetouchServerConfigSource
-
     companion object {
         @Provides
         @Singleton
@@ -138,16 +110,6 @@ internal abstract class AiModule {
             okHttp: OkHttpClient,
             logger: com.diffuse.core.common.Logger,
         ): MonetClient = MonetClient(config, dispatchers, okHttp, logger)
-
-        /** Provided for the same reason the other clients are: the wire stays in this module. */
-        @Provides
-        @Singleton
-        fun retouchServerClient(
-            config: RetouchServerConfigSource,
-            dispatchers: DispatcherProvider,
-            okHttp: OkHttpClient,
-            logger: com.diffuse.core.common.Logger,
-        ): RetouchServerClient = RetouchServerClient(config, dispatchers, okHttp, logger)
 
         /** Provided for the same reason the other two clients are. */
         @Provides

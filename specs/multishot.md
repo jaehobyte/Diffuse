@@ -25,8 +25,9 @@ noise stacking, generative recomposition, colour matching, shadows, brush editin
 unapplied draft after process death.
 
 ## 2. UI and states
-- **Entry.** `Tool.MultiShot` ("멀티샷") at the **AI level of both menu profiles**, appended before
-  지시 so every existing tool keeps its relative order. No face or content condition.
+- **Entry.** `Tool.MultiShot` ("멀티샷") at the **AI level** of the one menu (tool_groups.md §2,
+  D092), appended before 지시 so every existing tool keeps its relative order. No face or content
+  condition.
 - **Sheet** (`EditSheet`: 45% max height, fixed 취소 | 적용, 적용 the one accent):
   - New composite: "어떻게 배치할까요?" with 시간 순서 배치 / 자유 배치 and one line each. Nothing can
     be added before a layout is chosen. A stored composite opens in its stored layout; a row of the

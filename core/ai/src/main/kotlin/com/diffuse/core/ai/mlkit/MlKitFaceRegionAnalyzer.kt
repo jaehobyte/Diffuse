@@ -32,16 +32,19 @@ import javax.inject.Singleton
 import kotlin.coroutines.resume
 
 /**
- * specs/skin_retouch_pipeline.md §1, §3. Face geometry for retouching, on device, through the same
- * Play-services ML Kit the portrait menu hint already uses — a reused dependency, not a new one.
+ * specs/skin_retouch_pipeline.md §1, §3. Face geometry for retouching, on device, through
+ * Play-services ML Kit.
+ *
+ * work/decisions.md D092: no longer bound or called by the app — 피부 보정 is not offered as a new
+ * edit. Kept, with its tests, as the retouch pipeline's reference implementation.
  *
  * Two passes, for the reason §3 gives: ML Kit returns contours for the **most prominent face
  * only**, so a single pass over a group photo would hand one person's contours to everybody. The
  * first pass asks the whole canvas for boxes; the second asks the selected face's ROI, where that
  * face is by construction the prominent one, and maps the points back out.
  *
- * Unlike [com.diffuse.core.ai.PortraitDetector], a failure here is reportable: the user tapped a
- * tool and is owed the difference between "no face in this photo" and "we could not look".
+ * A failure here is reportable: the user tapped a tool and is owed the difference between "no
+ * face in this photo" and "we could not look".
  */
 @Singleton
 class MlKitFaceRegionAnalyzer internal constructor(
