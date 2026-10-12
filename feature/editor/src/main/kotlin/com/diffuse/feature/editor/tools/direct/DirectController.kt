@@ -7,12 +7,14 @@ import com.diffuse.core.ai.CropRatio
 import com.diffuse.core.ai.EditPlan
 import com.diffuse.core.ai.EditPlanProvider
 import com.diffuse.core.ai.PlanStep
+import com.diffuse.core.ai.PromptSuggestionProvider
 import com.diffuse.core.common.AppError
 import com.diffuse.core.common.Result
 import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.feature.editor.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -72,6 +74,8 @@ interface DirectHost {
 data class DirectState(
     val availability: Availability = Availability.Unavailable(AppError.Unavailable),
     val request: String = "",
+    /** §14: an unedited suggestion may be swapped for another; a typed sentence is the user's. */
+    val requestSource: RequestSource = RequestSource.Typed,
     /** The plan waiting for 적용, or null. It is never persisted (§13). */
     val plan: EditPlan? = null,
     val planning: Boolean = false,
@@ -82,6 +86,7 @@ data class DirectState(
      */
     val notUnderstood: Boolean = false,
     val message: DirectMessage? = null,
+    val suggestions: SuggestionState = SuggestionState(),
 ) {
 
     val enabled: Boolean get() = availability is Availability.Ready
@@ -90,6 +95,14 @@ data class DirectState(
     val working: Boolean get() = planning || running
 
     val canApply: Boolean get() = plan != null && !working
+
+    /**
+     * §14: only over an empty bar or an unedited suggestion, so a list can never overwrite what
+     * the user wrote, and never while a run is changing the photo.
+     */
+    val showSuggestions: Boolean
+        get() = !suggestions.hidden && !running &&
+            (request.isEmpty() || requestSource == RequestSource.Suggestion)
 }
 
 /**
@@ -102,6 +115,9 @@ class DirectController(
     private val runner: PlanRunner,
     private val scope: CoroutineScope,
     private val host: DirectHost,
+    suggestionProvider: PromptSuggestionProvider,
+    /** §14: the Gemini settings; any change drops the suggestions asked under the old ones. */
+    settingsChanges: Flow<Any>,
 ) {
 
     private val _state = MutableStateFlow(DirectState())
@@ -109,9 +125,20 @@ class DirectController(
 
     private var job: Job? = null
 
+    /** §14: bumped whenever the sentence changes, so a plan for an older one is never shown. */
+    private var planSeq = 0
+
+    /** specs/vibe_edit.md §14: the read-only suggestions under the bar. */
+    val suggestions = DirectSuggestions(suggestionProvider, scope, settingsChanges) { error ->
+        showMessage(if (error is AppError.Unauthorized) R.string.direct_needs_key else R.string.direct_suggest_failed)
+    }
+
     init {
         scope.launch {
             provider.availability.collect { _state.value = _state.value.copy(availability = it) }
+        }
+        scope.launch {
+            suggestions.state.collect { _state.value = _state.value.copy(suggestions = it) }
         }
     }
 
@@ -124,8 +151,33 @@ class DirectController(
             DirectTap.OpenSettings
         }
 
+    /**
+     * §14: a different sentence invalidates the plan waiting for 적용, and cancels one still being
+     * asked for — it would be a plan for words that are no longer in the bar.
+     */
     fun setRequest(request: String) {
-        _state.value = _state.value.copy(request = request)
+        replaceRequest(request, RequestSource.Typed)
+    }
+
+    /** §14: a suggestion fills the bar and nothing else — no plan, no edit, no history. */
+    fun pickSuggestion(request: String) {
+        replaceRequest(request, RequestSource.Suggestion)
+    }
+
+    private fun replaceRequest(request: String, source: RequestSource) {
+        val state = _state.value
+        if (state.running || (request == state.request && source == state.requestSource)) return
+        if (state.planning || state.plan != null) {
+            planSeq++
+            job?.cancel()
+        }
+        _state.value = state.copy(
+            request = request,
+            requestSource = source,
+            plan = null,
+            planning = false,
+            notUnderstood = false,
+        )
     }
 
     /**
@@ -135,7 +187,10 @@ class DirectController(
     fun submit(request: String) {
         val canvas = host.canvas()
         if (request.isBlank() || canvas == null) return
+        // §14: the user's own request comes first; a suggestion still being looked for is dropped.
+        suggestions.cancel()
         job?.cancel()
+        val seq = ++planSeq
         _state.value = _state.value.copy(
             request = request,
             plan = null,
@@ -144,7 +199,9 @@ class DirectController(
             message = null,
         )
         job = scope.launch {
-            _state.value = when (val result = provider.plan(canvas.preview, request)) {
+            val result = provider.plan(canvas.preview, request)
+            if (seq != planSeq) return@launch
+            _state.value = when (result) {
                 is Result.Success -> accept(result.value, canvas.document)
                 is Result.Failure -> _state.value.copy(
                     planning = false,
@@ -206,6 +263,7 @@ class DirectController(
             running = false,
             plan = null,
             request = "",
+            requestSource = RequestSource.Typed,
             notUnderstood = false,
             message = error?.let(::messageOf),
         )
@@ -214,8 +272,11 @@ class DirectController(
     /** 취소 or system back: the plan is discarded and the document was never touched (§3). */
     fun close() {
         job?.cancel()
+        planSeq++
+        suggestions.endSession()
         _state.value = _state.value.copy(
             request = "",
+            requestSource = RequestSource.Typed,
             plan = null,
             planning = false,
             running = false,
@@ -226,6 +287,7 @@ class DirectController(
     /** DESIGN.md §7: the overlay's cancel button. */
     fun cancelWork() {
         job?.cancel()
+        planSeq++
         _state.value = _state.value.copy(planning = false, running = false)
     }
 

@@ -6,6 +6,7 @@ import com.diffuse.core.ai.Availability
 import com.diffuse.core.ai.SegmentationProvider
 import com.diffuse.core.ai.gemini.GeminiSettings
 import com.diffuse.core.ai.monet.MonetSettings
+import com.diffuse.core.ai.retouch.server.RetouchServerSettings
 import com.diffuse.core.ai.sam3.Sam3Settings
 import com.diffuse.core.common.AppError
 import com.diffuse.core.common.Result
@@ -26,6 +27,8 @@ import kotlinx.coroutines.launch
  * Nothing here touches the document. Committing the mask is `EditorViewModel`'s job, because
  * only it owns the history stack.
  */
+// The 서버 설정 sheet's save is one function per server it carries.
+@Suppress("TooManyFunctions")
 class SelectionController(
     private val segmentation: SegmentationProvider,
     private val settings: Sam3Settings,
@@ -37,6 +40,8 @@ class SelectionController(
     /** specs/auto_enhance.md §4: 자동 보정's server lives in the same sheet, so it saves here too. */
     private val monetSettings: MonetSettings,
     private val scope: CoroutineScope,
+    /** specs/skin_retouch_pipeline.md §8: the skin retouch server's fields in the same sheet. */
+    private val retouchSettings: RetouchServerSettings? = null,
 ) {
 
     private val _state = MutableStateFlow(SelectionState())
@@ -73,6 +78,9 @@ class SelectionController(
             monetSettings.config.collect { config ->
                 _state.value = _state.value.copy(monetConfig = config)
             }
+        }
+        retouchSettings?.let { retouch ->
+            scope.launch { retouch.config.collect { _state.value = _state.value.copy(retouchConfig = it) } }
         }
     }
 
@@ -287,6 +295,11 @@ class SelectionController(
         geminiSettings.update(geminiApiKey)
         monetSettings.update(monetBaseUrl, monetToken)
         _state.value = _state.value.copy(showSettings = false)
+    }
+
+    /** Saved before [saveSettings], which closes the sheet. Every save re-probes (D081, D083). */
+    fun saveRetouchSettings(baseUrl: String, token: String) {
+        retouchSettings?.update(baseUrl, token)
     }
 
     /**

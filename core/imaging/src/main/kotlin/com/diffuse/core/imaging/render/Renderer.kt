@@ -2,19 +2,25 @@ package com.diffuse.core.imaging.render
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import com.diffuse.core.common.AppError
 import com.diffuse.core.common.DispatcherProvider
 import com.diffuse.core.common.Result
 import com.diffuse.core.imaging.load.ImageLoader
 import com.diffuse.core.imaging.load.MAX_LONG_EDGE_PX
 import com.diffuse.core.imaging.load.MaskIo
 import com.diffuse.core.imaging.model.EditDocument
+import com.diffuse.core.imaging.model.HeroMask
 import com.diffuse.core.imaging.model.ImageRef
+import com.diffuse.core.imaging.model.MAX_SHOTS
+import com.diffuse.core.imaging.model.MultiShotMode
 import com.diffuse.core.imaging.model.Operation
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.coroutineContext
 
 /** specs/render.md sizes both caches in entries. */
@@ -23,6 +29,12 @@ const val BASE_CACHE_ENTRIES = 2
 
 /** One active mask, plus room for the previous one while undo is in flight. */
 const val MASK_CACHE_ENTRIES = 2
+
+/**
+ * specs/multishot.md §8: every shot of one composite, at one preview size. Each cached decode is
+ * scaled to that size, so the cache holds at most four preview-sized bitmaps (≈ 4 × 3.5 MB at 1080).
+ */
+const val SHOT_CACHE_ENTRIES = MAX_SHOTS
 
 /**
  * specs/render.md. Returns [Result] rather than throwing: specs/architecture.md §9 rules
@@ -45,6 +57,16 @@ interface Renderer {
      * @return null when [maskId] names no `Mask` op, or its file is gone.
      */
     suspend fun resolveMask(document: EditDocument, maskId: String): Bitmap?
+
+    /**
+     * specs/skin_retouch_pipeline.md §4 step 5: a bitmap the renderer resolves for [ref] instead
+     * of reading its file, until removed — an `ARGB_8888` result or an `ALPHA_8` mask. Draft
+     * previews only, so a slider move draws through the real renderer without writing a PNG;
+     * never persisted.
+     */
+    fun putTransient(ref: ImageRef, bitmap: Bitmap)
+
+    fun removeTransient(ref: ImageRef)
 }
 
 /**
@@ -62,20 +84,31 @@ class CpuRenderer(
         val source: ImageRef,
         val operations: List<Operation>,
         val targetLongEdgePx: Int,
+        /** A transient changes pixels behind an unchanged ref, so it must change the key too. */
+        val transientRevision: Long,
     )
     private data class BaseKey(val source: ImageRef, val targetLongEdgePx: Int)
+    private data class ShotKey(val subject: ImageRef, val targetLongEdgePx: Int)
+
+    /** A shot's subject file would not decode; the render fails rather than drop the subject. */
+    private class MissingShotException : Exception()
 
     private val previewCache = LruCache<PreviewKey, Bitmap>(PREVIEW_CACHE_ENTRIES)
     private val maskCache = LruCache<ImageRef, Bitmap>(MASK_CACHE_ENTRIES)
     private val resultCache = LruCache<ImageRef, Bitmap>(MASK_CACHE_ENTRIES)
     private val baseCache = LruCache<BaseKey, Bitmap>(BASE_CACHE_ENTRIES)
+    private val shotCache = LruCache<ShotKey, Bitmap>(SHOT_CACHE_ENTRIES)
     private val lock = Mutex()
+
+    /** Never copied into [maskCache] or [resultCache], so removing one leaves nothing stale. */
+    private val transients = ConcurrentHashMap<ImageRef, Bitmap>()
+    private val transientRevision = AtomicLong()
 
     override suspend fun preview(
         document: EditDocument,
         targetLongEdgePx: Int,
     ): Result<Bitmap> = lock.withLock {
-        val key = PreviewKey(document.source, document.operations, targetLongEdgePx)
+        val key = PreviewKey(document.source, document.operations, targetLongEdgePx, transientRevision.get())
         previewCache[key]?.let { return@withLock Result.Success(it) }
 
         when (val rendered = render(document, targetLongEdgePx) {}) {
@@ -96,9 +129,18 @@ class CpuRenderer(
 
     override suspend fun resolveMask(document: EditDocument, maskId: String): Bitmap? {
         val ref = document.mask(maskId)?.maskRef ?: return null
-        return maskCache[ref] ?: withContext(dispatchers.io) {
+        return transients[ref] ?: maskCache[ref] ?: withContext(dispatchers.io) {
             MaskIo.read(File(ref.path))?.also { maskCache.put(ref, it) }
         }
+    }
+
+    override fun putTransient(ref: ImageRef, bitmap: Bitmap) {
+        transients[ref] = bitmap
+        transientRevision.incrementAndGet()
+    }
+
+    override fun removeTransient(ref: ImageRef) {
+        if (transients.remove(ref) != null) transientRevision.incrementAndGet()
     }
 
     private suspend fun render(
@@ -110,8 +152,13 @@ class CpuRenderer(
             is Result.Failure -> return decoded
             is Result.Success -> decoded.value
         }
-        return withContext(dispatchers.default) {
-            Result.Success(applyOperations(document, expanded(document, base), onProgress))
+        return try {
+            withContext(dispatchers.default) {
+                Result.Success(applyOperations(document, expanded(document, base), targetLongEdgePx, onProgress))
+            }
+        } catch (@Suppress("SwallowedException") e: MissingShotException) {
+            // specs/multishot.md §7: a composite without one of its subjects is not a success.
+            Result.Failure(AppError.MissingSource)
         }
     }
 
@@ -142,6 +189,7 @@ class CpuRenderer(
     private suspend fun applyOperations(
         document: EditDocument,
         base: Bitmap,
+        targetLongEdgePx: Int,
         onProgress: (Float) -> Unit,
     ): Bitmap {
         val crop = document.crop()
@@ -155,7 +203,7 @@ class CpuRenderer(
 
         pixelOps.forEach { operation ->
             coroutineContext.ensureActive()
-            output = applyOperation(document, output, operation)
+            output = applyOperation(document, output, operation, targetLongEdgePx)
             completed++
             onProgress(completed.toFloat() / total)
         }
@@ -173,6 +221,7 @@ class CpuRenderer(
         document: EditDocument,
         input: Bitmap,
         operation: Operation,
+        targetLongEdgePx: Int,
     ): Bitmap = when (operation) {
         is Operation.Adjust -> applyAdjust(document, input, operation)
         is Operation.GenerativeErase ->
@@ -180,6 +229,8 @@ class CpuRenderer(
         is Operation.GenerativeFill ->
             blendResult(document, input, operation.maskId, operation.resultRef)
         is Operation.CutOut -> applyCutOut(document, input, operation)
+        is Operation.SkinRetouch -> applySkinRetouch(document, input, operation)
+        is Operation.MultiShot -> applyMultiShot(input, operation, targetLongEdgePx)
         // A mask is a reference, the crop runs last in applyOperations, and the outpaint already
         // ran: it is what `input` is.
         is Operation.Mask, is Operation.Crop, is Operation.Outpaint -> input
@@ -203,6 +254,78 @@ class CpuRenderer(
         } else {
             MaskBlend.blend(input, scaleTo(result, input), mask)
         }
+    }
+
+    /**
+     * specs/skin_retouch_pipeline.md §6: like [blendResult] in which files it needs and in leaving
+     * the input alone when either is gone, but it replaces RGB only and keeps the input alpha.
+     */
+    private suspend fun applySkinRetouch(
+        document: EditDocument,
+        input: Bitmap,
+        retouch: Operation.SkinRetouch,
+    ): Bitmap {
+        val support = resolveMask(document, retouch.maskId)
+        val result = decodeResult(retouch.resultRef)
+        return if (support == null || result == null) {
+            input
+        } else {
+            SkinRetouchOp.apply(input, result, support)
+        }
+    }
+
+    /**
+     * specs/multishot.md §5: the shots are decoded and drawn one at a time, so an export never
+     * holds more than one full-size subject beside the canvas. Only a preview-sized decode is cached.
+     *
+     * §6: the time layout then puts the input back inside the hero mask — `lerp(composite, input,
+     * mask)` on premultiplied pixels, once — so the last moment's own pixels, colour and alpha, stay in front of every
+     * afterimage. The only extra buffer is the mask; the input is the copy's source anyway.
+     */
+    private suspend fun applyMultiShot(
+        input: Bitmap,
+        multiShot: Operation.MultiShot,
+        targetLongEdgePx: Int,
+    ): Bitmap {
+        val output = input.copy(Bitmap.Config.ARGB_8888, true)
+        multiShot.drawingOrder.forEach { shot ->
+            coroutineContext.ensureActive()
+            if (shot.placement.opacity <= 0f) return@forEach
+            val subject = decodeShot(shot.subjectRef, targetLongEdgePx) ?: throw MissingShotException()
+            MultiShotOp.draw(output, shot, subject)
+        }
+        val hero = multiShot.timeline?.hero?.takeIf { multiShot.mode == MultiShotMode.Timeline } ?: return output
+        coroutineContext.ensureActive()
+        val mask = decodeResult(hero.ref)
+        // §7: a mask that is gone, or that was cut for another canvas, protects nothing it should.
+        if (mask == null || !heroFits(mask, hero, output)) throw MissingShotException()
+        return MultiShotOp.protect(output, input.toArgb(), mask)
+    }
+
+    private suspend fun decodeShot(ref: ImageRef, targetLongEdgePx: Int): Bitmap? {
+        val cacheable = targetLongEdgePx < MAX_LONG_EDGE_PX
+        val key = ShotKey(ref, targetLongEdgePx)
+        return transients[ref] ?: shotCache[key].takeIf { cacheable } ?: withContext(dispatchers.io) {
+            decodeSampled(ref, targetLongEdgePx)
+                ?.let { if (cacheable) fitted(it, targetLongEdgePx) else it }
+                ?.also { if (cacheable) shotCache.put(key, it) }
+        }
+    }
+
+
+    /** The largest power-of-two subsample whose long edge still reaches [targetLongEdgePx]. */
+    private fun decodeSampled(ref: ImageRef, targetLongEdgePx: Int): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(ref.path, bounds)
+        val longEdge = maxOf(bounds.outWidth, bounds.outHeight)
+        if (longEdge <= 0) return null
+        var sample = 1
+        while (longEdge / (sample * 2) >= targetLongEdgePx) sample *= 2
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = sample
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        }
+        return BitmapFactory.decodeFile(ref.path, options)
     }
 
     /** A cut-out is about pixels, like the adjustments; only the crop is geometry. */
@@ -240,7 +363,7 @@ class CpuRenderer(
         }
 
     private suspend fun decodeResult(ref: ImageRef): Bitmap? {
-        resultCache[ref]?.let { return it }
+        (transients[ref] ?: resultCache[ref])?.let { return it }
         return withContext(dispatchers.io) {
             BitmapFactory.decodeFile(ref.path)
                 ?.copy(Bitmap.Config.ARGB_8888, false)
@@ -260,3 +383,24 @@ class CpuRenderer(
         }
     }
 }
+
+/** §8: a cached preview decode is no larger than the preview, so four of them stay small. */
+private fun fitted(bitmap: Bitmap, targetLongEdgePx: Int): Bitmap {
+    val longEdge = maxOf(bitmap.width, bitmap.height)
+    if (longEdge <= targetLongEdgePx) return bitmap
+    val scale = targetLongEdgePx.toFloat() / longEdge
+    return Bitmap.createScaledBitmap(
+        bitmap,
+        maxOf(1, (bitmap.width * scale).toInt()),
+        maxOf(1, (bitmap.height * scale).toInt()),
+        true,
+    )
+}
+
+private fun Bitmap.toArgb(): Bitmap =
+    if (config == Bitmap.Config.ARGB_8888) this else copy(Bitmap.Config.ARGB_8888, false)
+
+/** specs/multishot.md §7: the stored mask is the size it says, cut for a canvas of this shape. */
+private fun heroFits(mask: Bitmap, hero: HeroMask, canvas: Bitmap): Boolean =
+    mask.width == hero.widthPx && mask.height == hero.heightPx &&
+        MultiShotOp.sameAspect(mask.width, mask.height, canvas.width, canvas.height)

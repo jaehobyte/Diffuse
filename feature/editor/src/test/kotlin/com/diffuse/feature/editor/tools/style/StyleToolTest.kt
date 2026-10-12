@@ -301,6 +301,9 @@ class StyleToolTest {
         ): Result<Bitmap> =
             Result.Success(Bitmap.createBitmap(TILE_PX, TILE_PX, Bitmap.Config.ARGB_8888))
 
+        override fun putTransient(ref: ImageRef, bitmap: Bitmap) = Unit
+        override fun removeTransient(ref: ImageRef) = Unit
+
         override suspend fun resolveMask(document: EditDocument, maskId: String): Bitmap? = null
     }
 

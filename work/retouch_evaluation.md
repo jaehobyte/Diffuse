@@ -381,6 +381,11 @@ them and §3.2/§3.3 the `metrics.json` field behind each one.
 
 ## 5. What SR1 still needs
 
+> **Historical (before 2026-09-14).** Written before the server path in §6. The statements below
+> that no production `SkinRetouchProvider` exists and that the sheet shows 준비 중 describe that
+> earlier state; the provider, sheet and server now exist (§6, D083). Items 1, 4, 5 and 6 — the
+> photo set, detection quality, working tone corrections and licensing — are still open.
+
 1. **The photo set.** §2 fixes 24 licensed photographs — six positives and six negatives per
    correction, across skin tones, lighting, glasses, makeup, beards, angles and multiple people —
    with hand-drawn defect masks. None exists, and this agent has no rights to source one. Until it
@@ -415,3 +420,191 @@ whose four corrections are all shown as 준비 중 with Apply disabled. So the f
 not "the tool appears" but "the sheet stops saying 준비 중" — nothing may run a correction until a
 production `SkinRetouchProvider`, the protected allowed-skin mask builder and the SR1-A/SR1-B
 quality gates exist (`specs/skin_retouch_pipeline.md` §1.1).
+
+## 6. Server path (D083, 2026-09-14)
+
+`server/retouch/`, deployed as user units on this host (T4 shared with MonetGPT). Engines:
+`blemish/acne-yolov8m-640@18fad8c5+migan512@6f1f3530/c1` (detector + MI-GAN, CUDA EP),
+`shine/tone@1`, `dark_circles/tone@1`, `shaving_shadow/tone@1` (classical Lab/frequency-split tone
+corrections written for this task; no model).
+
+### 6.1 Real-photo smoke (mechanical masks, not app masks)
+
+Photo: NASA official portrait `jsc2013e079278` (public domain, user-approved for server/phone
+processing; kept in `~/retouch-eval/nasa`, never committed). ROI 2700×3100 (8.4 MP), allowed
+regions are hand-placed rectangles (`~/retouch-eval/smoke/region_6.json`), **not** the app's
+contour masks, so this is a contract/cost/behaviour smoke and not the SR1 gate.
+
+```bash
+V=server/retouch/.venv/bin/python
+$V server/retouch/scripts/make_smoke_case.py --image ~/retouch-eval/nasa/orig_6_jsc2013e079278.jpg \
+  --region ~/retouch-eval/smoke/region_6.json --out ~/retouch-eval/smoke/case_6 --id nasa6
+$V server/retouch/scripts/smoke_client.py --base-url http://127.0.0.1:8094 \
+  --manifest ~/retouch-eval/smoke/case_6/manifest.json --all-kinds --negative-auth --repeat 3 \
+  --out ~/retouch-eval/smoke/out_6      # exit 0, contract checks OK, 401/403 OK
+```
+
+| Kind | outcome | round trip p50 / max (n=3, via proxy, loopback) | observation (`~/retouch-eval/smoke/compare_6.jpg`) |
+|---|---|---|---|
+| blemish | no_change | 480 / 564 ms (decode ~300 ms, engine ~145 ms) | freckles and moles preserved; nothing detected on this face |
+| shine | corrected, 608,801 px | 4,071 / 6,260 ms | **severe**: whole forehead darkened with a visible hard boundary, freckles and texture flattened |
+| dark_circles | corrected, 241,838 px | 3,520 / 3,525 ms | **severe**: brightens cheeks rather than under-eye tone, blotchy dark-spot residue |
+| shaving_shadow | corrected, 7,272 px | 3,786 / 3,802 ms | edits the jaw contour against the background (region too loose), no stubble reduced |
+
+Four kinds together ≈ 11.9 s (sum of p50) for an 8.4 MP ROI. GPU: server 894 MiB beside MonetGPT
+8,068 MiB and two other processes (total ≈ 11.2 / 15.36 GiB) — coexistence OK. Service restart:
+`000 → 503 loading → 200` in 5 s.
+
+**Consequence:** the three tone engines fail §3 on the first real face and are not loaded by the
+deployment. Blemish has no positive evaluated, so it has not passed either. Until 2026-09-15 it was
+enabled on the test deployment; since the review fix (D084) no kind is qualified
+(`server/retouch/app/config.py` `QUALIFIED_KINDS = ()`), the deployment loads blemish with
+`RETOUCH_EVALUATION_KINDS=blemish`, and health reports `supported_kinds: []` — the app offers no
+kind until a gate passes.
+
+### 6.2 Gate table update (`specs/skin_retouch_validation.md` §2)
+
+| 기능 | 후보/버전 | 위치 | 양성 성공/전체 | 음성 보존/전체 | 심각한 변형 | p50/p95 | peak memory | 판정 |
+|---|---|---|---|---|---|---|---|---|
+| Blemish (auto, SR1-B) | blemish/…/c1 | server T4 | 미측정 (양성 사진 없음) | 1/1 (mechanical, 1 photo) | 0 | 480 / 564 ms (8.4 MP ROI) | 894 MiB GPU | 미판정 — 평가 전용 load, 앱 미지원 |
+| Shine (SR1-C) | shine/tone@1 | server | 미측정 | 0/1 | 1 | 4.1 / 6.3 s | — | **FAIL**, 미load |
+| DarkCircles (SR1-C) | dark_circles/tone@1 | server | 미측정 | 0/1 | 1 | 3.5 / 3.5 s | — | **FAIL**, 미load |
+| ShavingShadow (SR1-C) | shaving_shadow/tone@1 | server | 미측정 | 0/1 | 1 | 3.8 / 3.8 s | — | **FAIL**, 미load |
+
+Still needed for SR1: the ≥24-photo set with human per-kind annotations (positives with acne,
+visible shine, dark circles, stubble; skin-tone/lighting spread), app-contour masks rather than
+rectangles, and replacement shine/dark-circle/shaving algorithms.
+
+## 7. 피부 보정 인계 기록 (2026-09-15 `work/RESULT.md`에서 이동)
+
+`work/RESULT.md`가 멀티샷 작업(2026-09-29) 인계로 바뀌면서, 피부 보정의 마지막 인계 내용 — 상태, 검증, 실기기 기록,
+배포·운영 정보, Known Issues — 을 여기에 그대로 옮겼다. 내용은 수정하지 않았고 제목 단계만 한 단계 낮췄다.
+`work/REVIEW.md`의 피부 리뷰(CHANGES_REQUESTED)는 재리뷰 전이며, 이 기록은 그 수정 보고다.
+
+### Status
+
+PARTIAL — 서버·배포·Android 연결·편집/저장 코드와 자동 검증은 완료. **품질 gate를 통과한 종류가 없어 앱이 제공하는 종류는 0개이고, Corrected 실기기 E2E·성능 측정은 미완료.**
+
+2026-09-15 리뷰 수정(`work/REVIEW.md`): R1–R4 수정, R6 회귀 테스트 추가, N1 문서 정리. R5(실기기 Corrected 경로·성능)는 미해결 — 아래 Known Issues.
+
+| 영역 | 상태 |
+|---|---|
+| T1 환경·엔진·품질 | PARTIAL — 실제 모델 로드·실사진 smoke 완료. 톤 엔진 3종은 실사진에서 심각한 변형으로 **FAIL**, blemish는 양성 없음으로 미판정. 사람 주석 24장 세트 없음 → **gate 통과 종류 0** |
+| T2 서버·wire 계약 | DONE — `server/retouch/`, 계약 v1(pipeline §8.1), 서버 81 tests + Android 계약 테스트 |
+| T3 기동·포트·외부망 | DONE(범위 제한) — user unit 2개 active/enabled, linger=yes, SG 8094 규칙은 휴대폰 망 egress `/32`만 허용. 배포는 blemish를 평가 전용으로 load(`supported_kinds: []`) |
+| T4 Android 연결·편집·저장 | DONE(자동 검증) — provider/Hilt, 설정, 시트, 세션, `Operation.SkinRetouch`, 저장/렌더 |
+| T5 실기기 검증 | PARTIAL — 2026-09-14 SM-S948U에서 설정 → 진입 → 강도 → 미리보기(공개 URL 실제 요청) → NoChange 적용 차단, Back/취소 무변경, 서버 중단·복구, draft 중 내보내기 차단까지 실행(당시 blemish가 앱에 활성화된 배포). **적용·Undo/Redo·재열기·export·offline·회전/process 복구·12MP 성능은 미실행.** 리뷰 수정 후 APK 재설치·기기 재검증은 하지 않음 |
+
+### Changed
+
+#### 리뷰 수정 (2026-09-15)
+
+- **R1** 서버: `QUALIFIED_KINDS`(코드 상수, 현재 `()`)에 든 종류만 `RETOUCH_ENABLED_KINDS`로 활성화 가능하고 기본값도 이것뿐. 미통과 종류는 `RETOUCH_EVALUATION_KINDS`로 load → health `evaluation_engines`에만 표시, `/v1/retouch`는 평가 도구용으로 받음, `supported_kinds`/`engines`에는 없음. smoke client가 평가 engine을 사용. 배포 env를 `RETOUCH_ENABLED_KINDS=` / `RETOUCH_EVALUATION_KINDS=blemish`로 바꾸고 `retouch-server` 재시작 → 공개 proxy health `supported_kinds: []`. 앱 client는 기존대로 `supported_kinds`만 사용(평가 engine 무시 테스트 추가). D084, pipeline §8.1, README 갱신.
+- **R2** 서버: 인증·Content-Length 검사 직후 body를 읽기 전에 `Runtime.admit()`(실행+대기 = 1+4) → `Ticket`을 수신·파싱·디코딩·engine·enforce·인코딩 끝까지 보유하고 모든 경로에서 `finally` 반납. 504/연결 종료 뒤 실행 중인 engine thread는 끝날 때까지 ticket을 유지. GPU slot(semaphore)은 별도. 429는 body를 읽지 않으므로 `request_id` 없음(계약 문서 반영). Caddy는 `request_buffers` 미설정이라 body를 버퍼링하지 않고 스트리밍하므로 proxy 쪽 추가 제한은 두지 않음.
+- **R3** `SkinRetouchController`: Default dispatcher는 픽셀(`draftPixelsOf`)만 만들고, Main 복귀 후 세션·revision을 확인한 결과만 `publishDraft`로 renderer transient에 등록. 취소·stale 작업은 아무것도 등록하지 않음. ref에 revision이 들어 늦은 정리가 새 draft를 지우지 않음.
+- **R4** `SkinRetouchController`: 로컬 얼굴 분석을 `analysisJob`으로 분리. 서버 설정 저장은 요청 `job`만 취소하고 분석은 계속 진행. 얼굴 변경/재시도/닫기는 분석 job도 취소.
+
+- **서버** `server/retouch/`: FastAPI + ONNX Runtime(CUDA EP). `GET /health`(load+warm-up 전 503), `POST /v1/retouch` multipart. Bearer 401/403, 413(body 90 MiB·IHDR 픽셀 선검사), 422, 429(실행 1/대기 4), 503, 504(55 s), 계약 보장 중앙 강제, 로그는 request id/kind/status/단계 ms만. 엔진: blemish(acne 검출기 → MI-GAN 복원, 255=보존 반전, 1회 feather), shine/dark_circles/shaving_shadow(톤 보정). 배포 코드에는 fake 선택 경로 없음.
+- **wire 계약**: `specs/skin_retouch_pipeline.md` §8.1과 `server/retouch/README.md`에 part 이름·채널·mask 극성·no_change 형태·오류표·상한 계산·timeout(앱 health 5 s, 추론 connect 10 s / call 60 s, proxy 65 s, 서버 55 s)을 고정.
+- **core:ai**: `RetouchServerClient`(엄격 PNG 코덱, 응답 echo/형태/binary 검증, support ∩ allowed ∩ alpha>0 재적용), `RetouchServerSkinRetouchProvider`(probe/refresh, 저장 시 재확인, health의 `supported_kinds`만 지원, engine version 고정, 빈 allowance는 업로드 없이 NoChange), `RetouchServerSettings`(개인 기본값 없음, override 우선), `SkinAllowedMask`(ML Kit contour로 종류별 허용 영역, 눈·눈썹·입술·콧구멍·타인 제외), Hilt binding. `SkinRetouchProvider`에 `checking`/`refresh()`와 `StateFlow` `supportedKinds` 추가.
+- **core:imaging / core:data**: `Operation.SkinRetouch` + `SkinRetouchSettings`, JSON `skinRetouch`, 참조/강도 검증, outpaint guard, 첫 Adjust 앞 삽입(Mask와 한 변경), Crop 없는 prefix base, RGB만 support 안에서 교체·alpha 보존 렌더, `SkinRetouchComposite`(§5 수식), renderer transient ref, 원자적 `saveSkinRetouch`/`discardSkinRetouch`, load 시 누락 파일 거부, duplicate 경로 재작성(새 op만).
+- **feature:editor**: `SkinRetouchController`(세션/얼굴/요청 세대, 늦은 응답·저장 후 commit 직전 재검사, old finally가 new busy를 못 끔, 저장 중 취소 시 파일 정리), 시트(처리 위치·서버 주소, 상태별 문구, 다시 확인/서버 설정, 얼굴 썸네일, 서버·얼굴이 허용한 종류만 slider, 미리보기, 준비 후 강도는 로컬 합성), draft는 실제 renderer로 표시, 적용 1 commit, 문서 변경 시 세션 종료, draft 중 내보내기 차단, 서버 설정 시트에 피부 보정 주소/토큰.
+- **문서**: D083, `specs/skin_retouch.md`·`skin_retouch_pipeline.md` 상태/§8.1, `work/retouch_evaluation.md` §6.
+
+### Files
+
+리뷰 수정에서 변경: `server/retouch/app/{config,main}.py`, `app/engines/__init__.py`, `scripts/smoke_client.py`, `deploy/retouch-server.env.example`, `README.md`, `deploy/README.md`, `tests/{conftest,test_auth_health,test_concurrency}.py`; `SkinRetouchController.kt`, `SkinRetouchToolTest.kt`, testShared `FakeFaceRegionAnalyzer.kt`(분석 gate), `RetouchServerClientTest.kt`; `specs/skin_retouch_pipeline.md` §8.1, `work/decisions.md`(D084), `work/retouch_evaluation.md`(§5 과거 표시, §6), `work/RESULT.md`. 저장소 밖: `deploy/retouch-server.env`(git-ignore, 종류 2줄).
+
+전체 작업:
+
+- `server/retouch/**` (신규; `.venv`, `deploy/*.env`, 로그는 git-ignore)
+- core:ai: `SkinRetouchProvider.kt`, `AiModule.kt`, `SkinAllowedMask.kt`, `retouch/server/{RetouchPng,RetouchServerConfig,RetouchServerSettings,RetouchServerClient,RetouchServerSkinRetouchProvider}.kt`, `build.gradle.kts`(RETOUCH BuildConfig), testShared `FakeSkinRetouchProvider.kt`·`FakeFaceRegionAnalyzer.kt`, tests `SkinAllowedMaskTest`, `retouch/server/*Test`
+- core:imaging: `model/{Operation,EditDocument,EditDocumentJson}.kt`, `render/{Renderer,SkinRetouchOp,SkinRetouchComposite}.kt` + tests
+- core:data: `ProjectRepository.kt`, `DefaultProjectRepository.kt`, `file/ProjectFiles.kt` + tests
+- feature:editor: `EditorAi.kt`, `EditorViewModel.kt`, `EditorRoute.kt`, `tools/ToolSheetHost.kt`, `tools/retouch/{SkinRetouchController,SkinRetouchState,SkinRetouchSheet}.kt`, `tools/select/{Sam3SettingsSheet,SelectionController,SelectionState}.kt`, `res/values/strings.xml`, tests(`tools/retouch/*`, EditorAi/Renderer/Repository fake 갱신 파일들), feature:browse/export 테스트 fake
+- `specs/skin_retouch.md`, `specs/skin_retouch_pipeline.md`, `work/decisions.md`, `work/retouch_evaluation.md`, `work/RESULT.md`
+- 저장소 밖: `~/.config/systemd/user/retouch-{server,public}.service`, AWS SG 규칙
+
+### Validation
+
+| Command | Result |
+|---|---|
+| **리뷰 수정 후** `server/retouch/scripts/check.sh` | exit 0, 86 passed, 4 deselected(`model`) — 신규: 평가 종류 비지원·미통과 활성화 거부, body 수신 전 429(동시 6요청 중 디코딩 1·parse 1), 인코딩 중 자리 유지, 400/422/수신 중 연결 종료 후 용량 복구 |
+| **리뷰 수정 후** `scripts/check.sh` | exit 0 (lint, detekt, 전체 unit 1,177 tests / 0 fail / 2 skip 기존, Roborazzi verify, dependencyGuard) |
+| **리뷰 수정 후** `:feature:editor … SkinRetouchToolTest` | 21 passed (신규 2: 설정 저장 중 분석 유지, Main 복귀 전 취소된 합성의 transient 0) |
+| 변이 확인: R3 옛 등록 위치 / R4 설정 저장이 분석 취소 | 각각 새 테스트 fail(transient 2→4개, 분석 Analyzing 고정) → 복원 후 pass |
+| **리뷰 수정 후** `:core:ai … retouch.*` | 0 fail (신규: `evaluation engines are never supported kinds`) |
+| **리뷰 수정 후** 배포 health (loopback 8084, proxy 8094) | 200, `supported_kinds: []`, `evaluation_engines: {blemish}` |
+| **리뷰 수정 후** `smoke_client.py --base-url http://127.0.0.1:8094 --manifest ~/retouch-eval/smoke/case_6/manifest.json --kind blemish --negative-auth` | exit 0, 401/403 OK, `no_change` 580 ms, "evaluation engine, not offered to the app" |
+| `scripts/check.sh` (lint, detekt, 전체 unit, Roborazzi verify, dependencyGuard) | **exit 0**. unit 1,174 tests, 0 fail, 2 skip(기존 core:imaging) |
+| `:core:ai … retouch.* / SkinAllowedMaskTest / FakeSkinRetouchProviderTest` | 49 passed |
+| `:feature:editor … tools.retouch.*` | 29 passed (SkinRetouchToolTest 19, SkinRetouchSheetTest 10) |
+| 변이 확인: 컨트롤러의 늦은 응답/busy 가드 제거 | SkinRetouchToolTest 3 fail → 복원 후 pass |
+| `:core:imaging` / `:core:data` unit | 215 (2 skip, 기존) / 25 passed |
+| `server/retouch/scripts/check.sh` | exit 0, 81 passed, 4 deselected(`model`) |
+| `pytest -m model` (서버 에이전트 실행) | 4 passed |
+| `smoke_client.py --base-url http://127.0.0.1:8094 … --all-kinds --negative-auth --repeat 3` (NASA 초상 8.4 MP ROI) | exit 0, 계약 검사 OK, 401/403 OK. 수치는 `work/retouch_evaluation.md` §6 |
+| `:app:assembleDebug :app:assembleRelease` | exit 0 (release unsigned 18,435,211 B, ONNX runtime 없음, provider 포함) |
+| `git diff --check` | clean |
+| localhost health: 토큰 없음/틀림/정상 | 401 / 403 / 200 ready |
+| `systemctl --user restart retouch-server` | 000 → 503 → 200, 5 s |
+| 기기 셸 `curl http://44.233.156.159:8094/health` (토큰 없음) | 401, proxy 로그 remote_ip 210.94.41.89 |
+| `:core:ai:connectedDebugAndroidTest`, 새 피부 E2E instrumentation | **미실행/미작성** |
+| 앱 UI 실기기 조작 (SM-S948U) | 설정·진입·미리보기·NoChange·Back·서버 중단/복구·내보내기 차단·PSS 실행(아래 표). 적용·Undo/Redo·재열기·export·offline·slider p50 **미실행** |
+
+### 실기기 검증 (2026-09-14 22:00~22:15, 마지막 기기 검증)
+
+당시 배포는 blemish를 앱 지원 종류로 보고했다(R1 수정 전). 리뷰 수정 후에는 같은 흐름에서 네 종류 모두 "미지원"으로 보여야 하며, 이것은 기기에서 재확인하지 않았다.
+
+- 기기: Samsung SM-S948U `R3CYA0AVX2E`, Android 16, `ADB_SERVER_SOCKET=tcp:127.0.0.1:15038`(SSH 전달, 제어용). Wi-Fi `sWave_works`, egress 210.94.41.89. `adb reverse`는 `tcp:8082`(MonetGPT)만 있고 8094용은 없음 → 앱 데이터는 공개 URL로 전송.
+- APK: 최신 코드로 재빌드한 debug `app-debug.apk` SHA-256 `38123fe9…0033c`, versionCode 12 / 0.6.0 / `com.diffuse`, 신규 설치(`install -r`, 기존 앱 없음).
+- 사진: NASA 초상 `jsc2013e079278`(원본 5412×6765), 사진 선택기로 앱에서 직접 가져옴. 조작은 `adb shell input` + `uiautomator dump`(`~/retouch-eval/device/ui.sh`, 증거 `~/retouch-eval/device/`).
+
+| 시나리오 | 결과 |
+|---|---|
+| 기본값 없는 APK | 시트에 "설정에서 피부 보정 서버 주소를 입력해주세요" + 서버 설정 버튼, 네 종류 미지원 |
+| 설정 저장 | "피부 보정 서버에 연결됐어요", 서버가 켠 잡티만 slider, 나머지 3종 "미지원". proxy 로그: 210.94.41.89 `okhttp/4.12.0` `/health` 200 |
+| 설정 저장·시트 진입·강도 변경 | `/v1/retouch` 요청 0건 (무단 업로드 없음), "미리보기를 눌러 보정을 준비해주세요" |
+| 미리보기 | 요청 1건 `request_id=5e75389b-4af1-4988-b053-e8e99e6a3526`: 기기 로그 NoChange 4,128 ms ↔ 서버 로그 blemish 200 no_change total 3,474 ms(수신 3,153 ms, engine 145 ms), 업로드 6,707,442 B |
+| NoChange에서 적용 | 시트 유지, commit 없음 |
+| 시트 가장자리 드래그가 시스템 Back으로 처리됨 | 시트 닫힘, Undo 비활성, 문서 무변경 |
+| 서버 중단 후 미리보기 | 기기 로그 `/v1/retouch -> 502` → Unavailable, 자동 1회 `/health` 재확인 → "서버가 준비 중이에요" + 다시 확인/서버 설정 |
+| 서버 재기동 후 "다시 확인" | 앱 재시작 없이 "연결됐어요", 강도 50 유지. 재요청 `542ab62e-7f71-490c-8354-41253ff1ef5e` 기기↔서버 일치, 왕복 5,264 ms |
+| 시트 열린 상태에서 내보내기 | 편집기·시트 유지(내보내기로 이동 안 함). 스낵바 문구는 캡처하지 못함 |
+| 미리보기 중 앱 PSS(1 s 간격 12회 샘플) | 최대 353,171 kB — **editor 250 MB 예산 초과**(debug 빌드, 36 MP 원본 → working 4096) |
+| 4인 단체 사진 | 인물 판정이 안 되어 일반 메뉴가 열리고 AI 그룹에 피부 보정이 없음 → 다중 얼굴/작은 얼굴 흐름 **진입 불가** |
+
+미실행: Corrected 결과가 필요한 적용 1 commit·Undo/Redo·재열기·export·offline 재열기·회전 draft·process 복구(이 사진에서 검출 0건이고, FAIL 판정 톤 엔진을 테스트용으로 켜는 조치는 권한 정책이 거부), slider-to-preview p50.
+
+### 배포·운영
+
+- **공개 URL**: `http://44.233.156.159:8094` (HTTP, 비암호화) → Caddy → `127.0.0.1:8084`. Caddy `admin off`, `persist_config off`.
+- **Unit**: `retouch-server.service`, `retouch-public.service` — enabled/active, `Linger=yes`. 부팅 자동 시작은 설정만 확인했고 호스트 재부팅 테스트는 하지 않음.
+- **명령**: `systemctl --user {start|stop|restart|status} retouch-server.service retouch-public.service`, 로그 `journalctl --user -u retouch-server.service`. 설치/HTTPS 전환은 `server/retouch/deploy/README.md`.
+- **토큰**: `server/retouch/deploy/retouch-server.env`(600, git-ignore)의 `RETOUCH_AUTH_TOKEN`. MonetGPT/SAM 3와 별도. 앱은 서버 설정 시트에서 입력.
+- **활성 종류**: 앱 지원 없음(`RETOUCH_ENABLED_KINDS=`, `QUALIFIED_KINDS=()`). `RETOUCH_EVALUATION_KINDS=blemish`(평가 전용). 톤 엔진 3종은 FAIL로 미load. 종류를 앱에 제공하려면 gate 증거와 함께 `app/config.py` `QUALIFIED_KINDS`를 코드로 변경한 뒤 env에 활성화(D084).
+- **Ingress**: `sg-09e915674a6bd5375` / `sgr-0b2cf130f609f5c0b`, TCP 8094, `210.94.41.89/32`(휴대폰 사내망 egress). 제거: `aws ec2 revoke-security-group-ingress --group-id sg-09e915674a6bd5375 --security-group-rule-ids sgr-0b2cf130f609f5c0b`. 호스트 방화벽(ufw) 비활성. 8084·ADB는 비공개.
+- **마지막 검증 APK·기기**: debug `app-debug.apk` SHA-256 `38123fe9…0033c`, versionCode 12 / 0.6.0 / `com.diffuse`, Samsung SM-S948U `R3CYA0AVX2E`(Android 16, `ADB_SERVER_SOCKET=tcp:127.0.0.1:15038`). 개인 기본값 없음. 리뷰 수정 코드로는 재빌드·재설치하지 않음.
+- 이전 시도(참고): 같은 버전의 이전 빌드 SHA-256 `378c5c62…a6076`을 SM-S948N `10.243.100.22:42387`(`ADB_SERVER_SOCKET=tcp:127.0.0.1:15037`)에 설치했으나 공유 기기라 설정 저장 직후 조작을 중단했다.
+
+### Review Notes
+
+- R1 방식: 지원 판정은 코드 상수 `QUALIFIED_KINDS`, 평가 load는 env. health에 `evaluation_engines` 필드를 추가했다(앱은 모르는 필드를 무시). 평가 종류는 인증된 누구나 `/v1/retouch`로 호출할 수 있다 — 앱은 보내지 않지만 서버가 막지는 않는다.
+- R2: 429에서 `request_id`가 빠진 것은 계약 변경이다(앱은 오류 body의 `request_id`를 쓰지 않음). 로딩 중 요청도 자리를 받은 뒤 body를 읽고 503을 받는다.
+- 헬스는 활성 엔진 하나라도 load 실패하면 전체 503 `failed`(운영자가 종류를 빼서 복구). §8.1 문구의 다른 해석 가능성 있음.
+- 서버에 계약표 외 응답 추가: 500 `internal_error`, 연결 끊김 499(수신자 없음), `corrected`인데 변화 없으면 `no_change`로 강등.
+- `SkinRetouchProvider` 공개 인터페이스 변경(`checking`, `refresh()`, `StateFlow` supportedKinds). `EditorAi` 생성자 인자 3개 추가.
+- draft는 preview 배율로 합성한 transient 결과를 renderer에 넣어 그리고, 적용 시에는 working 해상도 base를 다시 렌더해 저장한다(세션 동안 full-canvas 후보를 들고 있지 않음).
+- `duplicate`는 원래부터 source/erase/fill/outpaint/mask 경로를 원본 폴더로 공유한다(기존 결함). 이번에는 SkinRetouch와 그 mask만 재작성했다.
+- 서버 구현 중 로컬 Caddy 테스트가 `~/.config/caddy/autosave.json`을 한 번 덮어썼고(복구 불가, `--resume` 사용 시에만 영향), 18094를 수 초간 전체 인터페이스에 열었다. 이후 설정에 `persist_config off`/loopback bind를 넣었다.
+
+### Known Issues
+
+1. **품질 gate 미통과(전 종류) → 앱 지원 종류 0.** 톤 엔진 3종은 첫 실사진에서 심각한 변형(`~/retouch-eval/smoke/compare_6.jpg`) → 알고리즘 교체 필요. blemish는 양성 사진이 없어 미판정. 필요 자료: 사용 권한 있는 최소 24장, 종류별 양성/음성 6장 이상의 **사람 주석**(여드름·유분광·다크서클·면도자국, 피부톤/조명 분포). NASA 공공 도메인 초상 60장은 `~/retouch-eval/nasa`에 있으나 대부분 보정된 공식 사진이라 양성이 거의 없다.
+2. **R5 미해결 — Corrected 실기기 경로와 성능.** 설정·미리보기·NoChange·서버 복구는 SM-S948U에서 실행했다(위 표). 남은 것: 품질 gate를 통과한 양성 사진으로 적용 1 commit → Undo/Redo → 재열기 → export/offline, 다중/작은/가린 얼굴, Crop/회전/Adjust, 요청·저장 중 취소, 회전 draft/process 복구, 새 피부 E2E instrumentation. 이 경로는 통과 종류가 생겨야 앱에서 실행할 수 있다(D084). 성능: 기록된 PSS 최대 353,171 kB는 debug·36 MP 원본 조건이며 요구 조건(12 MP/working 4096, 기존 편집기 대비 peak, 반복 실행 잔류, slider-to-preview p50 <100 ms)은 미측정, 네 종류 왕복 p95는 loopback 3회뿐이다. 기기에는 앱(debug)과 `/sdcard/Pictures/RetouchEval/` NASA 사진 4장이 남아 있다.
+3. **Ingress 범위.** `0.0.0.0/0` 규칙은 세션 권한 정책이 거부해 `/32`로 제한했다. 휴대폰 모바일 데이터망이나 독립 외부 호스트에서의 검증은 해당 IP 추가가 필요하다.
+4. 새 피부 E2E instrumentation 테스트는 작성하지 않았다. 기존 `AcneDetectorDeviceTest`는 서버 경로를 검증하지 않는다.
+5. 서버 성능: 8.4 MP ROI 네 항목 합계 ≈ 11.9 s(표본 3, loopback — 완료 판정 근거 아님). 톤 엔진은 전체 해상도 Lab 처리라 큰 ROI에서 느리다.
+6. release APK는 unsigned(기존과 동일).
+7. **메뉴 불일치(제품 결정 필요)**: `specs/skin_retouch.md` §2는 일반 profile의 AI 그룹에도 피부 보정을 두지만 현재 메뉴(T79, `ToolStripLevelTest`)는 인물 profile에서만 노출한다. 인물로 판정되지 않는 단체 사진은 진입할 수 없다. 명세와 메뉴 계약 중 무엇을 따를지 정해야 하므로 리뷰 수정에서도 바꾸지 않았다.
+8. 잡티 Corrected 경로를 실기기에서 확인하려면 여드름이 보이는 사용 권한 있는 얼굴 사진이 필요하다.

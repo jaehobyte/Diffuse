@@ -1,0 +1,15 @@
+# systemd *user* unit for the public HTTP test proxy (:8094 -> 127.0.0.1:8084).
+[Unit]
+Description=Vibe skin retouch public HTTP test proxy on 8094
+After=network-online.target retouch-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/vibe_editor_260905/server/retouch
+ExecStart=%h/bin/caddy run --config %h/vibe_editor_260905/server/retouch/deploy/Caddyfile.test8094 --adapter caddyfile
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

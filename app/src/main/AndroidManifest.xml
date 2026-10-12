@@ -31,10 +31,15 @@
             android:name="com.google.mlkit.vision.DEPENDENCIES"
             android:value="face" />
 
+        <!--
+            Edge-to-edge: the keyboard arrives as an inset the editor sheet pads for, instead of
+            the window panning and leaving the pinned [취소 | 적용] row behind the keyboard.
+        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:theme="@style/Theme.Diffuse">
+            android:theme="@style/Theme.Diffuse"
+            android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

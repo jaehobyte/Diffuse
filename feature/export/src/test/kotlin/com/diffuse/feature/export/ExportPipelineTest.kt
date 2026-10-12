@@ -31,6 +31,9 @@ class ExportPipelineTest {
             return Result.Success(Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888))
         }
 
+        override fun putTransient(ref: ImageRef, bitmap: Bitmap) = Unit
+        override fun removeTransient(ref: ImageRef) = Unit
+
         override suspend fun resolveMask(document: EditDocument, maskId: String): Bitmap? = null
     }
 

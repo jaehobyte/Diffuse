@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+deploy/*.env
+!deploy/*.env.example
+deploy/*.log
+*.log

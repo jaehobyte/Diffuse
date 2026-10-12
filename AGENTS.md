@@ -585,3 +585,33 @@ Approve when:
 - no blocking regression is evident
 
 If those conditions hold, approve instead of searching for additional cosmetic feedback.
+
+---
+
+# 19. Work Document Maintenance
+
+Keep one canonical file for each harness responsibility:
+
+- `work/tasks.md`: the current implementation contract
+- `work/RESULT.md`: the latest implementation and validation handoff
+- `work/REVIEW.md`: the latest review
+- `work/decisions.md`: durable architectural and product decisions
+
+Update these files in place. Use git history for earlier versions; do not create
+copies with dates, task names, or before/after suffixes unless the user explicitly
+requests them. Do not create parallel task plans or standalone handoff/review
+reports that duplicate these files. This rule also applies to instructions written
+for Claude Code in `work/tasks.md`.
+
+Before replacing a handoff, inspect uncommitted changes and retain any unresolved
+information needed for the current task in the canonical document. Do not commit
+automatically just to preserve history.
+
+Keep actively referenced specifications and substantive evaluation evidence (such
+as `work/retouch_evaluation.md`) when they serve a distinct purpose. Put validation
+summaries in `work/RESULT.md` and link to that evidence instead of copying it.
+
+When the user requests document cleanup, remove superseded plans and duplicate
+handoff files, carry forward still-needed information, and update their references.
+Do not delete implementation, fixtures, or useful evaluation evidence merely
+because they are unrelated to the latest task.

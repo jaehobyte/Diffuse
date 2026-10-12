@@ -62,6 +62,18 @@ android {
             "MONET_TOKEN",
             "\"${serverDefault("MONET_AUTH_TOKEN", "monet.token")}\"",
         )
+        // specs/skin_retouch_pipeline.md §8: the skin retouch server, blank by default like the
+        // two above. Its own address and token; nothing is copied from MonetGPT or SAM 3.
+        buildConfigField(
+            "String",
+            "RETOUCH_BASE_URL",
+            "\"${serverDefault("RETOUCH_BASE_URL", "retouch.baseUrl")}\"",
+        )
+        buildConfigField(
+            "String",
+            "RETOUCH_TOKEN",
+            "\"${serverDefault("RETOUCH_AUTH_TOKEN", "retouch.token")}\"",
+        )
     }
 
     // specs/ai_provider.md §6. Kotlin has no testFixtures compilation under AGP 8.13

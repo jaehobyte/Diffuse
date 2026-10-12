@@ -67,7 +67,8 @@ class ToolStripLevelTest {
 
         assertEquals(
             listOf(
-                Tool.Select, Tool.Erase, Tool.Fill, Tool.Expand, Tool.Style, Tool.Auto, Tool.Direct,
+                Tool.Select, Tool.Erase, Tool.Fill, Tool.Expand, Tool.Style, Tool.Auto, Tool.MultiShot,
+                Tool.Direct,
             ),
             ai,
         )
@@ -178,6 +179,8 @@ class ToolStripLevelTest {
         }
     }
 
+    // One branch per tool, so it grows with the enum by design.
+    @Suppress("CyclomaticComplexMethod")
     private fun labelOf(tool: Tool): String = when (tool) {
         Tool.Light -> "라이트"
         Tool.Color -> "색상"
@@ -191,6 +194,7 @@ class ToolStripLevelTest {
         Tool.Expand -> "확대"
         Tool.Style -> "스타일"
         Tool.Auto -> "자동"
+        Tool.MultiShot -> "멀티샷"
         Tool.Direct -> "지시"
     }
 

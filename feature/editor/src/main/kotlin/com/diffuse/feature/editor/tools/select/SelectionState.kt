@@ -7,6 +7,7 @@ import com.diffuse.core.ai.Availability
 import com.diffuse.core.ai.PointPrompt
 import com.diffuse.core.ai.SegSession
 import com.diffuse.core.ai.monet.MonetConfig
+import com.diffuse.core.ai.retouch.server.RetouchServerConfig
 import com.diffuse.core.ai.sam3.Sam3Config
 import com.diffuse.core.common.AppError
 
@@ -50,6 +51,8 @@ data class SelectionState(
     val geminiApiKey: String = "",
     /** specs/auto_enhance.md §4: the same sheet carries 자동 보정's server, beside SAM 3's. */
     val monetConfig: MonetConfig = MonetConfig("", ""),
+    /** specs/skin_retouch_pipeline.md §8: and the skin retouch server's, in the same sheet. */
+    val retouchConfig: RetouchServerConfig = RetouchServerConfig(""),
     /** One-shot snackbar text, cleared once shown. DESIGN.md §4 forbids toasts. */
     @StringRes val message: Int? = null,
 ) {

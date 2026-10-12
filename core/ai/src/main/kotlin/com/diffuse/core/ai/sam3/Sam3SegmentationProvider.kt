@@ -91,7 +91,14 @@ class Sam3SegmentationProvider @Inject internal constructor(
             .map { masks -> masks.map { scaled(it, session) } }
     }
 
-    override suspend fun close(session: SegSession) = lock.withLock { closeLocked() }
+    /**
+     * Releases [session] only while it is still the live one. specs/multishot.md §8: two tools can
+     * each hold a `SegSession`, and a late close of one that an `open` already replaced must not
+     * take the other tool's session down with it.
+     */
+    override suspend fun close(session: SegSession) = lock.withLock {
+        if (live?.session == session) closeLocked()
+    }
 
     /**
      * specs/segmentation.md §5. One replay, never a loop: re-upload the retained bytes, then

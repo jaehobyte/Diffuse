@@ -54,17 +54,31 @@ data class PreparedCorrection(
  */
 interface SkinRetouchProvider {
 
+    /**
+     * The last answer for the current settings. While [checking] is true it is not yet the answer
+     * for them, so the sheet shows "확인 중" rather than a failure.
+     */
     val availability: StateFlow<Availability>
+
+    /** True while a probe of the current settings is in flight. */
+    val checking: StateFlow<Boolean>
 
     /** What the sheet shows, and what the settings screen must have made explicit (§8). */
     val executionLocation: ExecutionLocation
 
     /**
-     * The kinds this build can actually correct. A kind outside this set is
-     * [com.diffuse.core.common.AppError.Unsupported], not a silent no-op: specs/skin_retouch.md §1
-     * requires unfinished kinds to stay visibly disabled rather than appear to work.
+     * The kinds that can actually be corrected right now — for a server, what its last `/health`
+     * reported as enabled. A kind outside this set is [com.diffuse.core.common.AppError.Unsupported],
+     * not a silent no-op: specs/skin_retouch.md §1 requires unfinished kinds to stay visibly
+     * disabled rather than appear to work.
      */
-    val supportedKinds: Set<SkinRetouchKind>
+    val supportedKinds: StateFlow<Set<SkinRetouchKind>>
+
+    /**
+     * The explicit retry: probe the current settings again. A probe already in flight for the same
+     * settings is joined, and nothing is probed on a timer or uploads anything.
+     */
+    fun refresh()
 
     /**
      * @param faceRoi orientation-normalised `ARGB_8888` at canonical working coordinates. Never

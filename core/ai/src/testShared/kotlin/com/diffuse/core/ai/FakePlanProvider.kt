@@ -4,12 +4,16 @@ import android.graphics.Bitmap
 import com.diffuse.core.common.AppError
 import com.diffuse.core.common.Result
 import com.diffuse.core.imaging.model.AdjustKind
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.withContext
 
 /**
  * specs/ai_provider.md §6. Returns [DEFAULT_PLAN] — the request specs/vibe_edit.md was written
- * from — unless [next] or [failNext] overrides the following call.
+ * from — unless [next] or [failNext] overrides the following call. [hold] parks the next call in
+ * `NonCancellable` until [release], so a test can prove a late plan is dropped (§14).
  */
 class FakePlanProvider : EditPlanProvider {
 
@@ -21,6 +25,16 @@ class FakePlanProvider : EditPlanProvider {
 
     private var nextPlan: EditPlan? = null
     private var nextError: AppError? = null
+    private var gate: CompletableDeferred<Unit>? = null
+
+    fun hold() {
+        gate = CompletableDeferred()
+    }
+
+    fun release() {
+        gate?.complete(Unit)
+        gate = null
+    }
 
     fun next(plan: EditPlan) {
         nextPlan = plan
@@ -39,6 +53,7 @@ class FakePlanProvider : EditPlanProvider {
         planCount++
         val plan = nextPlan ?: DEFAULT_PLAN
         nextPlan = null
+        gate?.let { waiting -> withContext(NonCancellable) { waiting.await() } }
         return Result.Success(plan)
     }
 

@@ -81,6 +81,172 @@ enum class AdjustKind(
 private val ZERO_CENTRED = -1f..1f
 private val UNIT_RANGE = 0f..1f
 
+/** specs/skin_retouch_pipeline.md §5: the only strength composite there is, so far. */
+const val SKIN_RETOUCH_COMPOSITE_VERSION = 1
+
+/**
+ * specs/skin_retouch_pipeline.md §6. The document's own copy of the four kinds: core:imaging does
+ * not depend on core:ai, so the editor maps `SkinRetouchKind` onto this.
+ */
+enum class RetouchKind { Blemish, Shine, DarkCircles, ShavingShadow }
+
+/**
+ * specs/skin_retouch_pipeline.md §6: provenance of an [Operation.SkinRetouch], never re-rendered
+ * from. The strengths are already baked into its result; [engines] carries, per active kind, the
+ * detector and checkpoint versions the server reported.
+ */
+data class SkinRetouchSettings(
+    val strengths: Map<RetouchKind, Float>,
+    val engines: Map<RetouchKind, String>,
+    val compositeVersion: Int = SKIN_RETOUCH_COMPOSITE_VERSION,
+) {
+
+    /** Four finite 0..1 strengths, at least one active, each active kind with its engine. */
+    val isValid: Boolean
+        get() = compositeVersion == SKIN_RETOUCH_COMPOSITE_VERSION &&
+            RetouchKind.entries.all { kind ->
+                val strength = strengths[kind]
+                strength != null && strength.isFinite() && strength in UNIT_RANGE &&
+                    (strength == 0f || !engines[kind].isNullOrBlank())
+            } &&
+            strengths.values.any { it > 0f }
+}
+
+/**
+ * specs/multishot.md §4. Where one extracted subject sits on the canonical canvas: a uniform
+ * [scale] relative to the initial contain fit and a [rotationDeg] about the photo's centre, then a
+ * move of the centre by [offsetX]/[offsetY] as fractions of the canvas width/height. [opacity]
+ * multiplies the subject's own alpha once.
+ */
+data class ShotPlacement(
+    val offsetX: Float = 0f,
+    val offsetY: Float = 0f,
+    val scale: Float = 1f,
+    val rotationDeg: Float = 0f,
+    val opacity: Float = DEFAULT_SHOT_OPACITY,
+) {
+
+    /** §4: the ranges the sheet, the JSON check and the renderer all share. */
+    val isValid: Boolean
+        get() = offsetX.isFinite() && offsetY.isFinite() &&
+            scale.isFinite() && scale in SHOT_SCALE_RANGE &&
+            rotationDeg.isFinite() && rotationDeg in SHOT_ROTATION_RANGE &&
+            opacity.isFinite() && opacity in UNIT_RANGE
+
+    /** Clamped into the ranges; a non-finite offset goes back to the centre. */
+    fun coerced(): ShotPlacement = ShotPlacement(
+        offsetX = offsetX.takeIf { it.isFinite() } ?: 0f,
+        offsetY = offsetY.takeIf { it.isFinite() } ?: 0f,
+        scale = scale.takeIf { it.isFinite() }?.coerceIn(SHOT_SCALE_RANGE) ?: 1f,
+        rotationDeg = rotationDeg.takeIf { it.isFinite() }?.coerceIn(SHOT_ROTATION_RANGE) ?: 0f,
+        opacity = opacity.takeIf { it.isFinite() }?.coerceIn(UNIT_RANGE) ?: DEFAULT_SHOT_OPACITY,
+    )
+}
+
+/**
+ * specs/multishot.md §3. One added photograph's subject: an RGBA PNG at the photo's EXIF-upright
+ * working size ([widthPx] × [heightPx]), transparent outside the subject.
+ */
+data class Shot(
+    val id: String,
+    val subjectRef: ImageRef,
+    val widthPx: Int,
+    val heightPx: Int,
+    val placement: ShotPlacement = ShotPlacement(),
+    /**
+     * specs/multishot.md §4.2: the point of the subject the time layout puts on its path, as a
+     * fraction of the photo — initially the bottom centre of the mask's bounds. Null in a document
+     * written before the time layout existed.
+     */
+    val anchor: NormPoint? = null,
+) {
+    val isValid: Boolean
+        get() = id.isNotBlank() && subjectRef.path.isNotBlank() && widthPx > 0 && heightPx > 0 &&
+            placement.isValid && anchor?.isValid != false
+}
+
+/** A point as a fraction of an image's width and height, both in 0..1. */
+data class NormPoint(val x: Float, val y: Float) {
+    val isValid: Boolean
+        get() = x.isFinite() && y.isFinite() && x in UNIT_RANGE && y in UNIT_RANGE
+}
+
+/** specs/multishot.md §2: how the shots are laid out. A document without the field is [Free]. */
+enum class MultiShotMode { Free, Timeline }
+
+/**
+ * specs/multishot.md §6: the last moment's protection — the current photo's own subject. [ref] is
+ * an RGBA PNG whose alpha is the feathered mask, at [widthPx] × [heightPx], the canonical canvas
+ * the composite draws on at the size it was selected; [anchor] is the path's end, on that canvas.
+ */
+data class HeroMask(
+    val ref: ImageRef,
+    val widthPx: Int,
+    val heightPx: Int,
+    val anchor: NormPoint,
+) {
+    val isValid: Boolean
+        get() = ref.path.isNotBlank() && widthPx > 0 && heightPx > 0 && anchor.isValid
+}
+
+/**
+ * specs/multishot.md §4.2–§4.3: how the time layout spreads the earlier moments.
+ * [Path] (D086/D087): along a straight path ending at the hero. [Even] (D088): in equal slots of
+ * `spacing × W / N` around the hero's own slot, N counting the hero.
+ */
+enum class TimelineArrangement { Path, Even }
+
+/**
+ * specs/multishot.md §4.2: the one-off layout's settings. [directionDeg] is the way the motion runs
+ * towards the last moment, on screen (x right, y down); [distance] is the path's length as a
+ * fraction of the canvas's short side; [strength] scales the default afterimage profile; [spacing]
+ * scales the even arrangement's `W / N` (§4.3). A new proposal is [TimelineArrangement.Even]; a
+ * stored timeline without the field is read as [TimelineArrangement.Path] (§7).
+ */
+data class TimelineLayout(
+    val directionDeg: Float = DEFAULT_DIRECTION_DEG,
+    val distance: Float = DEFAULT_DISTANCE,
+    val strength: Float = 1f,
+    val arrangement: TimelineArrangement = TimelineArrangement.Even,
+    val spacing: Float = 1f,
+) {
+    val isValid: Boolean
+        get() = directionDeg.isFinite() && directionDeg in SHOT_ROTATION_RANGE &&
+            distance.isFinite() && distance in TIMELINE_DISTANCE_RANGE &&
+            strength.isFinite() && strength in UNIT_RANGE &&
+            spacing.isFinite() && spacing in UNIT_RANGE
+}
+
+/**
+ * specs/multishot.md §3: the time order, earliest first, by shot id — never the drawing order of
+ * the free layout — with the layout settings and the last moment's mask. [orderConfirmed] is false
+ * when photos changed in the free layout since the order was confirmed: the hero and settings are
+ * kept, and the time layout asks for the order again before it is used.
+ */
+data class Timeline(
+    val order: List<String>,
+    val layout: TimelineLayout = TimelineLayout(),
+    val hero: HeroMask? = null,
+    val orderConfirmed: Boolean = true,
+)
+
+/** specs/multishot.md §2: added moments; with the current photo, at most six in all. */
+const val MAX_SHOTS = 5
+const val DEFAULT_SHOT_OPACITY = 0.6f
+val SHOT_SCALE_RANGE = 0.1f..4f
+val SHOT_ROTATION_RANGE = -180f..180f
+
+/**
+ * §4.2: a new proposal runs from left (oldest) to right (the hero). Only new layouts use it: every
+ * stored timeline carries its own `directionDeg`, and a node without one is refused, so changing
+ * this (from D086's 135°) changes no saved document.
+ */
+const val DEFAULT_DIRECTION_DEG = 0f
+
+/** §4.2: half the canvas's short side. */
+const val DEFAULT_DISTANCE = 0.5f
+val TIMELINE_DISTANCE_RANGE = 0f..2f
+
 /**
  * specs/edit_model.md. Sealed so new ops arrive without touching the existing ones.
  */
@@ -162,6 +328,63 @@ sealed interface Operation {
         /** `outpaint_<id>.png` at working resolution, in the project folder. */
         val resultRef: ImageRef,
     ) : Operation
+
+    /**
+     * specs/skin_retouch_pipeline.md §6. Stored the way 지우기 is, with one difference in the
+     * render: inside [maskId] only the RGB is replaced and the input alpha is kept.
+     *
+     * [resultRef] is the canonical working-size render R with the strengths and feather already
+     * baked in, so the renderer never multiplies a soft alpha again. [maskId] names the `Mask`
+     * holding the binary union of the active kinds' supports.
+     */
+    data class SkinRetouch(
+        override val id: String,
+        val maskId: String,
+        /** `retouch_<id>.png` at working resolution, in the project folder. */
+        val resultRef: ImageRef,
+        val settings: SkinRetouchSettings,
+    ) : Operation
+
+    /**
+     * specs/multishot.md §3. At most one per document: the added photographs' subjects drawn
+     * source-over onto whatever the ops before it produced — in [shots] order for
+     * [MultiShotMode.Free], in [timeline] order for [MultiShotMode.Timeline], which also keeps the
+     * last moment's own pixels in front ([Timeline.hero]). Its pixels are the shots' own PNGs, so
+     * the source and every other op stay untouched.
+     */
+    data class MultiShot(
+        override val id: String,
+        val shots: List<Shot>,
+        val mode: MultiShotMode = MultiShotMode.Free,
+        /** Kept in the free layout too once confirmed, so switching back loses nothing. */
+        val timeline: Timeline? = null,
+    ) : Operation {
+
+        /**
+         * One to [MAX_SHOTS] valid shots with distinct ids; a timeline that orders exactly those
+         * ids; and for the time layout a hero mask and an anchor on every shot. Anything else is
+         * not a partial composite.
+         */
+        val isValid: Boolean
+            get() = id.isNotBlank() && shots.size in 1..MAX_SHOTS && shots.all { it.isValid } &&
+                shots.map { it.id }.toSet().size == shots.size &&
+                timeline?.let { isValidTimeline(it) } != false &&
+                (mode == MultiShotMode.Free || isCompleteTimeline())
+
+        /** The order the shots are drawn in: later is on top. */
+        val drawingOrder: List<Shot>
+            get() {
+                val order = timeline?.order.takeIf { mode == MultiShotMode.Timeline } ?: return shots
+                return shots.sortedBy { shot -> order.indexOf(shot.id).let { if (it < 0) Int.MAX_VALUE else it } }
+            }
+
+        private fun isValidTimeline(timeline: Timeline): Boolean =
+            timeline.order.size == shots.size && timeline.order.toSet() == shots.map { it.id }.toSet() &&
+                timeline.layout.isValid && timeline.hero?.isValid != false
+
+        private fun isCompleteTimeline(): Boolean =
+            timeline?.hero != null && timeline.orderConfirmed && shots.all { it.anchor != null }
+    }
 
     /** [rect] is normalised 0..1 against the un-cropped, un-rotated source. */
     data class Crop(

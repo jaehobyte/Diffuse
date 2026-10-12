@@ -1,0 +1,40 @@
+# Public HTTP test route for the skin retouch server: :8094 -> 127.0.0.1:8084.
+#
+# WARNING: this is plain HTTP. The bearer token, face ROIs and masks travel UNENCRYPTED.
+# Use it only with photos that are allowed to be sent this way; see deploy/README.md for the
+# HTTPS migration. Auth is enforced by the backend (401/403); Caddy only forwards.
+{
+	# No admin endpoint: it must not collide with MonetGPT's Caddy admin on 127.0.0.1:20203.
+	# Consequence: `caddy reload` is unavailable; restart the unit to apply changes.
+	admin off
+	auto_https off
+	# Do not write ~/.config/caddy/autosave.json (shared with other Caddy instances on this host).
+	persist_config off
+}
+
+:8094 {
+	request_body {
+		# Wire contract v1: request body <= 90 MiB (94,371,840 B), same as the backend.
+		max_size 90MiB
+	}
+	reverse_proxy 127.0.0.1:8084 {
+		transport http {
+			dial_timeout 10s
+			read_timeout 65s
+			write_timeout 65s
+		}
+	}
+	# Keep the wire contract's error body for a body rejected at the proxy.
+	handle_errors 413 {
+		header Content-Type application/json
+		respond `{"error":"too_large"}` 413
+	}
+	log {
+		# Caddy redacts the Authorization header value in access logs by default
+		# (servers.log_credentials is not enabled here). No bodies are logged.
+		output file /home/jaeho/vibe_editor_260905/server/retouch/deploy/public-access.log {
+			roll_size 20MiB
+			roll_keep 5
+		}
+	}
+}

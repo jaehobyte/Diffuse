@@ -10,6 +10,7 @@ filesDir/projects/<projectId>/
   source.<ext>      copied by ImageLoader (imaging.md)
   document.json     EditDocument, v = 1
   thumb.png         512px long edge, rendered with current ops
+  shot_<fileId>.png 멀티샷 subjects and the time layout's hero mask, RGBA (multishot.md §7)
 ```
 Room DB `projects.db`, table `projects`:
 | column | type |
@@ -41,7 +42,7 @@ interface ProjectRepository {
 ## Rules
 - Room migrations: v1 has none; schema exported to `schemas/` so v2 can migrate.
 - `delete` removes the folder and the row; a failure to remove the folder still removes the row and logs.
-- `duplicate` copies the folder with a new id.
+- `duplicate` copies the folder with a new id and rewrites every reference that pointed into the original folder (source, masks, stored results, shot subjects, the hero mask) to the copy's, so the copy outlives the original (multishot.md §7).
 
 ## Tests
 - DAO: insert / observe order / delete.

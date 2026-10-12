@@ -38,6 +38,8 @@ fun DirectSheet(
     modifier: Modifier = Modifier,
     /** specs/prompt_input.md §2: the sheet hosts the bar, it never replaces the buttons. */
     promptBar: (@Composable () -> Unit)? = null,
+    /** §14: the suggestion area, directly under the bar while [DirectState.showSuggestions]. */
+    suggestions: (@Composable () -> Unit)? = null,
 ) {
     val colors = LocalAppColors.current
     EditSheet(
@@ -48,6 +50,7 @@ fun DirectSheet(
         modifier = modifier.testTag(DirectSheetTestTag),
     ) {
         promptBar?.invoke()
+        if (state.showSuggestions) suggestions?.invoke()
         state.plan?.let { plan ->
             Column(
                 modifier = Modifier.testTag(DirectStepsTestTag),

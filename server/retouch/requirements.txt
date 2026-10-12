@@ -1,0 +1,10 @@
+# Runtime dependencies (Python 3.12). Installed into server/retouch/.venv with uv.
+fastapi==0.141.1
+starlette==1.6.0
+uvicorn==0.53.0
+python-multipart==0.0.32
+numpy==2.5.3
+opencv-python-headless==5.0.0.93
+pillow==12.3.0
+# CUDA 13 / cuDNN 9 runtime wheels come with the extras; the CPU execution provider is built in.
+onnxruntime-gpu[cuda,cudnn]==1.30.0

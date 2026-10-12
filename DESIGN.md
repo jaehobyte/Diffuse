@@ -134,6 +134,10 @@ Rules
 
 ### State display
 - Loading: `#000000` 40% overlay on the canvas + centered circular progress in `accent` + one line of text (e.g. "배경을 분리하는 중").
+  - Narrow exception (specs/vibe_edit.md §14): the 지시 sheet's **read-only sentence suggestions**,
+    an input aid that never edits, show their progress inline in the suggestion area — one
+    `bodySm` line ("사진에 맞는 문장을 찾는 중") and a tertiary 취소 — so typing and the bar stay usable.
+    No spinner and no accent. Planning and running keep the canvas overlay above.
 - Error: bottom snackbar on a dark surface. No toasts.
 - Confirmation dialogs **only for destructive actions** (delete, leave without saving).
 

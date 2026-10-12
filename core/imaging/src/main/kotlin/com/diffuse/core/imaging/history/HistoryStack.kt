@@ -74,9 +74,14 @@ class HistoryStack(
         publish()
     }
 
+    /**
+     * Availability first: a collector of [current] that reads [canUndo] in its callback — the
+     * editor's does — may run inline on this very assignment (an immediate dispatcher), and must
+     * see the step that produced the document it was handed.
+     */
     private fun publish() {
-        _current.value = entries[index]
         _canUndo.value = index > 0
         _canRedo.value = index < entries.lastIndex
+        _current.value = entries[index]
     }
 }

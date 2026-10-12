@@ -21,6 +21,7 @@ import com.diffuse.core.common.AppError
 import com.diffuse.core.common.Result
 import com.diffuse.core.data.ProjectRepository
 import com.diffuse.core.data.ProjectSummary
+import com.diffuse.core.data.SkinRetouchFiles
 import com.diffuse.core.imaging.load.SourceImage
 import com.diffuse.core.imaging.model.AdjustKind
 import com.diffuse.core.imaging.model.EditDocument
@@ -358,6 +359,12 @@ class GenerativeFillToolTest {
             FakeAutoEnhanceProvider(),
             FakeMatchStyleProvider(),
             FakePortraitDetector(),
+            com.diffuse.core.ai.FakeSkinRetouchProvider(),
+            com.diffuse.core.ai.FakeFaceRegionAnalyzer(),
+            com.diffuse.core.ai.retouch.server.RetouchServerSettings(
+                androidx.test.core.app.ApplicationProvider.getApplicationContext(),
+            ),
+            com.diffuse.core.ai.FakePromptSuggestionProvider(),
         ),
         dispatchers = TestDispatchers,
         savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),
@@ -382,6 +389,9 @@ class GenerativeFillToolTest {
                     if (document.operations.any { it is Operation.Adjust }) ADJUSTED else PLAIN,
                 )
             }
+
+        override fun putTransient(ref: ImageRef, bitmap: Bitmap) = Unit
+        override fun removeTransient(ref: ImageRef) = Unit
 
         override suspend fun resolveMask(document: EditDocument, maskId: String): Bitmap? =
             document.mask(maskId)?.let { blobMask() }
@@ -449,6 +459,28 @@ class GenerativeFillToolTest {
             outpaintId: String,
             bitmap: Bitmap,
         ): Result<ImageRef> = Result.Success(ImageRef("/p/outpaint_$outpaintId.png"))
+
+        override suspend fun saveSkinRetouch(
+            projectId: String,
+            retouchId: String,
+            maskId: String,
+            result: Bitmap,
+            support: Bitmap,
+        ): Result<SkinRetouchFiles> = Result.Success(
+            SkinRetouchFiles(ImageRef("/p/retouch_$retouchId.png"), ImageRef("/p/mask_$maskId.png")),
+        )
+
+        override suspend fun discardSkinRetouch(
+            projectId: String,
+            retouchId: String,
+            maskId: String,
+        ): Result<Unit> = Result.Success(Unit)
+
+        override suspend fun saveShotSubject(projectId: String, fileId: String, subject: Bitmap): Result<ImageRef> =
+            Result.Success(ImageRef("/p/shot_$fileId.png"))
+
+        override suspend fun discardShotSubjects(projectId: String, fileIds: List<String>): Result<Unit> =
+            Result.Success(Unit)
 
         override suspend fun duplicate(id: String): Result<String> = Result.Success("copy")
         override suspend fun delete(id: String): Result<Unit> = Result.Success(Unit)

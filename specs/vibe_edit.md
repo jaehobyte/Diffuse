@@ -40,6 +40,10 @@ SAM 3, adjustments still come from `Ops.kt`, and the erase still comes from
 One planning call per request. The model never sees the intermediate result, which is what makes
 the round trip cheap and the failure surface small; §13 records what that costs.
 
+The sentence suggestions under the bar (§14) are **not** part of this flow: they are a separate,
+explicitly requested, read-only call that only fills the bar. A picked sentence is then planned by
+exactly this one call, like a typed one.
+
 ## 3. The tool (T48)
 An entry in `Tool`, **appended at the end** the way `Select` and `Erase` were (T61 and T65 later
 insert 채우기 and 확대 ahead of it, which moves its position but not its behaviour):
@@ -486,3 +490,46 @@ every UI test uses `FakePlanProvider`.
 - **The plan is not persisted.** It exists between the response and 적용, and dies with the sheet.
   What survives is the operations it produced, which the document model already knows how to store.
 - **No prompt history.** D11 if it is ever wanted.
+
+## 14. Sentence suggestions (2026-10-07)
+For a user who finds it hard to say what they want, the area directly under the bar offers short
+sentences to pick, edit and send. It is an **input aid**: it never plans, previews or edits.
+
+- **First open:** `이렇게 말해보세요` and three general examples (`조금 더 밝게`, `따뜻한 분위기로`,
+  `색감을 자연스럽게`) appear at once, with no claim of analysis. Beside them is the explicit
+  `사진에 맞는 문장 보기` with `현재 사진의 축소본을 Gemini에 보내 추천해요`. Only that tap sends anything;
+  opening the photo or sheet, typing and recomposition do not.
+- **Catalog:** eight reviewed ids (`PromptSuggestionId`: brighten, lift_shadows, soften_highlights,
+  warm, cool, natural_color, vivid_color, film_warm), each with a Korean label, a complete sentence,
+  a conditional hint (resources in `feature:editor`), a conflict group and the capability it should
+  plan into (an existing adjust kind or the FilmWarm style — checked by tests, never executed).
+- **The call:** the current preview through `GeminiImageCodec` (≤1024, JPEG) and the catalog text
+  to `gemini-2.5-flash` with one forced function, `suggest_directions(ids: [enum])`. Only the ids
+  are read. Unknown ids are dropped; the model's order is kept; one id per group (warm/cool/
+  film_warm, brighten/lift_shadows, natural/vivid); at most three. An empty list is the valid
+  "nothing fits". Prose without the call, a missing/non-list `ids`, an undecodable body, a block or
+  a non-STOP finish are failures. Status codes map as in §6. 12 s for the whole request,
+  cancellable, no automatic retry. No draft, EXIF or file path is sent; nothing is logged but ids.
+- **Frame:** only a preview rendered from the document on screen may be sent
+  (`EditorUiState.renderedDocument == document`). While a render is in flight, or after a failed
+  render left an older frame, the request is disabled with `사진을 준비하는 중`.
+- **States:** idle (examples), loading (`사진에 맞는 문장을 찾는 중` + 취소, inline in the area — the
+  DESIGN.md §4 exception), tailored (`이 사진에는 이런 방향도 좋아요`, 1–3 pills, no ranking or default),
+  empty (`다른 방향을 직접 말해보세요` + examples + `다시 찾기`), failed (snackbar + examples +
+  `다시 찾기`), hidden (`숨기기`, for the rest of the sheet session).
+- **Picking** fills the bar with the sentence and records its source as a suggestion; it calls no
+  planner, runner or commit and does not open the keyboard. The list stays while the bar is empty
+  or holds an unedited suggestion (which may be swapped), and hides on typing or while listening.
+  An answer only updates the list, never the bar.
+- **Plan invalidation:** any change of the sentence drops the waiting plan and `canApply` and
+  cancels a plan still being asked for; a late plan for an older sentence is discarded. Nothing
+  changes the sentence while a run is applying.
+- **Lifetime:** owned by `DirectController` through its `DirectSuggestions` collaborator. A request
+  is identified by the document it was rendered from plus a generation that every invalidation
+  bumps, so even an answer from a provider that ignores cancellation is dropped. A different
+  document (undo/redo/crop/adjust/run), a Gemini settings change, closing the sheet, another tool,
+  submit or a final voice result cancel it; nothing re-asks on its own. The last answer for the
+  current document is kept in memory only and reused on re-entry and recomposition; process death
+  restores nothing.
+- **Step list unchanged:** the step list is still built from validated `PlanStep` templates (§11);
+  suggestion labels and sentences come from the app's catalog, never from model prose.

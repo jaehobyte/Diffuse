@@ -21,6 +21,12 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import android.view.View
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.test.onRoot
+import androidx.core.graphics.Insets
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import com.diffuse.core.ui.components.PrimaryPill
 import com.diffuse.core.ui.theme.AppTheme
 import com.diffuse.core.ui.theme.ThemeMode
@@ -270,6 +276,49 @@ class EditorShellTest {
         assertTrue(
             "the canvas kept the closed sheet's inset: ${canvasBounds().bottom} vs ${shrunk.bottom}",
             canvasBounds().bottom > shrunk.bottom,
+        )
+    }
+
+    /**
+     * specs/vibe_edit.md §14 / review R2: with the keyboard open the sheet rises above it, so
+     * the bar and the pinned [취소 | 적용] row are never left behind the keyboard.
+     */
+    @Test
+    fun `an open keyboard lifts the sheet above it and the canvas refits`() {
+        lateinit var view: View
+        compose.setContent {
+            view = LocalView.current
+            EditorScreen(
+                preview = testImage(),
+                selectedTool = Tool.Light,
+                onToolClick = {},
+                canUndo = false, canRedo = false, canCompare = false,
+                onBack = {}, onUndo = {}, onRedo = {}, onCompareChange = {}, onExport = {},
+                sheet = {
+                    Box(modifier = Modifier.testTag(fakeSheetTag).fillMaxWidth().height(fakeSheetHeight))
+                },
+            )
+        }
+        compose.waitForIdle()
+        val rootBottom = compose.onRoot().getUnclippedBoundsInRoot().bottom
+        val imeHeightPx = 900
+
+        compose.runOnUiThread {
+            val insets = WindowInsetsCompat.Builder()
+                .setInsets(WindowInsetsCompat.Type.ime(), Insets.of(0, 0, 0, imeHeightPx))
+                .setVisible(WindowInsetsCompat.Type.ime(), true)
+                .build()
+            ViewCompat.dispatchApplyWindowInsets(view, insets)
+        }
+        compose.waitForIdle()
+
+        val imeTop = rootBottom - with(compose.density) { imeHeightPx.toDp() }
+        val sheet = compose.onNodeWithTag(fakeSheetTag).getUnclippedBoundsInRoot()
+        assertTrue("the keyboard covers the sheet: sheet ends at ${sheet.bottom}, keyboard at $imeTop",
+            sheet.bottom <= imeTop + 1.dp)
+        assertTrue(
+            "the canvas runs under the lifted sheet: ${canvasBounds().bottom} vs ${sheet.top}",
+            canvasBounds().bottom <= sheet.top + 1.dp,
         )
     }
 

@@ -102,6 +102,10 @@ Permission:
 
 `FakeSpeechInput` drives every test: `emit(Listening("사"))`, `emit(Final("사람"))`, `emit(Failed(...))`.
 
+The final-result auto-submit is unchanged by the 지시 tool's sentence suggestions
+(vibe_edit.md §14): **only a picked suggestion** fills the bar without sending, and the suggestion
+list hides while listening. The 선택 tool's noun-phrase input and 채우기's prompt keep their meaning.
+
 ## 4. Flow: prompt or speech → mask (T36)
 This is the end-to-end behavior the feature exists for.
 

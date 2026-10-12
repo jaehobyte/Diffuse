@@ -17,6 +17,12 @@ data class ProjectSummary(
     val thumbPath: String,
 )
 
+/** specs/skin_retouch_pipeline.md §6: where [ProjectRepository.saveSkinRetouch] put both files. */
+data class SkinRetouchFiles(val resultRef: ImageRef, val maskRef: ImageRef)
+
+// One save per stored kind of pixels, and the retouch's pair adds a discard: splitting the
+// interface would split one project folder across two contracts.
+@Suppress("TooManyFunctions")
 interface ProjectRepository {
     /** Newest `updatedAt` first. */
     fun observeAll(): Flow<List<ProjectSummary>>
@@ -53,6 +59,39 @@ interface ProjectRepository {
         outpaintId: String,
         bitmap: Bitmap,
     ): Result<ImageRef>
+
+    /**
+     * specs/skin_retouch_pipeline.md §6: writes the baked result as `retouch_<retouchId>.png` and
+     * its binary support ([support] is `ALPHA_8`) as `mask_<maskId>.png`, each atomically. Both
+     * exist on success; on failure or cancellation neither file this call wrote is left behind.
+     */
+    suspend fun saveSkinRetouch(
+        projectId: String,
+        retouchId: String,
+        maskId: String,
+        result: Bitmap,
+        support: Bitmap,
+    ): Result<SkinRetouchFiles>
+
+    /**
+     * Deletes the files [saveSkinRetouch] wrote for [retouchId] and [maskId], except any the
+     * saved `document.json` references. The editor calls this only for its own request that was
+     * never committed; what its in-memory history or redo still holds is its responsibility.
+     */
+    suspend fun discardSkinRetouch(projectId: String, retouchId: String, maskId: String): Result<Unit>
+
+    /**
+     * specs/multishot.md §7: writes one extracted subject as `shot_<fileId>.png`, atomically. A
+     * failed or cancelled write leaves no file behind.
+     */
+    suspend fun saveShotSubject(projectId: String, fileId: String, subject: Bitmap): Result<ImageRef>
+
+    /**
+     * Deletes the subjects [saveShotSubject] wrote for [fileIds], except any the saved
+     * `document.json` references. The editor calls this only for files its own session wrote and
+     * never committed; what its in-memory history holds is its responsibility.
+     */
+    suspend fun discardShotSubjects(projectId: String, fileIds: List<String>): Result<Unit>
 
     suspend fun duplicate(id: String): Result<String>
     suspend fun delete(id: String): Result<Unit>
