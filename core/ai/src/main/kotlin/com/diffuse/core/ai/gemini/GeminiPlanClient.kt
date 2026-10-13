@@ -28,7 +28,7 @@ import kotlin.coroutines.coroutineContext
  * and the request, answered with one `propose_edit` envelope that carries the evaluation and the
  * workflow. 보정 추천 and a sent 지시 are this one call with a different mode.
  *
- * The model is `gemini-2.5-flash` and **not** `-image`: this call produces a decision, not pixels.
+ * The model is `gemini-3.8-flash` and **not** `-image`: this call produces a decision, not pixels.
  * The key travels in the `x-goog-api-key` header for the reason generative_erase.md §5 gives.
  */
 internal class GeminiPlanClient(
@@ -183,7 +183,7 @@ internal class GeminiPlanClient(
 
     companion object {
         /** The text model. `-image` neither declares functions nor benefits from being asked to. */
-        const val PATH = "/v1beta/models/gemini-2.5-flash:generateContent"
+        const val PATH = "/v1beta/models/gemini-3.8-flash:generateContent"
 
         private const val TAG = "GeminiPlanClient"
         private const val JPEG_MEDIA_TYPE = "image/jpeg"

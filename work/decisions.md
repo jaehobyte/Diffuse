@@ -8,6 +8,23 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+## D096 - Gemini planning and style matching use Gemini 3.8 Flash
+
+Status: Accepted (2026-10-13, explicit user request).
+
+Decision:
+Use `gemini-3.8-flash` for the shared text-model endpoint in `GeminiPlanClient.PATH`.
+This covers recommendation, direct instructions and reference style matching. Image generation
+continues to use its separate `gemini-2.5-flash-image` endpoint.
+
+Reason:
+The user requested Gemini 3.8 Flash. Google's official model documentation confirms image input
+and function calling support: https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash
+
+Consequences:
+Keep existing prompts, function schemas and response validation. Mock HTTP tests verify the
+endpoint and existing contracts; actual model quality and latency require a live/device run.
+
 ## D095 - 멀티샷 추출 대상: `person` by default, typed by the user, fixed per press (extends D090)
 
 Status: Accepted (2026-10-13, work/tasks.md 멀티샷 추가 5장·추출 대상 입력). Extends D090 and

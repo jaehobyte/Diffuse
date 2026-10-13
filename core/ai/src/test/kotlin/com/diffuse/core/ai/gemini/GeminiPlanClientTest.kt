@@ -86,7 +86,7 @@ class GeminiPlanClientTest {
 
         val recorded = server.takeRequest()
         assertEquals("POST", recorded.method)
-        assertEquals("/v1beta/models/gemini-2.5-flash:generateContent", recorded.requestUrl?.encodedPath)
+        assertEquals("/v1beta/models/gemini-3.8-flash:generateContent", recorded.requestUrl?.encodedPath)
     }
 
     @Test

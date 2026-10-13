@@ -7,7 +7,7 @@
 - 사용자 메시지 구성: core/ai/src/main/kotlin/com/diffuse/core/ai/gemini/GeminiPlanClient.kt
   plan(), contextText()
 
-모델: gemini-2.5-flash
+모델: gemini-3.8-flash
 시스템 프롬프트는 recommend / direct 모드에서 공유합니다.
 API에는 propose_edit 함수 스키마(PROPOSE_FUNCTION)와 functionCallingConfig.mode = ANY도 전달합니다.
 아래는 텍스트 프롬프트이며 함수 스키마 자체는 포함하지 않습니다.
