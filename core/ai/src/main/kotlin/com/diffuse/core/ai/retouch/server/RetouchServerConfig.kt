@@ -6,9 +6,9 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 /**
  * specs/skin_retouch_pipeline.md §8. Where the skin retouch server is and the token it wants.
  *
- * Its own address and its own token, never MonetGPT's or SAM 3's (§8: "SAM 3 credential을 자동
- * 복사하지 않는다"): the three services rotate secrets separately and the settings sheet shows them
- * as separate fields.
+ * Its own address and its own token, never SAM 3's (§8: "SAM 3 credential을 자동 복사하지
+ * 않는다"): the services rotate secrets separately and the settings sheet shows them as separate
+ * fields.
  */
 data class RetouchServerConfig(val baseUrl: String, val token: String = "") {
 

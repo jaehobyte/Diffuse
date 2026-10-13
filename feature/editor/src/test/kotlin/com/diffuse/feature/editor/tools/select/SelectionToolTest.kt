@@ -5,7 +5,6 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.diffuse.core.ai.Availability
-import com.diffuse.core.ai.FakeAutoEnhanceProvider
 import com.diffuse.core.ai.FakeEraseProvider
 import com.diffuse.core.ai.FakeFillProvider
 import com.diffuse.core.ai.FakeMatchStyleProvider
@@ -14,7 +13,6 @@ import com.diffuse.core.ai.FakePlanProvider
 import com.diffuse.core.ai.FakeSegmentationProvider
 import com.diffuse.core.ai.MaskBitmaps
 import com.diffuse.core.ai.gemini.GeminiSettings
-import com.diffuse.core.ai.monet.MonetSettings
 import com.diffuse.core.ai.sam3.Sam3Settings
 import com.diffuse.core.ai.speech.FakeSpeechInput
 import com.diffuse.core.common.AppError
@@ -65,7 +63,6 @@ class SelectionToolTest {
     private lateinit var repository: RecordingRepository
     private lateinit var settings: Sam3Settings
     private lateinit var geminiSettings: GeminiSettings
-    private lateinit var monetSettings: MonetSettings
 
     @Before
     fun setUp() {
@@ -74,7 +71,6 @@ class SelectionToolTest {
         settings = Sam3Settings(ApplicationProvider.getApplicationContext())
         settings.update("http://localhost:8080", "token")
         geminiSettings = GeminiSettings(ApplicationProvider.getApplicationContext())
-        monetSettings = MonetSettings(ApplicationProvider.getApplicationContext())
         geminiSettings.update("test-key")
     }
 
@@ -610,22 +606,38 @@ class SelectionToolTest {
         val viewModel = viewModel()
         viewModel.onToolClick(Tool.Select)
 
-        viewModel.selection.saveSettings(
-            "http://10.0.2.2:8080",
-            "tok",
-            "AIza-key",
-            "http://10.0.2.2:9090",
-            "monet-tok",
-        )
+        viewModel.selection.saveSettings("http://10.0.2.2:8080", "tok", "AIza-key")
 
         assertFalse(viewModel.uiState.value.selection.showSettings)
         assertEquals("http://10.0.2.2:8080", settings.current().baseUrl)
+        assertEquals("tok", settings.current().token)
         assertEquals("AIza-key", geminiSettings.config.value.apiKey)
-        // specs/auto_enhance.md §4: 자동 보정's server is saved by the same sheet, or it has
-        // nowhere to be typed at all.
-        assertEquals("http://10.0.2.2:9090", monetSettings.config.value.baseUrl)
-        assertEquals("monet-tok", monetSettings.config.value.token)
         assertTrue(provider.refreshCount > 0)
+    }
+
+    /** D097: Gemini alone is a valid configuration, and saving it copies nothing into SAM 3's. */
+    @Test
+    fun `saving only a Gemini key leaves SAM 3 unconfigured`() = runTest {
+        val viewModel = viewModel()
+
+        viewModel.selection.saveSettings("", "", "AIza-only")
+
+        assertEquals("AIza-only", geminiSettings.config.value.apiKey)
+        assertEquals("AIza-only", viewModel.uiState.value.selection.geminiApiKey)
+        assertEquals("", settings.current().baseUrl)
+        assertEquals("", settings.current().token)
+    }
+
+    /** And the other way round: SAM 3 alone saves, and its token is not copied into Gemini's. */
+    @Test
+    fun `saving only SAM 3 leaves the Gemini key blank`() = runTest {
+        val viewModel = viewModel()
+
+        viewModel.selection.saveSettings("http://10.0.2.2:8080", "tok", "")
+
+        assertEquals("http://10.0.2.2:8080", settings.current().baseUrl)
+        assertEquals("tok", settings.current().token)
+        assertEquals("", geminiSettings.config.value.apiKey)
     }
 
     // ---- fixtures --------------------------------------------------------
@@ -645,8 +657,6 @@ class SelectionToolTest {
             FakeSpeechInput(),
             settings,
             geminiSettings,
-            monetSettings,
-            FakeAutoEnhanceProvider(),
             FakeMatchStyleProvider(),
         ),
         dispatchers = TestDispatchers,

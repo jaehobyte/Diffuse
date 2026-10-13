@@ -8,6 +8,33 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+## D097 - MonetGPT 자동 보정 is removed from the app; its saved `Adjust` ops stay
+
+Status: Accepted (2026-10-13, explicit user request; work/tasks.md 자동 보정 서버 제거). Changes
+specs/auto_enhance.md (now historical) and specs/tool_groups.md §2. D081 and D082 stay as the
+history of a removed feature.
+
+Decision:
+- The AI level loses 자동: no item, greyed item, placeholder or replacement call. The other tools
+  keep their relative order. 보정 추천/지시 (Gemini) are not changed to stand in for it.
+- Removed with it: `core/ai/monet`, `AutoEnhanceProvider`/`AutoStyle`, its DI bindings, the
+  feature's `tools/auto`, every `EditorViewModel`/`EditorRoute` hook (probe, collectors, preview,
+  apply, cancel, busy, message), the 서버 설정 address/token fields, `MONET_*` BuildConfig and their
+  `.env`/local.properties inputs, and the install script's handling.
+- 서버 설정 keeps SAM 3 address/token and the Gemini key, and 저장 is always enabled: either service
+  alone, or clearing a value, is a valid save.
+- Kept: the `Adjust` data the tool committed (unmasked ops, including Blacks/Whites/Fade/SCurve/
+  Clarity/HSL), `AdjustKind`, render math and the JSON/DB schema. No migration, no reset.
+- A leftover `monet_settings` SharedPreferences file is ignored — not read, not deleted.
+
+Reason:
+The user asked for the MonetGPT auto-enhance server integration to be removed while Gemini
+recommendation and old documents keep working.
+
+Consequences:
+This is the app side only. The external MonetGPT repository, weights, service, proxy, ports and
+GPU processes were not touched and are not claimed to be torn down.
+
 ## D096 - Gemini planning and style matching use Gemini 3.8 Flash
 
 Status: Accepted (2026-10-13, explicit user request).

@@ -71,8 +71,7 @@ data class StyleState(
 
     /**
      * §4: the 강도 slider scales **what is committed**. The preview and 적용 read this one fold,
-     * which is why what the user judged and what lands in history cannot drift apart — the shape
-     * `AutoState.appliedTo` established (T77).
+     * which is why what the user judged and what lands in history cannot drift apart.
      */
     fun scaled(): Map<AdjustKind, Float> = chosenParams().atIntensity(intensity)
 

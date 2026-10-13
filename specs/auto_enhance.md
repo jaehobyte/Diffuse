@@ -7,6 +7,23 @@ adjust_color.md, adjust_hsl.md, edit_model.md
 Amends: editor_shell.md (a tool)
 Decisions: ADR-015 (the server returns parameters, not pixels; see §2)
 
+> **Status: removed from the app (2026-10-13, work/decisions.md D097).**
+>
+> - The 자동 tool, its sheet, the MonetGPT provider/client, its DI binding, the 서버 설정 fields for its
+>   address and token, its BuildConfig defaults and the install script's handling are gone. Nothing in
+>   the app sends a request to a MonetGPT server any more — no probe, no inference.
+> - **Kept — the data contract.** A boost was committed as ordinary unmasked `Adjust` ops
+>   (`withAdjust(kind, value, maskId = null)`, §5). Those ops — including Blacks, Whites, Fade, SCurve,
+>   Clarity and the HSL kinds — still load, render, re-edit, save and export unchanged. No migration and
+>   no reset of saved values.
+> - A leftover `monet_settings` SharedPreferences file from an older install is neither read nor
+>   deleted.
+> - The external MonetGPT server, its model weights and its hosting are outside this removal; D097
+>   records only the app side.
+>
+> Everything below is the **historical** contract (T76/T77), kept for reference. It does not describe
+> a feature the app offers.
+
 ## 1. What it does
 One tap: the photo is sent to a server running **MonetGPT**, which answers with a retouching plan,
 and the plan lands in the document as ordinary `Adjust` ops the user can then drag.

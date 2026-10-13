@@ -5,7 +5,6 @@ import android.graphics.PointF
 import com.diffuse.core.ai.Availability
 import com.diffuse.core.ai.SegmentationProvider
 import com.diffuse.core.ai.gemini.GeminiSettings
-import com.diffuse.core.ai.monet.MonetSettings
 import com.diffuse.core.ai.sam3.Sam3Settings
 import com.diffuse.core.common.AppError
 import com.diffuse.core.common.Result
@@ -36,8 +35,6 @@ class SelectionController(
      * this controller already owns its lifecycle. The 지우기 tool opens the same one.
      */
     private val geminiSettings: GeminiSettings,
-    /** specs/auto_enhance.md §4: 자동 보정's server lives in the same sheet, so it saves here too. */
-    private val monetSettings: MonetSettings,
     private val scope: CoroutineScope,
 ) {
 
@@ -69,11 +66,6 @@ class SelectionController(
         scope.launch {
             geminiSettings.config.collect { config ->
                 _state.value = _state.value.copy(geminiApiKey = config.apiKey)
-            }
-        }
-        scope.launch {
-            monetSettings.config.collect { config ->
-                _state.value = _state.value.copy(monetConfig = config)
             }
         }
     }
@@ -278,16 +270,9 @@ class SelectionController(
             .copy(preparing = false, busy = false, phraseBusy = false, phrase = "")
     }
 
-    fun saveSettings(
-        baseUrl: String,
-        token: String,
-        geminiApiKey: String,
-        monetBaseUrl: String,
-        monetToken: String,
-    ) {
+    fun saveSettings(baseUrl: String, token: String, geminiApiKey: String) {
         settings.update(baseUrl, token)
         geminiSettings.update(geminiApiKey)
-        monetSettings.update(monetBaseUrl, monetToken)
         _state.value = _state.value.copy(showSettings = false)
     }
 

@@ -12,7 +12,8 @@ import javax.inject.Singleton
 /**
  * specs/skin_retouch_pipeline.md §8, work/tasks.md requirement 18. The build default is blank
  * unless a private `-Pdiffuse.localCreds` build names one, so a published APK ships no address and
- * no token; a saved override wins over the default. `MonetSettings`' shape, for the same reasons.
+ * no token; a saved override wins over the default. A value equal to the build default is not
+ * stored as an override, so a later APK's corrected default is still read.
  */
 @Singleton
 class RetouchServerSettings internal constructor(

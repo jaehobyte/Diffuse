@@ -1,5 +1,70 @@
 # Result
 
+## MonetGPT 자동 보정 앱 연동 제거 (2026-10-13, work/tasks.md)
+
+### Status
+
+DONE (코드·자동 검사). 실기기 업데이트 확인은 미실행.
+
+### Changed
+
+- AI 메뉴에서 '자동' 제거. 남은 순서: 선택·지우기·채우기·확대·스타일·멀티샷·지시. 비활성 항목·대체 경로 없음.
+- `core/ai/monet/*`, `AutoEnhanceProvider`/`AutoStyle`, DI binding·`MonetClient` 제공, `tools/auto/*` 삭제.
+  `EditorViewModel`/`EditorRoute`에서 상태 수집·미리보기·적용·취소·busy/message·disabled 분기 제거.
+  문서 변경 collector는 멀티샷 부분만 남김. 앱 경로에서 Monet health/추론 요청이 나가는 코드는 없다.
+- 서버 설정: Monet 주소·토큰 필드/검증/콜백 인자/상태 제거. `saveSettings(baseUrl, token, geminiApiKey)`.
+  저장 버튼은 항상 활성화(Gemini 단독, SAM3 단독, 값 비우기 모두 저장 가능). 취소 시 저장 안 함. 키 마스킹 유지.
+- `MONET_BASE_URL`/`MONET_TOKEN` BuildConfig와 `MONET_*`/`monet.*` 입력 제거. `scripts/install.sh`의 Monet loopback 경고 제거.
+  `-Pdiffuse.localCreds`, SAM3·피부 서버 기본값 로딩은 그대로 유지.
+- **잔여 저장 데이터 정책:** 업데이트 전 설치에 남은 `monet_settings` SharedPreferences는 읽지도 삭제하지도 않는다.
+  마이그레이션·앱 데이터 초기화 없음.
+- 데이터 호환: `AdjustKind`·렌더·JSON/DB 스키마 변경 없음. 기존 enum 전체 round-trip 검사에 더해
+  저장된 JSON 텍스트(Blacks/Whites/Fade/SCurve/Clarity/HslBlueSaturation, mask 없음) 디코드 회귀 1건 추가.
+- 문서: `specs/auto_enhance.md` 상단에 제거 상태와 보존된 Adjust 계약 명시(본문은 과거 기록).
+  `specs/tool_groups.md` 메뉴 갱신, `architecture/projetoverview.md`의 현재 기능 안내를 Gemini 보정 추천으로 정정.
+  D097 추가(앱 측만, 외부 서버 철거 아님). D081/D082와 `dist/README.md` v0.6.0 릴리스 기록은 과거 기록으로 유지.
+- 피부 서버·스타일·라벨·`Operation.kt` 주석의 Monet 구현 참조를 현재 동작 설명으로 수정(동작 변경 없음).
+
+### Files
+
+- 삭제: `core/ai/.../monet/` (main 8, test 3), `AutoEnhanceProvider.kt`, `testShared/FakeAutoEnhanceProvider.kt`,
+  `feature/editor/.../tools/auto/` (main 2, test 2), 골든 `auto_sheet_open.png`, `auto_sheet_result.png`
+- 수정(main): `AiModule.kt`, `core/ai/build.gradle.kts`, `scripts/install.sh`, `EditorAi.kt`, `Tool.kt`, `ToolSheetHost.kt`,
+  `EditorViewModel.kt`, `EditorRoute.kt`, `tools/select/{SelectionController,SelectionState,Sam3SettingsSheet}.kt`,
+  `strings.xml`(auto_*·monet_*·editor_tool_auto 삭제), 주석: `StyleController.kt`, `ToolLabels.kt`, `Operation.kt`,
+  `retouch/server/{RetouchServerConfig,RetouchServerSettings,RetouchServerSkinRetouchProvider}.kt`
+- 수정(test): `Sam3SettingsSheetTest`, `SelectionToolTest`, `ToolStripLevelTest`, `EditorEntryTest`, `EditDocumentJsonTest`,
+  EditorAi fixture 소비자 9개(Crop/DirectRecommend/DirectTestFixtures/DirectTool/Erase/Expand/Fill/MultiShot, app `EditorBackTest`)
+- 골든: `editor_shell_ai_open.png`만 재기록(오른쪽 끝 잘린 항목 '자동' → '멀티샷', 차이 bbox x1051–1078 y2261–2350, 육안 확인)
+- 문서: `specs/auto_enhance.md`, `specs/tool_groups.md`, `architecture/projetoverview.md`, `work/decisions.md`(D097), 이 파일
+
+### Validation
+
+- `./gradlew --offline --quiet :core:ai:testDebugUnitTest :feature:editor:testDebugUnitTest :app:testDebugUnitTest` → exit 0
+- `./gradlew --offline --quiet :core:data:testDebugUnitTest :core:imaging:testDebugUnitTest` → exit 0
+- `./gradlew --offline --quiet :app:assembleDebug` → exit 0
+- `scripts/check.sh` → 1차 detekt MaxLineLength 2건(이번에 수정한 주석) → 줄바꿈 수정 후 재실행 exit 0
+- `git diff --check` → 통과
+- `rg 'Monet|MONET_|monet\.|AutoEnhanceProvider|AutoStyle|Tool\.Auto|tools\.auto' core feature app scripts` →
+  `Sam3SettingsSheetTest`의 부재 확인 assertion 2줄만 일치(`"MonetBaseUrl"`/`"MonetToken"` 태그 부재 검사)
+- 실기기 업데이트 확인(AI 메뉴·Gemini 단독 저장·기존 프로젝트 재열기/내보내기): **미실행**. 실제 Gemini/SAM3 API 호출 없음(fake만).
+
+### Review Notes
+
+- 서버 설정 저장 버튼이 항상 활성화됨: 이전 "SAM3 또는 Monet 주소 필수" 조건을 대체하지 않고 제거했다(요구 2의 값 비우기 저장 허용).
+- `onGenerativeToolTapped`의 `else -> return`(GENERATIVE_TOOLS가 Erase/Fill/Expand로 한정되어 도달 불가).
+- 미커밋 Gemini 3.8 Flash 변경(`GeminiPlanClient`, `GeminiMatchStyleClient`, `GeminiPlanClientTest`, `prompt.txt`,
+  `specs/style_match.md`, `specs/vibe_edit.md`, D096)은 건드리지 않았고 이번 제거 diff와 별개다.
+- `server/retouch/*` 문서의 MonetGPT 언급(외부 서버 운영·토큰 분리)은 범위 밖이라 유지했다.
+
+### Known Issues
+
+- 외부 `/home/jaeho/monetGPT` 저장소·가중치·서비스·Caddy·포트·GPU 프로세스는 손대지 않았다(철거 아님).
+- 이전 미해결 사항 유지: 보정 추천 REVIEW R1~R3 미해결, 12종 fixture·각 3회·6축 품질 평가 미완료.
+  멀티샷 3장 제한 원인·picker/5장 전체·실제 dog/car 검증 미완료. 디자인/Back 실기기·IME/음성/TalkBack,
+  서버 멀티샷 ASGI 취소/큰 정수 metadata, 사진 품질/offline/12MP·PSS, Jev, 피부 D084 지원 0개 등은 아래 기존 기록과
+  `work/retouch_evaluation.md` 참조.
+
 ## 기기 설치·서버 운영 확인 (2026-10-13)
 
 - 현재 소스로 `./gradlew --offline --quiet :app:assembleDebug` 성공 후 ADB 15039의 SM-S948N에 업데이트 설치·실행 완료. 기존 앱 데이터 유지.

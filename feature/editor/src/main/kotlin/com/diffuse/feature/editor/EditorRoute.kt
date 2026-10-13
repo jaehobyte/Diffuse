@@ -22,7 +22,6 @@ import com.diffuse.feature.editor.canvas.cropOverlaySlot
 import com.diffuse.feature.editor.canvas.selectionOverlaySlot
 import com.diffuse.feature.editor.tools.MaskOption
 import com.diffuse.feature.editor.tools.ToolSheetHost
-import com.diffuse.feature.editor.tools.auto.AutoSheet
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -150,7 +149,6 @@ private fun cancelWork(viewModel: EditorViewModel) {
     viewModel.erase.cancel()
     viewModel.fill.cancel()
     viewModel.expand.cancel()
-    viewModel.auto.cancel()
     viewModel.direct.cancelWork()
     viewModel.multiShot.cancelWork()
 }
@@ -161,7 +159,6 @@ private fun clearMessages(viewModel: EditorViewModel) {
     viewModel.erase.onMessageShown()
     viewModel.fill.onMessageShown()
     viewModel.expand.onMessageShown()
-    viewModel.auto.onMessageShown()
     viewModel.style.onMessageShown()
     viewModel.direct.onMessageShown()
     viewModel.multiShot.onMessageShown()
@@ -170,8 +167,7 @@ private fun clearMessages(viewModel: EditorViewModel) {
 /** DESIGN.md §7: every AI call shows progress and a way out, so they share one flag. */
 private fun isBusy(state: EditorUiState): Boolean =
     state.selection.working || state.erase.busy || state.fill.busy || state.expand.busy ||
-        state.auto.busy || state.style.matching || state.direct.working ||
-        state.multiShot.working
+        state.style.matching || state.direct.working || state.multiShot.working
 
 /** specs/selection_tool.md §1 and generative_erase.md §5: a tool that cannot work is greyed. */
 private fun disabledTools(state: EditorUiState): Set<Tool> = buildSet {
@@ -181,8 +177,6 @@ private fun disabledTools(state: EditorUiState): Set<Tool> = buildSet {
     if (!state.fill.enabled || state.document?.activeMaskId == null) add(Tool.Fill)
     // specs/outpaint.md §6: the key, and the document's own mask-op guard.
     if (!state.expand.enabled || state.document?.canOutpaint == false) add(Tool.Expand)
-    // specs/auto_enhance.md §6: the probe alone. 자동 needs nothing from the document.
-    if (!state.auto.enabled) add(Tool.Auto)
     // specs/vibe_edit.md §10: the key alone. A plan with no `Select` needs no SAM 3 server.
     if (!state.direct.enabled) add(Tool.Direct)
 }
@@ -195,7 +189,6 @@ private fun busyLabel(state: EditorUiState): Int = when {
     state.erase.busy -> R.string.erase_working
     state.expand.busy -> R.string.expand_working
     state.fill.busy -> R.string.fill_working
-    state.auto.busy -> R.string.auto_working
     state.style.matching -> R.string.style_matching
     state.selection.phraseBusy -> R.string.select_prompt_working
     else -> R.string.select_preparing
@@ -213,7 +206,7 @@ private fun message(state: EditorUiState): String? {
         direct != null -> stringResource(direct.res)
         else -> (
             state.selection.message ?: state.erase.message ?: state.fill.message
-                ?: state.expand.message ?: state.auto.message ?: state.style.message
+                ?: state.expand.message ?: state.style.message
                 ?: state.multiShot.message
             )?.let { stringResource(it) }
     }
@@ -293,7 +286,6 @@ private fun sheetFor(
                 )
                 Tool.Fill -> FillToolSheet(state = state, viewModel = viewModel)
                 Tool.Expand -> ExpandToolSheet(state = state, viewModel = viewModel)
-                Tool.Auto -> AutoToolSheet(state = state, viewModel = viewModel)
                 Tool.Style -> StyleToolSheet(state = state, viewModel = viewModel)
                 Tool.Direct -> DirectToolSheet(state = state, viewModel = viewModel)
                 Tool.MultiShot -> MultiShotToolSheet(state = state, viewModel = viewModel)
@@ -419,27 +411,11 @@ private fun decodeReference(context: android.content.Context, uri: android.net.U
         }
     }.getOrNull()
 
-/**
- * specs/auto_enhance.md §6: the sheet arrives **after** the call, holding the result. Changing a
- * chip costs another call; the 강도 slider costs none, because it scales a plan already here.
- */
-@Composable
-private fun AutoToolSheet(state: EditorUiState, viewModel: EditorViewModel) {
-    AutoSheet(
-        state = state.auto,
-        onStyleChange = viewModel.auto::setStyle,
-        onIntensityChange = viewModel.auto::setIntensity,
-        onCancel = viewModel::cancelSheet,
-        onApply = viewModel::applySheet,
-    )
-}
-
 @Composable
 private fun SettingsSheet(state: EditorUiState, viewModel: EditorViewModel) {
     Sam3SettingsSheet(
         config = state.selection.config,
         geminiApiKey = state.selection.geminiApiKey,
-        monetConfig = state.selection.monetConfig,
         onSave = viewModel.selection::saveSettings,
         onCancel = { viewModel.selection.setSettingsVisible(false) },
     )

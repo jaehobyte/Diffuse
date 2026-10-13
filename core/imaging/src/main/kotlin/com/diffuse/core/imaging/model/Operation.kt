@@ -64,7 +64,8 @@ enum class AdjustKind(
     // document model, and five more do the same.
     //
     // Blacks and Whites are the tone curve's endpoints, the siblings of Shadows and Highlights
-    // that `AdjustKind` was missing; MonetGPT emits them in four of its six tone operations.
+    // that `AdjustKind` was missing. Documents saved by the removed 자동 보정 tool (D097) carry
+    // them too, so they stay readable.
     Blacks(ZERO_CENTRED),
     Whites(ZERO_CENTRED),
     Fade(ZERO_CENTRED),

@@ -2,7 +2,7 @@
 # Build a debug APK that already knows the servers, and put it on the attached device.
 #
 # `-Pdiffuse.localCreds` is what makes core/ai read `.env` into BuildConfig, so 서버 설정 comes up
-# filled in and 선택 / 자동 보정 work on the first tap. An ordinary `./gradlew assembleDebug` has
+# filled in and 선택 works on the first tap. An ordinary `./gradlew assembleDebug` has
 # no flag and still produces the credential-free APK that dist/README.md publishes — this script
 # is the only thing that turns the flag on.
 #
@@ -19,7 +19,7 @@ cd "$(dirname "$0")/.."
 if [[ -f .env ]]; then
   while IFS='=' read -r key value; do
     case "$key" in
-      SAM3_BASE_URL | MONET_BASE_URL)
+      SAM3_BASE_URL)
         if [[ "$value" =~ ^https?://(127\.0\.0\.1|localhost)(:|/|$) ]]; then
           echo "warning: $key in .env is a loopback address; on a phone it needs adb reverse (USB only)." >&2
         fi

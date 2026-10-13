@@ -67,16 +67,21 @@ class ToolStripLevelTest {
         assertTrue(ai.none { it is StripItem.OpenAi })
     }
 
+    /** D097: 자동 is gone and the rest keep their relative order. */
     @Test
     fun `the AI level holds the tools that call a provider`() {
         val ai = stripItems(ToolGroup.Ai).filterIsInstance<StripItem.OfTool>().map { it.tool }
 
         assertEquals(
             listOf(
-                Tool.Select, Tool.Erase, Tool.Fill, Tool.Expand, Tool.Style, Tool.Auto, Tool.MultiShot,
+                Tool.Select, Tool.Erase, Tool.Fill, Tool.Expand, Tool.Style, Tool.MultiShot,
                 Tool.Direct,
             ),
             ai,
+        )
+        assertEquals(
+            listOf("선택", "지우기", "채우기", "확대", "스타일", "멀티샷", "지시"),
+            ai.map(::labelOf),
         )
     }
 
@@ -120,15 +125,25 @@ class ToolStripLevelTest {
         compose.onNodeWithText("피부 보정").assertDoesNotExist()
     }
 
-    /** D092: 자동, 멀티샷 and 지시 are reached at the AI level, past the lazy strip's first screen. */
+    /** D092: 멀티샷 and 지시 are reached at the AI level, past the lazy strip's first screen. */
     @Test
-    fun `the AI level reaches 자동, 멀티샷 and 지시`() {
+    fun `the AI level reaches 멀티샷 and 지시`() {
         show(ToolGroup.Ai)
 
-        listOf("자동", "멀티샷", "지시").forEach { label ->
+        listOf("멀티샷", "지시").forEach { label ->
             compose.onNodeWithTag(ToolStripTestTag).performScrollToNode(hasText(label))
             compose.onNodeWithText(label).assertExists()
         }
+    }
+
+    /** D097: the removed 자동 보정 tool leaves no item, greyed or otherwise, at the AI level. */
+    @Test
+    fun `the AI level has no 자동 item anywhere along the strip`() {
+        show(ToolGroup.Ai)
+
+        compose.onNodeWithTag(ToolStripTestTag).performScrollToNode(hasText("지시"))
+        compose.onNodeWithText("자동").assertDoesNotExist()
+        compose.onNodeWithText("자동 보정").assertDoesNotExist()
     }
 
     @Test
@@ -214,7 +229,6 @@ class ToolStripLevelTest {
         Tool.Fill -> "채우기"
         Tool.Expand -> "확대"
         Tool.Style -> "스타일"
-        Tool.Auto -> "자동"
         Tool.MultiShot -> "멀티샷"
         Tool.Direct -> "지시"
     }
