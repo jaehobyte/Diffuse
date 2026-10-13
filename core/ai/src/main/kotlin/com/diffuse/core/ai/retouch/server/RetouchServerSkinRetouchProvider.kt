@@ -31,11 +31,10 @@ import kotlin.coroutines.coroutineContext
  * specs/skin_retouch_pipeline.md §8, work/tasks.md requirement 18. The skin retouch server behind
  * the provider boundary: one probe per settings, one upload per explicit 미리보기 request.
  *
- * The probe is `MonetAutoEnhanceProvider`'s, for the same reasons (auto_enhance.md §6, D081): a
- * save re-probes even when nothing changed, a probe for replaced settings is cancelled and its late
- * answer dropped, and nothing polls. What it adds is [supportedKinds]: the server says which kinds
- * it has enabled and which engine version answers for each, and a request names that version so a
- * swapped engine cannot answer for the old one (§8.1 `engine_mismatch`).
+ * The probe: a save re-probes even when nothing changed, a probe for replaced settings is
+ * cancelled and its late answer dropped, and nothing polls. What it adds is [supportedKinds]: the
+ * server says which kinds it has enabled and which engine version answers for each, and a request
+ * names that version so a swapped engine cannot answer for the old one (§8.1 `engine_mismatch`).
  */
 @Singleton
 class RetouchServerSkinRetouchProvider @Inject internal constructor(

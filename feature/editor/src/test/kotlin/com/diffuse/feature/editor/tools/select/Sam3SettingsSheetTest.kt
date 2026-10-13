@@ -1,6 +1,7 @@
 package com.diffuse.feature.editor.tools.select
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -11,7 +12,6 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.diffuse.core.ai.monet.MonetConfig
 import com.diffuse.core.ai.sam3.Sam3Config
 import com.diffuse.core.ui.theme.AppTheme
 import com.diffuse.core.ui.theme.ThemeMode
@@ -24,7 +24,10 @@ import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
-/** specs/generative_erase.md §8 and auto_enhance.md §4: one 서버 설정 sheet, five fields. */
+/**
+ * specs/segmentation.md §6 and generative_erase.md §8: one 서버 설정 sheet, three fields. The
+ * 자동 보정 server it used to carry is gone with the tool (D097).
+ */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class Sam3SettingsSheetTest {
@@ -32,15 +35,10 @@ class Sam3SettingsSheetTest {
     @get:Rule
     val compose = createComposeRule()
 
-    private data class Saved(
-        val baseUrl: String,
-        val token: String,
-        val geminiApiKey: String,
-        val monetBaseUrl: String,
-        val monetToken: String,
-    )
+    private data class Saved(val baseUrl: String, val token: String, val geminiApiKey: String)
 
     private val saved = mutableListOf<Saved>()
+    private var cancelled = 0
 
     @Test
     fun `save carries the base URL, the token and the Gemini key`() {
@@ -49,58 +47,65 @@ class Sam3SettingsSheetTest {
         compose.onNodeWithTag(GeminiKeyFieldTestTag).performTextReplacement("AIza-new")
         compose.onNodeWithText("저장").performClick()
 
-        assertEquals(
-            listOf(Saved("http://host:8080", "tok", "AIza-new", "http://monet:9090", "m-tok")),
-            saved,
-        )
+        assertEquals(listOf(Saved("http://host:8080", "tok", "AIza-new")), saved)
     }
 
-    /**
-     * specs/auto_enhance.md §4. Without this field 자동 보정 is unreachable in a published APK:
-     * no address ships, and `auto_needs_server` points at a sheet that had nowhere to type one.
-     */
+    /** D097: the sheet carries SAM 3 and Gemini only; no 자동 보정 field or hint is left behind. */
     @Test
-    fun `save carries the 자동 보정 server too`() {
+    fun `the sheet has no 자동 보정 server fields`() {
         showSheet()
 
-        compose.onNodeWithTag(MonetBaseUrlFieldTestTag).performTextReplacement("http://monet:1")
-        compose.onNodeWithTag(MonetTokenFieldTestTag).performTextReplacement("m-new")
-        compose.onNodeWithText("저장").performClick()
-
-        assertEquals(
-            listOf(Saved("http://host:8080", "tok", "AIza-old", "http://monet:1", "m-new")),
-            saved,
-        )
+        compose.onNodeWithTag("MonetBaseUrl").assertDoesNotExist()
+        compose.onNodeWithTag("MonetToken").assertDoesNotExist()
+        compose.onNodeWithText("자동 보정", substring = true).assertDoesNotExist()
     }
 
-    /** 자동 보정 is usable without SAM 3, so its address alone must enable 저장. */
+    /** Gemini is usable without SAM 3, so a key alone must be savable. */
     @Test
-    fun `the 자동 보정 address alone enables save`() {
-        showSheet(sam3 = Sam3Config(baseUrl = "", token = ""))
+    fun `the Gemini key alone saves without a SAM 3 address`() {
+        showSheet(sam3 = Sam3Config(baseUrl = "", token = ""), geminiApiKey = "")
 
-        compose.onNodeWithTag(MonetBaseUrlFieldTestTag).performTextReplacement("http://monet:1")
-        compose.onNodeWithText("저장").performClick()
+        compose.onNodeWithTag(GeminiKeyFieldTestTag).performTextReplacement("AIza-only")
+        compose.onNodeWithText("저장").assertIsEnabled().performClick()
 
-        assertEquals(
-            listOf(Saved("", "", "AIza-old", "http://monet:1", "m-tok")),
-            saved,
-        )
+        assertEquals(listOf(Saved("", "", "AIza-only")), saved)
     }
 
-    /** specs/auto_enhance.md §4: a typo is refused at 저장, and fixing it lets the save through. */
+    /** SAM 3 is usable without Gemini, so its address alone must be savable. */
     @Test
-    fun `a malformed 자동 보정 address blocks save until it is fixed`() {
+    fun `the SAM 3 server alone saves without a Gemini key`() {
+        showSheet(sam3 = Sam3Config(baseUrl = "", token = ""), geminiApiKey = "")
+
+        compose.onNodeWithTag(Sam3BaseUrlFieldTestTag).performTextReplacement("http://sam:8080")
+        compose.onNodeWithTag(Sam3TokenFieldTestTag).performTextReplacement("s-tok")
+        compose.onNodeWithText("저장").assertIsEnabled().performClick()
+
+        assertEquals(listOf(Saved("http://sam:8080", "s-tok", "")), saved)
+    }
+
+    /** Clearing a value is a save too; nothing gates 저장 on a field being filled. */
+    @Test
+    fun `clearing every value still saves`() {
         showSheet()
 
-        compose.onNodeWithTag(MonetBaseUrlFieldTestTag).performTextReplacement("monet:9090")
-        compose.onNodeWithText("http:// 또는 https://로 시작하는 주소를 입력해주세요").assertExists()
-        compose.onNodeWithText("저장").performClick()
+        compose.onNodeWithTag(Sam3BaseUrlFieldTestTag).performTextReplacement("")
+        compose.onNodeWithTag(Sam3TokenFieldTestTag).performTextReplacement("")
+        compose.onNodeWithTag(GeminiKeyFieldTestTag).performTextReplacement("")
+        compose.onNodeWithText("저장").assertIsEnabled().performClick()
+
+        assertEquals(listOf(Saved("", "", "")), saved)
+    }
+
+    @Test
+    fun `cancel saves none of the edits`() {
+        showSheet()
+
+        compose.onNodeWithTag(Sam3BaseUrlFieldTestTag).performTextReplacement("http://other:1")
+        compose.onNodeWithTag(GeminiKeyFieldTestTag).performTextReplacement("AIza-new")
+        compose.onNodeWithText("취소").performClick()
+
+        assertEquals(1, cancelled)
         assertTrue(saved.isEmpty())
-
-        compose.onNodeWithTag(MonetBaseUrlFieldTestTag).performTextReplacement("https://monet.example")
-        compose.onNodeWithText("저장").performClick()
-
-        assertEquals("https://monet.example", saved.single().monetBaseUrl)
     }
 
     @Test
@@ -109,10 +114,7 @@ class Sam3SettingsSheetTest {
 
         compose.onNodeWithText("저장").performClick()
 
-        assertEquals(
-            listOf(Saved("http://host:8080", "tok", "AIza-old", "http://monet:9090", "m-tok")),
-            saved,
-        )
+        assertEquals(listOf(Saved("http://host:8080", "tok", "AIza-old")), saved)
     }
 
     /** The key is masked, so neither a shoulder-surfer nor a screenshot reads it. */
@@ -130,37 +132,34 @@ class Sam3SettingsSheetTest {
     }
 
     /**
-     * DESIGN.md §4: the longest sheet at large type. The 45% cap stays, the fields scroll inside
-     * it, and the pinned 저장 is still on screen — nothing is clipped away to make room.
+     * DESIGN.md §4: the sheet at large type. The 45% cap stays, the fields scroll inside it, and
+     * the pinned 저장 is still on screen — nothing is clipped away to make room.
      */
     @Test
     @Config(qualifiers = RobolectricDeviceQualifiers.Pixel6a, fontScale = 2.0f)
     fun `at twice the font size the last field scrolls into reach and 저장 stays on screen`() {
         showSheet()
 
-        compose.onNodeWithTag(MonetTokenFieldTestTag).performScrollTo().performTextReplacement("m-big")
+        compose.onNodeWithTag(GeminiKeyFieldTestTag).performScrollTo().performTextReplacement("AIza-big")
         compose.onNodeWithText("저장").assertIsDisplayed().performClick()
 
-        assertEquals(
-            listOf(Saved("http://host:8080", "tok", "AIza-old", "http://monet:9090", "m-big")),
-            saved,
-        )
+        assertEquals(listOf(Saved("http://host:8080", "tok", "AIza-big")), saved)
         val screen = ApplicationProvider.getApplicationContext<Context>().resources.displayMetrics.heightPixels
         val sheet = compose.onNodeWithTag(Sam3SettingsSheetTestTag).fetchSemanticsNode().size.height
         assertTrue("sheet took $sheet of $screen", sheet <= screen * 0.45f + 1f)
     }
 
-    private fun showSheet(sam3: Sam3Config = Sam3Config(baseUrl = "http://host:8080", token = "tok")) {
+    private fun showSheet(
+        sam3: Sam3Config = Sam3Config(baseUrl = "http://host:8080", token = "tok"),
+        geminiApiKey: String = "AIza-old",
+    ) {
         compose.setContent {
             AppTheme(mode = ThemeMode.Edit) {
                 Sam3SettingsSheet(
                     config = sam3,
-                    geminiApiKey = "AIza-old",
-                    monetConfig = MonetConfig(baseUrl = "http://monet:9090", token = "m-tok"),
-                    onSave = { baseUrl, token, key, monetUrl, monetToken ->
-                        saved += Saved(baseUrl, token, key, monetUrl, monetToken)
-                    },
-                    onCancel = {},
+                    geminiApiKey = geminiApiKey,
+                    onSave = { baseUrl, token, key -> saved += Saved(baseUrl, token, key) },
+                    onCancel = { cancelled++ },
                 )
             }
         }

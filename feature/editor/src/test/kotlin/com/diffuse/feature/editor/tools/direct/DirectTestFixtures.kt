@@ -5,7 +5,6 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.diffuse.core.ai.Availability
-import com.diffuse.core.ai.FakeAutoEnhanceProvider
 import com.diffuse.core.ai.CropRatio
 import com.diffuse.core.ai.EditPlan
 import com.diffuse.core.ai.FakeEraseProvider
@@ -22,7 +21,6 @@ import com.diffuse.core.ai.PlanProposal
 import com.diffuse.core.ai.PlanRequest
 import com.diffuse.core.ai.PlanStep
 import com.diffuse.core.ai.gemini.GeminiSettings
-import com.diffuse.core.ai.monet.MonetSettings
 import com.diffuse.core.ai.sam3.Sam3Settings
 import com.diffuse.core.ai.speech.FakeSpeechInput
 import com.diffuse.core.common.AppError
@@ -75,7 +73,6 @@ internal class DirectHarness {
         update("http://localhost:8080", "token")
     }
     val geminiSettings = GeminiSettings(ApplicationProvider.getApplicationContext()).apply { update("test-key") }
-    private val monetSettings = MonetSettings(ApplicationProvider.getApplicationContext())
 
     fun opened(): EditorViewModel = viewModel().also { it.onToolClick(Tool.Direct) }
 
@@ -92,8 +89,6 @@ internal class DirectHarness {
             FakeSpeechInput(),
             settings,
             geminiSettings,
-            monetSettings,
-            FakeAutoEnhanceProvider(),
             FakeMatchStyleProvider(),
         ),
         dispatchers = TestDispatchers,

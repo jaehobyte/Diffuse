@@ -7,7 +7,6 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.AutoAwesomeMosaic
 import androidx.compose.material.icons.rounded.AutoAwesomeMotion
 import androidx.compose.material.icons.rounded.AutoFixHigh
-import androidx.compose.material.icons.rounded.AutoFixNormal
 import androidx.compose.material.icons.rounded.BurstMode
 import androidx.compose.material.icons.rounded.Colorize
 import androidx.compose.material.icons.rounded.Crop
@@ -56,9 +55,6 @@ enum class Tool(
      * named for where things are rather than for what they cost.
      */
     Style(R.string.editor_tool_style, Icons.Rounded.AutoAwesomeMosaic, ToolGroup.Ai),
-
-    /** specs/auto_enhance.md §6: the one AI tool that answers in adjustments rather than pixels. */
-    Auto(R.string.editor_tool_auto, Icons.Rounded.AutoFixNormal, ToolGroup.Ai),
 
     /**
      * specs/multishot.md §2: pixels from other photographs, so an AI-level tool. Appended before

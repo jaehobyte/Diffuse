@@ -8,7 +8,6 @@ import androidx.compose.ui.test.performClick
 import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.diffuse.core.ai.FakeAutoEnhanceProvider
 import com.diffuse.core.ai.FakeEraseProvider
 import com.diffuse.core.ai.FakeFillProvider
 import com.diffuse.core.ai.FakeMatchStyleProvider
@@ -16,7 +15,6 @@ import com.diffuse.core.ai.FakeOutpaintProvider
 import com.diffuse.core.ai.FakePlanProvider
 import com.diffuse.core.ai.FakeSegmentationProvider
 import com.diffuse.core.ai.gemini.GeminiSettings
-import com.diffuse.core.ai.monet.MonetSettings
 import com.diffuse.core.ai.sam3.Sam3Settings
 import com.diffuse.core.ai.speech.FakeSpeechInput
 import com.diffuse.core.common.DispatcherProvider
@@ -166,8 +164,6 @@ class EditorBackTest {
                 FakeSpeechInput(),
                 Sam3Settings(context),
                 GeminiSettings(context),
-                MonetSettings(context),
-                FakeAutoEnhanceProvider(),
                 FakeMatchStyleProvider(),
             ),
             dispatchers = ImmediateDispatchers,

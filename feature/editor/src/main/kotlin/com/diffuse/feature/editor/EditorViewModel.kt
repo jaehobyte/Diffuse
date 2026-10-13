@@ -33,8 +33,6 @@ import com.diffuse.feature.editor.tools.multishot.MultiShotHost
 import com.diffuse.feature.editor.tools.multishot.MultiShotState
 import com.diffuse.feature.editor.tools.style.StyleState
 import dagger.hilt.android.qualifiers.ApplicationContext
-import com.diffuse.feature.editor.tools.auto.AutoController
-import com.diffuse.feature.editor.tools.auto.AutoState
 import com.diffuse.feature.editor.tools.crop.CropState
 import com.diffuse.core.ai.CropRatio
 import com.diffuse.feature.editor.tools.crop.preset
@@ -90,9 +88,6 @@ data class EditorUiState(
     val fill: FillState = FillState(),
     /** specs/outpaint.md §6: the pending margins live here between the drag and 적용. */
     val expand: ExpandState = ExpandState(),
-    /** specs/auto_enhance.md §6: the model's plan lives here between the call and 적용. */
-    val auto: AutoState = AutoState(),
-
     /** specs/style_match.md §4: the catalog, its tiles, and the style the user is trying on. */
     val style: StyleState = StyleState(),
     /** specs/vibe_edit.md §3: the plan lives here between the response and 적용. */
@@ -136,7 +131,6 @@ class EditorViewModel @Inject constructor(
         ai.segmentation,
         ai.sam3Settings,
         ai.geminiSettings,
-        ai.monetSettings,
         viewModelScope,
     )
 
@@ -169,9 +163,6 @@ class EditorViewModel @Inject constructor(
         },
         scope = viewModelScope,
     )
-
-    /** specs/auto_enhance.md §6: the tool has no sheet before its call, and one after it. */
-    val auto = AutoController(ai.autoEnhance, viewModelScope, ai.monetSettings.saves)
 
     /**
      * specs/style_match.md §4. 스타일 calls nothing, so it needs no provider — what it needs is
@@ -335,35 +326,19 @@ class EditorViewModel @Inject constructor(
                 .distinctUntilChanged()
                 .collect { _uiState.value.document?.let(::requestPreview) }
         }
-        viewModelScope.launch {
-            auto.state.collect { _uiState.value = _uiState.value.copy(auto = it) }
-        }
-        // specs/auto_enhance.md §6: a plan is asked of the document on screen. Neither the busy
-        // overlay nor the sheet blocks undo, so a document that changes under a session makes its
-        // input, its plan and any answer still out ones for a picture that is gone. The session
-        // ends; the undo stays — so no baseline is restored.
+        // specs/multishot.md §8: neither the busy overlay nor the sheet blocks undo, so a
+        // document that changes under a session makes its photographs, requests and files ones
+        // for a picture that is gone. The session ends; the undo stays — so no baseline is
+        // restored.
         viewModelScope.launch {
             _uiState.map { it.document }
                 .distinctUntilChanged()
                 .collect {
-                    if (auto.onDocumentChanged() && _uiState.value.selectedTool == Tool.Auto) {
-                        sheetBaseline = null
-                        _uiState.value = _uiState.value.copy(selectedTool = null)
-                    }
-                    // specs/multishot.md §8: and for 멀티샷's photographs, requests and files.
                     if (multiShot.onDocumentChanged(it) && _uiState.value.selectedTool == Tool.MultiShot) {
                         sheetBaseline = null
                         _uiState.value = _uiState.value.copy(selectedTool = null)
                     }
                 }
-        }
-        // specs/auto_enhance.md §6: the plan applies live while the sheet is open, so 강도 is a
-        // slider on a result the user is already looking at. Same shape as T69's collector, and
-        // for the same reason: what the preview should show changed without the document changing.
-        viewModelScope.launch {
-            _uiState.map { if (it.selectedTool == Tool.Auto) it.auto.scaled() else null }
-                .distinctUntilChanged()
-                .collect { _uiState.value.document?.let(::requestPreview) }
         }
         viewModelScope.launch {
             style.state.collect { _uiState.value = _uiState.value.copy(style = it) }
@@ -435,10 +410,6 @@ class EditorViewModel @Inject constructor(
      * an already-cropped photo — which a plan ending in `crop_ratio` made obvious, because it
      * commits the crop and *then* opens the tool. Nothing else is dropped: an outpaint, an erase
      * and every adjust still show, because the user is framing the photo they actually have.
-     *
-     * T77: and while 자동 is open the pending plan is added, for the mirror-image reason — the
-     * boost is not in the document until 적용, and a sheet whose slider changed nothing on screen
-     * would be asking the user to judge a number (auto_enhance.md §6).
      */
     private fun requestPreview(document: EditDocument) {
         previewJob?.cancel()
@@ -446,9 +417,8 @@ class EditorViewModel @Inject constructor(
             Tool.Crop -> document.copy(
                 operations = document.operations.filterNot { it is Operation.Crop },
             )
-            Tool.Auto -> _uiState.value.auto.appliedTo(document)
-            // specs/style_match.md §4: the same reason as 자동's — the style is not in the
-            // document until 적용, and a tile the canvas does not follow is a swatch.
+            // specs/style_match.md §4: the style is not in the document until 적용, and a tile
+            // the canvas does not follow is a swatch.
             Tool.Style -> _uiState.value.style.appliedTo(document)
             // specs/multishot.md §4: the draft on the un-cropped canonical canvas, so a drag on
             // screen maps to the stored offset without undoing a crop (자르기's T69 rule).
@@ -535,7 +505,7 @@ class EditorViewModel @Inject constructor(
             Tool.Erase -> erase.onToolTapped(hasSelection)
             Tool.Fill -> fill.onToolTapped(hasSelection)
             Tool.Expand -> expand.onToolTapped(state.document?.canOutpaint == true)
-            else -> auto.onToolTapped()
+            else -> return
         }
         when (tap) {
             ToolTap.Refused -> Unit
@@ -545,38 +515,21 @@ class EditorViewModel @Inject constructor(
                 sheetBaseline = state.document
                 _uiState.value = state.copy(selectedTool = tool)
             }
-            // The two that run on the tap. 지우기 commits straight into history
-            // (generative_erase.md §5); 자동 opens its sheet on a result rather than on an empty
-            // box (auto_enhance.md §6).
+            // The one that runs on the tap: 지우기 commits straight into history
+            // (generative_erase.md §5).
             // The eraser is shown the frame without the adjustments; see [eraseInput].
-            ToolTap.Run -> if (tool == Tool.Auto) {
-                runAuto()
-            } else {
-                viewModelScope.launch {
-                    val document = state.document
-                    erase.runAndCommit(
-                        image = document?.let {
-                            generativeInput(renderer, it, PREVIEW_LONG_EDGE_PX)
-                        }
-                            ?: state.preview?.asAndroidBitmap(),
-                        mask = state.activeMask,
-                        document = document,
-                        onCommitted = { committed -> history?.push(committed) },
-                    )
-                }
+            ToolTap.Run -> viewModelScope.launch {
+                val document = state.document
+                erase.runAndCommit(
+                    image = document?.let {
+                        generativeInput(renderer, it, PREVIEW_LONG_EDGE_PX)
+                    }
+                        ?: state.preview?.asAndroidBitmap(),
+                    mask = state.activeMask,
+                    document = document,
+                    onCommitted = { committed -> history?.push(committed) },
+                )
             }
-        }
-    }
-
-    /**
-     * specs/auto_enhance.md §6. The sheet opens on a **result**, not on an empty box, so the call
-     * comes first and `onReady` is what shows it. Changing a chip afterwards is the controller's
-     * own re-run, on the bitmap this first call handed it.
-     */
-    private fun runAuto() {
-        auto.run(_uiState.value.preview?.asAndroidBitmap()) {
-            sheetBaseline = _uiState.value.document
-            _uiState.value = _uiState.value.copy(selectedTool = Tool.Auto)
         }
     }
 
@@ -615,7 +568,6 @@ class EditorViewModel @Inject constructor(
         selection.closeSheet()
         fill.close()
         expand.close()
-        auto.close()
         style.close()
         direct.close()
         multiShot.close()
@@ -658,21 +610,10 @@ class EditorViewModel @Inject constructor(
                     _uiState.value = _uiState.value.copy(selectedTool = null)
                 },
             )
-            // specs/auto_enhance.md §6: one history entry for the whole boost, so one undo
-            // removes it. The plan is already here — 적용 costs no call.
-            //
-            // The sheet closes **before** the push: the pending plan is what the preview is
-            // currently adding on top of the document, so pushing first would render it twice
-            // for one frame.
-            Tool.Auto -> auto.apply(state.document)?.let { boosted ->
-                sheetBaseline = null
-                auto.close()
-                _uiState.value = _uiState.value.copy(selectedTool = null)
-                history?.push(boosted)
-            }
             // specs/style_match.md §4: 적용 commits every `Adjust` the preset carries as one
-            // history entry, so one undo takes the whole style back. Closed before the push for
-            // 자동's reason — the preview is already showing the pending style on top.
+            // history entry, so one undo takes the whole style back. The sheet closes **before**
+            // the push: the preview is already showing the pending style on top, so pushing
+            // first would render it twice for one frame.
             Tool.Style -> style.apply(state.document)?.let { styled ->
                 sheetBaseline = null
                 style.close()
@@ -754,8 +695,8 @@ class EditorViewModel @Inject constructor(
     }
 
     companion object {
-        /** specs/auto_enhance.md §6 and generative_fill.md §6: the tools that ask for pixels. */
-        private val GENERATIVE_TOOLS = setOf(Tool.Erase, Tool.Fill, Tool.Expand, Tool.Auto)
+        /** specs/generative_fill.md §6: the tools that ask for pixels. */
+        private val GENERATIVE_TOOLS = setOf(Tool.Erase, Tool.Fill, Tool.Expand)
 
         const val PROJECT_ID = "projectId"
         const val PREVIEW_LONG_EDGE_PX = 1080

@@ -51,19 +51,8 @@ android {
             "SAM3_TOKEN",
             "\"${serverDefault("SAM3_AUTH_TOKEN", "sam3.token")}\"",
         )
-        // specs/auto_enhance.md §4: blank by default, exactly as SAM 3's is. No address ships.
-        buildConfigField(
-            "String",
-            "MONET_BASE_URL",
-            "\"${serverDefault("MONET_BASE_URL", "monet.baseUrl")}\"",
-        )
-        buildConfigField(
-            "String",
-            "MONET_TOKEN",
-            "\"${serverDefault("MONET_AUTH_TOKEN", "monet.token")}\"",
-        )
-        // specs/skin_retouch_pipeline.md §8: the skin retouch server, blank by default like the
-        // two above. Its own address and token; nothing is copied from MonetGPT or SAM 3.
+        // specs/skin_retouch_pipeline.md §8: the skin retouch server, blank by default like
+        // SAM 3's. Its own address and token; nothing is copied from SAM 3.
         buildConfigField(
             "String",
             "RETOUCH_BASE_URL",

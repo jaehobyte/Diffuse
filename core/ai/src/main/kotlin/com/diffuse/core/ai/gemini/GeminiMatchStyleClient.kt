@@ -70,7 +70,7 @@ internal val MATCH_STYLE_FUNCTION = FunctionDeclaration(
  * specs/style_match.md §5 step 2. Two photographs in, **numbers** out — never a graded picture,
  * for §2's reason: an image the model returns is one op nobody can then disagree with.
  *
- * The model is `gemini-2.5-flash`, the planner's, and not `-image`: this call produces a decision.
+ * The model is `gemini-3.8-flash`, the planner's, and not `-image`: this call produces a decision.
  */
 internal class GeminiMatchStyleClient(
     private val configSource: GeminiConfigSource,

@@ -87,6 +87,38 @@ class EditDocumentJsonTest {
         assertEquals(operations, restored.operations)
     }
 
+    /**
+     * D097: documents the removed 자동 보정 tool saved hold ordinary unmasked `Adjust` ops,
+     * written by kind name. A fixed text — not a round trip — so renaming one of those kinds fails
+     * here rather than silently dropping a user's boost on load.
+     */
+    @Test
+    fun `a stored 자동 보정 boost still decodes as plain adjusts`() {
+        val text = """
+            {"v":1,"id":"doc-1","source":"/p.jpg","createdAt":111,"updatedAt":222,
+             "operations":[
+               {"type":"adjust","id":"a1","kind":"Blacks","value":-0.2},
+               {"type":"adjust","id":"a2","kind":"Whites","value":0.15},
+               {"type":"adjust","id":"a3","kind":"Fade","value":0.35},
+               {"type":"adjust","id":"a4","kind":"SCurve","value":0.1},
+               {"type":"adjust","id":"a5","kind":"Clarity","value":0.25},
+               {"type":"adjust","id":"a6","kind":"HslBlueSaturation","value":-0.3}
+             ]}
+        """.trimIndent()
+
+        val restored = EditDocumentJson.decode(text)
+
+        assertEquals(6, restored.operations.size)
+        assertTrue(restored.operations.all { it is Operation.Adjust && it.maskId == null })
+        assertEquals(-0.2f, restored.adjustValue(AdjustKind.Blacks), 0f)
+        assertEquals(0.15f, restored.adjustValue(AdjustKind.Whites), 0f)
+        assertEquals(0.35f, restored.adjustValue(AdjustKind.Fade), 0f)
+        assertEquals(0.1f, restored.adjustValue(AdjustKind.SCurve), 0f)
+        assertEquals(0.25f, restored.adjustValue(AdjustKind.Clarity), 0f)
+        assertEquals(-0.3f, restored.adjustValue(AdjustKind.HslBlueSaturation), 0f)
+        assertEquals(restored, EditDocumentJson.decode(EditDocumentJson.encode(restored)))
+    }
+
     @Test
     fun `the encoded root carries the schema version`() {
         assertTrue(EditDocumentJson.encode(document()).contains("\"v\":1"))

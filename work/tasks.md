@@ -2,118 +2,105 @@
 
 ## Goal
 
-Android 멀티샷에서 추가 사진을 최대 5장까지 받아 선택·추출·배치·적용·저장하고, 사용자가 입력한 추출 대상으로 멀티샷을 만들 수 있도록 한다.
+앱의 MonetGPT 자동 보정 기능(‘자동’ 도구), 서버 설정과 연동 코드를 제거하고 Gemini 보정 추천·직접 지시 및 기존 편집 문서의 호환성을 유지한다.
 
 ## Background
 
-2026-10-13 사용자 요구: “멀티샷이 지금 3장이 한도인데 5장까지 받을 수 있도록”. 이 작업의 장수는 **사진 추가로 받는 사진 수**로 해석한다. 추가 5장과 기존 원본/주인공 1장으로 총 6장이다. 원본 포함 총 5장으로 기존 기능을 축소하지 않는다.
+2026-10-13 사용자 요청: “자동 보정 서버 제거(monetGPT)를 위한 tasks.md”. 범위 확인에 사용자가 동의했다: **앱의 MonetGPT 기능·연동 제거**, Gemini 보정 추천 유지. 외부 서버 저장소·모델·운영 자원 철거는 이번 계약에 포함하지 않는다.
 
-추가 요구: 현재 기본 추출 대상 `person`을 사용자가 직접 수정할 수 있어야 한다. 기본값은 유지하되, 추출 전에 대상 문구를 입력하고 실제 SAM3 최초 질의에 반영한다.
+현재 코드에서 확인한 연결:
+- `core/ai/monet/*`가 `/health`와 `/v1/chat/completions`를 호출한다. `AiModule`이 `MonetSettings`, `MonetClient`, `MonetAutoEnhanceProvider`를 연결한다.
+- `AutoEnhanceProvider` / `AutoStyle` → `EditorAi` → `AutoController` / `AutoState` → AI 그룹의 `Tool.Auto`와 `AutoSheet`로 이어진다.
+- `EditorViewModel`과 `EditorRoute`에 자동 보정의 probe·상태 수집·busy/message·미리보기·적용·취소·문서 변경 처리가 분산되어 있다. 문서 변경 collector에는 멀티샷 처리도 함께 있어 통째로 삭제하면 안 된다.
+- `SelectionController` / `SelectionState` / `Sam3SettingsSheet`가 SAM3·Gemini·Monet 설정을 함께 저장한다. 현재 저장 활성화는 SAM3 또는 Monet 주소에 의존하므로 Monet 필드만 삭제하면 Gemini 키만 사용하는 설정 흐름을 막을 수 있다.
+- `core/ai/build.gradle.kts`는 `MONET_BASE_URL`, `MONET_TOKEN`을 생성하고 `MONET_AUTH_TOKEN`, `monet.baseUrl`, `monet.token` 입력을 읽는다. `scripts/install.sh`에도 Monet 주소 처리가 있다.
+- 자동 보정 결과는 `AutoState.appliedTo`에서 일반 `withAdjust(..., maskId = null)` 연산으로 적용된다. 서버 전용 문서 포맷을 제거하는 작업이 아니다.
+- 기존 RESULT에는 MonetGPT와 SAM3의 GPU 메모리 충돌 후 MonetGPT 추론을 중지한 기록이 있다. 이는 과거 운영 기록이며 현재 서비스 상태를 새로 확인한 것은 아니다.
 
-현재 checkout을 확인한 결과, 소스와 사용자 관찰 사이에 차이가 있다:
-
-- `core/imaging/.../model/Operation.kt`의 `MAX_SHOTS = 5`; 모델은 추가 shot 1~5개를 허용한다.
-- `MultiShotState.MAX_ITEMS`는 이 상수를 참조하고 `canAddPhoto`도 이를 사용한다.
-- `MultiShotController.requestPick`은 시간 순서 배치에서 `MAX_SHOTS - items.size`, 자유 배치/교체에서는 1장을 요청한다. `onPicked`는 초과 목록을 전체 거절한다.
-- `EditorRoute.MultiShotToolSheet`는 남은 자리에 따라 다중/단일 Photo Picker를 사용한다.
-- `specs/multishot.md`, D088/D090 및 기존 controller/model 테스트에도 추가 5장 지원이 명시되어 있다. 앱은 별도 멀티샷 HTTP API가 아니라 기존 SAM3 추출과 로컬 합성 경로를 사용한다.
-- 최초 추출은 `MultiShotController.findPerson`에서 `segmentation.byText(seg, PERSON)`으로 고정되어 있고, 자유 배치의 `extract`와 일괄 실행의 `extractFor`가 이를 공유한다. 기존 `state.phrase`/`submitPhrase`와 시트 입력창은 추출 후 마스크에 영역을 더하는 보정용이므로 최초 추출 대상 입력을 대신하지 못한다.
-
-**명시적으로 확장하는 계약:** `specs/multishot.md` §2/§2.1 및 D090의 고정 `person` 최초 질의를 “기본값 person, 사용자 지정 가능”으로 바꾼다. 후보 선택·수동 보정·순차 실행·주인공 보호는 유지한다. 번역 서비스나 자연어 명령 해석은 추가하지 않는다.
-
-따라서 단순히 “3 상수를 5로 변경”했다고 보고하지 않는다. 실제 실행 빌드·모드·기존 추가 장수·picker 진입 및 반환을 대조해 3장에서 막히는 원인을 확인한다. 기존 추가 사진이 2장이어서 남은 자리가 3장인 것은 정상이다. 현재 소스에서 재현되지 않으면 그 사실과 검증 범위를 명확히 기록하고 불필요한 구현 변경을 만들지 않는다.
+이번 요청은 `specs/auto_enhance.md`의 자동 도구 제공 계약과 `specs/tool_groups.md`의 메뉴 계약을 명시적으로 변경한다. D081의 연결 복구 및 D082의 외부 테스트 접근은 제거된 앱 기능의 과거 결정으로 남기고, 서버 자원 철거 완료로 해석하지 않는다.
 
 ## Scope
 
 ### Modify
 
-- `feature/editor/.../EditorRoute.kt`의 추출 대상 입력 연결 및 필요 시 멀티샷 picker 연결.
-- `feature/editor/.../tools/multishot/{MultiShotController,MultiShotState,MultiShotSheet}.kt` 및 관련 `strings.xml`: 최초 추출 대상의 상태·입력·실행 전달.
-- 관련 `MultiShotControllerTest`, `MultiShotSheetTest`, `MultiShotToolTest`와 picker 연결의 행동 검증. 기존 5장 테스트를 활용하고 확인된 빈틈만 보강한다.
-- 모델·렌더·저장 영역은 5장 경로의 실제 결함이 확인된 경우에만 최소 수정한다. 기존 `MultiShotModelTest`, `MultiShotLayoutTest`, `MultiShotRenderTest`, `MultiShotPersistenceTest`로 회귀를 확인한다.
-- `specs/multishot.md`의 추출 대상·장수 계약, `work/decisions.md`의 D090 확장 결정, 구현·검증 인계용 `work/RESULT.md`.
+- 제거: `core/ai/src/main/kotlin/com/diffuse/core/ai/monet/`, `AutoEnhanceProvider.kt` 및 전용 테스트·`testShared/FakeAutoEnhanceProvider.kt`.
+- 제거: `feature/editor/.../tools/auto/` 및 전용 테스트·골든. 공용 fixture나 다른 기능의 근거는 보존한다.
+- 정리: `AiModule.kt`, `EditorAi.kt`, `EditorViewModel.kt`, `EditorRoute.kt`, 실제 `EditorUiState` 정의, `Tool.kt`, `ToolSheetHost.kt` 및 관련 도구 동작 분기.
+- 정리: `tools/select/{SelectionController,SelectionState,Sam3SettingsSheet}.kt`, 전용 문자열·test tag 및 설정 테스트.
+- 정리: `core/ai/build.gradle.kts`, `scripts/install.sh`, 추적 중인 설정 예제·현재 기능 안내. 실제 비밀값을 열람·출력할 필요는 없다.
+- 갱신: `EditorAi`를 생성하는 feature/editor와 app 테스트 fixture, 메뉴·설정·Back·회귀 테스트 및 영향받은 UI 골든.
+- 갱신: `specs/auto_enhance.md`, `specs/tool_groups.md`, `architecture/projetoverview.md` 및 현재 기능을 잘못 설명하는 직접 관련 문서/주석. `work/decisions.md`에 제거 결정, `work/RESULT.md`에 구현·검증 인계.
 
 ### Do not modify
 
-- 별도 `server/multishot/` API의 3~6장 계약, SAM3 모델·서버 정책, 새 서버 연동.
-- 합성 배치 수학·주인공 보호·불투명도 정책, JSON/DB 형식 및 기존 프로젝트 호환성(확인된 결함 수정을 제외한 재설계 금지).
-- 자유 배치의 한 번에 한 장 추가, 교체의 단일 선택, 자동 업로드 금지 및 적용 전 draft 정책.
-- 추천 기능·전체 디자인·다른 도구·새 의존성·검사 허용 오차.
-- 기존 미커밋 변경의 되돌리기, `work/REVIEW.md` 덮어쓰기, 자동 commit/push, 별도 task/result 사본 생성.
+- Gemini 추천·직접 지시의 프롬프트, 함수 스키마, 추천 규칙, 스타일 프리셋 및 참조 스타일 매칭 동작. 자동 도구를 Gemini 호출로 대체하지 않는다.
+- 기존 미커밋 Gemini 3.8 Flash 변경과 `prompt.txt`. 관련 파일을 만질 때 해당 변경을 유지한다.
+- SAM3 선택/멀티샷, 피부 서버, 생성 지우기·채우기·확대의 기능·주소·인증·운영 상태.
+- `AdjustKind`(Blacks, Whites, Fade, SCurve, Clarity 및 HSL 포함), 렌더 수학, JSON/DB 스키마, 기존 프로젝트·사용자 사진.
+- 외부 `/home/jaeho/monetGPT` 저장소, 모델 가중치·캐시, systemd 서비스·Caddy·포트·방화벽·GPU 프로세스. 중단/삭제/재배포 명령을 수행하지 않는다.
+- 이전 REVIEW 수정, 자동 commit/push, 별도 task/result 사본, 관련 없는 리팩터링·의존성 교체.
 
 ## Requirements
 
-1. **3장 제한 원인 확인**
-   - 빈 멀티샷에서 시간 순서 배치 → 사진 추가로 4장 및 5장 선택을 확인한다. 앱 빌드 식별 정보, 배치 모드, 기존 추가 장수, picker가 허용한 수와 실제 반환/수용 수를 기록한다.
-   - 설치된 앱과 현재 소스의 차이, 남은 자리 계산, picker 연결/반환 처리, 썸네일 스크롤을 확인한다. 원인을 추측으로 확정하지 않는다. 기기 검증이 불가능하면 환경 차단으로 명시한다.
-   - 이미 정상 지원하는 경로는 유지한다. 구버전 앱이 원인으로 확인되면 현재 소스 APK의 재검증 및 빌드 인계로 해결하고 상수나 상한을 불필요하게 늘리지 않는다.
+1. **앱 기능 및 실행 경로 제거**
+   - AI 도구 목록에서 ‘자동’을 제거한다. 비활성 메뉴, 준비 중 메시지, 빈 시트 또는 대체 서버 경로를 남기지 않는다. 나머지 메뉴의 상대 순서를 유지한다.
+   - `AutoController` 생성, DI binding, 상태/Flow 수집, probe 및 재시도, 설정 저장 구독, 실행·취소·적용·미리보기·busy/message 연결을 함께 제거한다.
+   - 앱 진입·사진 열기·서버 설정 저장·다른 AI 도구 사용으로 Monet health 또는 추론 요청이 발생할 경로가 없어야 한다.
+   - 공용 취소/Back/문서 변경 collector에서 자동 보정 부분만 제거한다. 멀티샷의 취소·문서 전환 무효화, 나머지 도구의 preview/busy/message 처리를 보존한다.
 
-2. **5장 입력과 경계**
-   - 추가 사진 최대 5장이라는 단일 계약을 UI·picker·controller·모델 검증에서 일치시킨다. 기존 `MAX_SHOTS`를 재사용한다.
-   - 시간 순서 배치의 빈 목록은 한 번에 최대 5장을 받는다. 이미 3장이 있으면 2장, 4장이 있으면 단일 picker로 1장을 더 받는다. 5장에서는 더 추가할 수 없고, 삭제하면 해당 자리만큼 다시 추가 가능하다.
-   - 자유 배치는 한 번에 한 장씩 총 5장까지 추가 가능하고, 교체는 만석에서도 선택한 사진 한 장만 바꾼다.
-   - 초과 반환은 기존처럼 전체 거절하고 안내한다. `take(3)` 등으로 조용히 누락하거나 임의 중복 제거/정렬하지 않는다. 취소·빈 반환·이전 세션의 늦은 응답은 draft를 변경하지 않는다.
+2. **설정과 빌드 구성 정리**
+   - 공용 서버 설정에서 Monet 주소·토큰·안내·검증·callback 인자·상태를 제거한다. 남은 필드는 SAM3 주소/토큰과 Gemini API 키이며 기존 DESIGN 컴포넌트를 사용한다.
+   - SAM3 주소 없이 Gemini 키만 입력·수정·저장할 수 있어야 한다. 반대로 Gemini 키 없이 SAM3 설정만 저장할 수 있어야 한다. 기존 값을 비우고 저장하는 동작도 막지 않는다. 제거된 Monet 설정은 저장 가능 여부에 영향을 주지 않는다.
+   - 남은 설정을 다른 서비스에 복사하거나 삭제하지 않는다. 취소 시 입력 변경을 저장하지 않고 Gemini 키 마스킹을 유지한다.
+   - Monet BuildConfig 필드와 환경변수/local.properties 소비, 설치 스크립트의 Monet 처리와 현행 설정 예제를 제거한다. 로컬 credential 빌드 옵션과 다른 서버 설정 로딩은 유지한다.
+   - 업그레이드 후 남는 `monet_settings` 전용 SharedPreferences는 읽거나 사용하지 않고 그대로 무시한다. 이번 제거만을 위한 마이그레이션/앱 데이터 초기화는 추가하지 않는다. 이 잔여 저장 데이터 정책을 RESULT에 명시한다.
 
-3. **표시 및 실행**
-   - 추가 4·5번째 사진도 스크롤로 선택·삭제·교체·순서 변경에 도달한다. 기존 DESIGN 토큰, 시트 45% 상한 및 고정 취소/적용을 유지한다.
-   - 장수 안내는 추가 사진과 원본 포함 총수를 혼동시키지 않는다. 최대 추가 5장/원본 포함 6장과 실제 남은 자리를 일치시키고, 기존 정확한 문구는 유지한다.
-   - 시간 순서 배치에서 한 번의 실행으로 주인공과 추가 5장을 기존 순서대로 순차 추출하고 끝에 한 번 자동 배치한다. 4·5번째 사진을 누락하거나 병렬 추출을 새로 도입하지 않는다.
-   - 가져오기/추출 실패, 후보 선택 대기, 취소 후 재실행에서 기존 완료 항목을 보존하고 미완료 항목을 조용히 제외하지 않는다. 선택만으로 업로드하지 않는다.
+3. **편집 데이터와 공용 코드 보존**
+   - 이전 자동 보정으로 저장한 일반 Adjust 연산을 그대로 역직렬화·렌더·재편집·재저장·내보내기할 수 있어야 한다. 제거를 이유로 보정값을 초기화하거나 프로젝트를 마이그레이션하지 않는다.
+   - Monet 연동에 쓰였다는 이유로 공용 tone/HSL 연산, 스타일 프리셋, 이미지 코덱·HTTP/availability 유틸을 지우지 않는다. 실제 참조를 확인해 Monet 전용 구현만 제거한다.
+   - 피부 서버의 주석 등에 있는 과거 Monet 구현 참조는 필요하면 현재 동작 설명으로 고친다. 기능 구현을 재설계하지 않는다.
 
-4. **적용·호환성과 검증**
-   - 5장 합성도 한 번의 적용으로 한 history entry가 되고 Undo/Redo, 저장 후 재열기, 내보내기에서 모든 shot·순서·배치를 보존한다. 재열기/내보내기는 재추출하지 않는다.
-   - 기존 1~3장 및 4~5장 저장 프로젝트를 계속 읽고 편집한다. 상한을 총 5장으로 낮추거나 기존 파일을 잘라내지 않는다.
-   - 기존 5장 일괄 추출·상한·모델 테스트를 먼저 확인한다. 실제 결함이 있으면 해당 실패를 잡는 회귀 테스트를 추가하고, controller 테스트만으로 시스템 picker 연결까지 검증했다고 보고하지 않는다.
-
-5. **최초 추출 대상 직접 입력**
-   - 시간 순서 배치와 자유 배치 모두 최초 추출 버튼을 누르기 전에 편집 가능한 `추출 대상` 입력을 제공한다. 초기 실제 입력값은 `person`이며, 예시로 `dog`, `car` 등 영어 대상명을 안내한다. 기존 디자인 입력 컴포넌트를 재사용하고 키보드·큰 글자에서도 실행/취소에 도달할 수 있게 한다.
-   - 입력값의 앞뒤 공백만 제거해 기존 `SegmentationProvider.byText`로 전달한다. 고정 목록으로 제한하거나 몰래 `person`으로 대체하지 않는다. 한국어 입력 자체를 막지는 않되 자동 번역이나 한국어 인식 품질을 보장하지 않는다.
-   - 빈 값/공백만 있으면 대상 입력을 안내하고 새로운 추출 실행을 막는다. 이미 추출이 모두 끝난 상태의 배치만 수행하는 동작은 입력 공백 때문에 막지 않는다. 입력·변경·시트 진입만으로 사진 업로드나 질의가 발생하지 않는다.
-   - 시간 순서 배치는 실행 시 입력값을 고정하고, 주인공과 미완료 추가 사진 모두에 같은 값으로 최초 질의한다. 자유 배치는 해당 사진의 추출 시작 시 입력값을 고정한다. 이미지 업로드를 기다리는 동안 바뀐 값이 진행 중 요청에 섞이지 않는다.
-   - 일괄 실행 중과 후보 선택으로 잠시 멈춘 자동 실행 중에는 공통 대상 입력을 잠근다. 단, 기존 사진별 추가 영역 입력·점 선택은 계속 사용 가능해야 한다. 실행 취소/실패 후에는 공통 대상 수정과 명시 재실행을 허용한다.
-   - 대상 변경은 다음에 추출할 사진에 적용하며 이미 저장한 피사체/주인공 마스크를 자동 삭제·재추출하지 않는다. 일부 완료된 상태에서는 이 범위를 안내하고, 완료 사진은 기존 교체/주인공 재선택 흐름으로 변경한다. 변경 전 대상의 미완료 후보·마스크·열린 세션을 새 대상의 추출 결과로 저장하거나 자동 재사용하지 않는다. 새 대상으로 재실행할 때 필요한 미완료 선택 상태만 무효화하고 늦은 응답을 차단한다.
-   - 최초 대상 입력과 기존 `추가할 대상` 입력은 의미와 상태를 구분한다. 보정용 입력 제출/초기화가 공통 대상을 지우지 않고, 그 결과는 기존처럼 현재 마스크에 추가된다.
-   - 결과가 없으면 `대상을 찾지 못했어요` 등 대상 중립적인 안내를 사용하고 수동 입력/점 선택을 유지한다. 후보가 여러 개면 기존 선택 대기로 전환한다. 사용자 입력 대상 실패 시 사람이나 전체 사진을 대신 사용하지 않는다.
-   - 공통 대상은 controller의 현재 시트 세션이 소유한다. 사진 선택·추가·삭제·배치 모드 전환 및 실패/취소 후 재시도에서 유지한다. 시트 세션 종료 후 새 진입은 `person`으로 초기화하며, 저장된 합성은 그대로 복원하고 자동 추출하지 않는다. JSON/DB에 프롬프트를 새로 저장하지 않는다.
-
-6. **사용자 입력 추출의 행동 검증**
-   - 기본값에서는 기존처럼 `person`을 전송하고, ` dog ` 입력의 시간 순서 배치에서는 주인공+추가 5장 모두 `dog`를 전송하는지 fake provider의 실제 호출 인자로 검사한다. 자유 배치에서도 사용자 입력이 최초 질의에 사용되는지 확인한다.
-   - 공백 입력 시 업로드/질의 없음, 입력만으로 네트워크 호출 없음, 실행 중 입력 고정, 후보 대기/수동 보정 후 자동 재개 시 동일 대상 유지, 실패/취소 후 대상 변경과 늦은 응답 폐기를 검증한다.
-   - 일부 완료 후 대상 변경 시 저장된 피사체는 유지하고 미완료 사진만 새 대상으로 질의하는지, 이전 열린 선택 결과를 재사용하지 않는지 검증한다. 보정용 phrase 입력과 공통 대상의 독립성도 확인한다.
-   - UI 테스트로 추출 전 입력 접근·수정, 공백 실행 차단, 실행 중 입력 잠금, 대상 중립적인 실패 안내 및 시트 재진입 초기화를 검증한다. `MultiShotControllerTest`의 기존 fake는 `phrase == PERSON`일 때만 큐 응답을 사용하므로 사용자 대상 테스트를 고정 person 응답으로 우회하지 않는다.
+4. **테스트와 문서**
+   - Monet 전용 테스트는 기능과 함께 제거하고 공용 테스트 fixture에서 제거된 생성자 인자를 정리한다. 나머지 행동 assertion을 약화하거나 테스트 전체를 삭제해 컴파일만 맞추지 않는다.
+   - AI 메뉴의 정확한 남은 항목·순서와 ‘자동’ 부재를 확인한다. `Tool.entries`와 동등하다는 자기참조 검사만으로 끝내지 않는다.
+   - 설정 테스트에 Gemini 단독 저장, SAM3 단독 저장, 기존 값 비우기·취소 및 남은 설정 보존을 포함한다.
+   - 기존 일반 Adjust 저장/복원 검사를 확인하고 Blacks/Whites와 HSL을 포함한 이전 자동 보정 결과의 호환성에 빈틈이 있으면 최소 회귀 사례를 보강한다. 기존 의미 있는 검사가 충분하면 중복 테스트를 만들지 않는다.
+   - 실제 변경된 메뉴·설정 골든만 육안 확인 후 갱신한다. Monet 전용 골든/등록 항목을 함께 제거하며 전체 골든을 재기록하거나 허용 오차를 넓히지 않는다.
+   - `specs/auto_enhance.md`는 삭제 대신 상단에 기능 제거 상태와 보존된 Adjust 데이터 계약을 명시하고, 아래 종전 계약이 역사적 참고임을 분명히 한다. 현재 메뉴·제품 안내에서 MonetGPT를 사용 가능한 기능으로 안내하지 않는다.
+   - D081/D082 등 과거 결정과 과거 릴리스 기록은 역사로 보존한다. 새 결정으로 앱 연동 폐기 범위를 명시하며 외부 서버까지 철거했다고 쓰지 않는다.
 
 ## Acceptance Criteria
 
-- [ ] 사용자가 보고한 3장 제한의 재현 조건·원인 또는 현재 소스에서 재현되지 않은 사실과 한계가 기록되어 있다.
-- [ ] 시간 순서 배치에서 한 번에 추가 5장 선택이 가능하고, 3+2/4+1 추가 및 만석·삭제 후 재추가 경계가 정상이다.
-- [ ] 자유 배치 누적 5장과 만석에서의 단일 교체가 정상이며, 초과/취소/늦은 picker 결과가 안전하다.
-- [ ] 4·5번째 사진이 UI와 추출·배치·적용·저장·재열기·내보내기에서 누락되지 않는다.
-- [ ] 기존 프로젝트·취소·Undo/Redo·배치 및 주인공 보호에 회귀가 없다.
-- [ ] 두 배치 모드에서 기본값 `person`을 추출 전에 수정하고 실제 최초 SAM3 질의에 반영할 수 있다.
-- [ ] 일괄 실행의 주인공+추가 5장이 동일한 입력 대상으로 추출되며, 공백·후보 대기·부분 실패·취소·재시도·늦은 응답을 검증했다.
-- [ ] 기존 마스크 추가 입력과 최초 대상 입력이 독립적으로 동작하고, 대상 변경만으로 기존 합성/완료 피사체를 잃지 않는다.
-- [ ] 관련 자동 검사가 통과하고 실기기 검증 결과 또는 환경 차단을 별도로 기록했다. 무관한 변경이 없다.
+- [ ] 앱에서 자동 메뉴·시트·Monet 설정이 사라지고 Monet provider/DI/네트워크 실행 경로가 제거됐다.
+- [ ] SAM3와 Gemini를 독립적으로 저장·사용할 수 있고 기존 설정 및 취소/Back 동작이 보존된다.
+- [ ] Monet BuildConfig·환경변수 소비·설치 스크립트 연결과 전용 테스트/골든이 정리됐다.
+- [ ] Gemini 추천·직접 지시·스타일 매칭, SAM3·멀티샷 등 다른 기능에 회귀가 없다.
+- [ ] 기존 자동 보정 결과의 Adjust 데이터·tone/HSL 렌더·저장 호환성이 유지된다.
+- [ ] 관련 테스트·APK 빌드·저장소 전체 검사가 통과하거나 미실행/환경 차단/기존 실패가 구분되어 보고됐다.
+- [ ] 명세·제품 안내·결정 로그가 제거 범위와 일치하고 외부 서버/사용자 데이터는 변경하지 않았다.
 
 ## Validation
 
 ```bash
-./gradlew --offline --quiet :feature:editor:testDebugUnitTest --tests '*MultiShot*'
-./gradlew --offline --quiet :core:imaging:testDebugUnitTest --tests '*MultiShot*'
-./gradlew --offline --quiet :core:data:testDebugUnitTest --tests '*MultiShot*'
+# 변경 모듈과 소비자의 컴파일 및 행동 회귀
+./gradlew --offline --quiet :core:ai:testDebugUnitTest :feature:editor:testDebugUnitTest :app:testDebugUnitTest
+./gradlew --offline --quiet :core:data:testDebugUnitTest :core:imaging:testDebugUnitTest
 ./gradlew --offline --quiet :app:assembleDebug
 scripts/check.sh
 git diff --check
+
+# 삭제된 연결의 잔존 확인 (일치 항목은 현행 코드/역사적 기록을 구분해 설명)
+rg -n 'Monet|MONET_|monet\.|AutoEnhanceProvider|AutoStyle|Tool\.Auto|tools\.auto' core feature app scripts --glob '!**/build/**'
 ```
 
-새 picker 연결 테스트가 위 필터 밖에 있으면 해당 테스트도 실행한다. UI가 실제로 바뀐 경우 관련 멀티샷 골든만 육안 확인 후 갱신한다. 전체 골든을 일괄 재기록하지 않는다.
+개발 중에는 `ToolStripLevelTest`, `Sam3SettingsSheetTest`, `SelectionToolTest`, `EditorBackTest`, 직접 지시·스타일·멀티샷 테스트 등 관련 필터부터 실행할 수 있다. 최종 검증은 수정된 공용 fixture의 모든 소비자를 포함한다. 관련 없는 서버 검사를 새로 요구하지 않는다.
 
-실기기 추출 검증에는 기본 `person` 사례와, 해당 대상이 보이는 사진들에 `dog` 또는 `car`를 입력하는 사례를 포함한다. 시간 순서 배치의 공통 입력 및 자유 배치 최초 입력, 공백 차단, 후보 대기/추가 영역 보정, 취소 후 입력 변경, 키보드 접근성을 확인한다. 자동 fake 통과와 실제 SAM3의 대상 추출 품질을 구별한다.
-
-기기 사용 가능 시 현재 소스 빌드로 빈 시간 순서 배치 → 5장 선택 → 모두 추출하고 자동 배치 → 적용 → Undo/Redo → 프로젝트 재열기 → 내보내기를 확인한다. 3+2/4+1 추가, 만석에서 추가 차단·교체·삭제 후 재추가 및 자유 배치 누적 5장도 확인한다. SAM3 사용 불가 시 picker/UI 검증과 추출 종단 검증을 분리한다. 테스트를 읽은 것과 실제 실행·통과한 것을 구별하며, 미실행·환경 차단·현재 변경 실패·기존 실패를 RESULT에 기록한다.
+기기가 가능하면 기존 앱 데이터 유지 업데이트 후 AI 메뉴·서버 설정·Gemini 단독 설정 저장, 보정 추천 진입, SAM3 선택/멀티샷 진입, 기존 보정 프로젝트 재열기·내보내기를 확인한다. 실제 API를 호출하지 못하면 fake/MockWebServer 통과와 분리해 기록한다. 외부 서버가 이미 중지됐다는 이유만으로 앱 요청 경로 제거 검증을 대신하지 않는다.
 
 ## Notes
 
-- 이 문서는 Claude Code 구현 계약이며 작성만으로 기능 수정이나 검증이 완료된 것은 아니다. 참조: `architecture/architecture.md`, `DESIGN.md`, `specs/multishot.md`, `specs/{edit_model,render,persistence}.md`, D088~D090.
-- 작업 트리에는 디자인·보정 추천 등 대규모 미커밋 변경이 있다. 이를 기준으로 필요한 부분만 수정한다. 기존 RESULT/REVIEW와 평가 증거는 유지하고 새 인계에서 미해결 사항을 이어 적는다.
-- **이전 추천 작업은 미승인 상태로 보존:** 최신 REVIEW의 R1(과거 goal의 Select만 검사하여 다른 객체의 활성 마스크를 사용), R2(배경 보존 조건에서 CutOut 허용), R3(활성 선택 교체/CutOut 회귀 검사)가 미해결이다. 해당 수정은 이번 멀티샷 범위에 섞지 않는다. 실제 이미지 품질의 12종 fixture·각 3회·6축 평가도 미완료다.
-- 이전 디자인/Back 수정의 독립 실기기 확인과 IME·음성·TalkBack의 남은 검증, SAM3 GPU 메모리 충돌에 따른 재검증 차단, 서버 멀티샷 ASGI 취소/큰 정수 metadata 문제, 전체 사진 품질·offline·12MP/PSS, Jev 미구현, D084 피부 지원 0개 및 서버 평가는 이번 작업으로 해소되지 않는다. 옛 추천 6종·8문장 평가는 교체된 기능에 대한 완료 근거로 사용하지 않는다. 상세 상태는 기존 RESULT/REVIEW와 `work/retouch_evaluation.md`를 따른다.
+- 이번 요청은 **작업서 작성**이며 이 파일 작성만으로 구현 완료를 뜻하지 않는다. Claude Code가 구현·검증 후 canonical `work/RESULT.md`를 갱신한다. Codex 리뷰는 별도다.
+- 현재 작업 트리에 Gemini 3.8 Flash 전환(두 client의 경로/주석, endpoint 테스트, `prompt.txt`, 관련 명세, D096)이 미커밋 상태다. 이 변경은 보존하고 제거 작업의 diff와 구분해 보고한다. D096 다음 결정 번호는 작성 시 중복을 확인한다.
+- 이전 보정 추천 REVIEW는 CHANGES_REQUESTED이며 R1(활성 선택과 goal 불일치), R2(배경 보존 중 CutOut 허용), R3(관련 회귀 검사)가 미해결이다. 이 제거 작업에서 수정하거나 해소됐다고 보고하지 않는다. 12종 fixture·각 3회·6축 품질 평가도 미완료다.
+- 이전 멀티샷 작업은 추가 5장/추출 대상 구현 및 자동 검사 완료 보고가 있으나 3장 제한 원인·picker/5장 전체·실제 dog/car 검증이 미완료다. 이후 설치·SAM3 truck 단일 추출 성공을 전체 시나리오 완료로 확대하지 않는다.
+- 기존 디자인/Back의 독립 실기기·IME/음성/TalkBack, 서버 멀티샷 ASGI 취소/큰 정수 metadata, 사진 품질/offline/12MP·PSS, Jev, 피부 D084 지원 0개와 서버 평가의 남은 사항은 유지한다. 상세는 기존 RESULT/REVIEW와 `work/retouch_evaluation.md`를 참조한다. 새 RESULT 작성 시 이 미해결 정보와 유효한 근거 링크를 이어 적고 별도 사본을 만들지 않는다.

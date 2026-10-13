@@ -13,7 +13,7 @@ of the existing tools to run, in what order, with what arguments.
 
 ## 1. What it does
 The user says "나무를 좀 더 푸르게 해줘". The app sends that sentence and the photo to
-`gemini-2.5-flash` along with a description of every editing function it has, gets back a list of
+`gemini-3.8-flash` along with a description of every editing function it has, gets back a list of
 function calls, shows them as a Korean step list, and — once the user taps 적용 — runs them in
 order against the same providers the manual tools use.
 
@@ -27,7 +27,7 @@ SAM 3, adjustments still come from `Ops.kt`, and the erase still comes from
 "나무를 좀 더 푸르게 해줘"  (typed, or spoken → prompt_input.md §3)
   └─ GeminiPlanProvider                                      §7, §8
        1. encode the current preview  (GeminiImageCodec, ≤1024, JPEG q90)
-       2. POST …/gemini-2.5-flash:generateContent with one propose_edit envelope   §5, §14
+       2. POST …/gemini-3.8-flash:generateContent with one propose_edit envelope   §5, §14
        3. read the single functionCall, decode and check it whole                §5, §14
   └─ PlanProposal(observations, goals, …, workflow = [Select("tree"), Adjust(Saturation, +0.3, masked)])
   └─ validate against the document                            §9.1
@@ -164,7 +164,7 @@ is now the one writing that phrase.
 credential and host.
 
 ```
-POST {baseUrl}/v1beta/models/gemini-2.5-flash:generateContent
+POST {baseUrl}/v1beta/models/gemini-3.8-flash:generateContent
   x-goog-api-key: <the key from GeminiSettings>
   Content-Type: application/json
 ```
@@ -183,7 +183,7 @@ POST {baseUrl}/v1beta/models/gemini-2.5-flash:generateContent
 }
 ```
 
-- **The model is `gemini-2.5-flash`, not `-image`.** This call produces a decision, not pixels; the
+- **The model is `gemini-3.8-flash`, not `-image`.** This call produces a decision, not pixels; the
   image model neither declares functions nor benefits from being asked to.
 - `mode: "ANY"` forces function calls over prose. A model that answers "네, 나무를 푸르게
   해드릴게요" in text has produced nothing the app can run.
@@ -449,7 +449,7 @@ same open question `direct_step_select` already carries.
 No test reaches an external host; `GeminiPlanClient`'s `baseUrl` seam is what makes that true, and
 every UI test uses `FakePlanProvider`.
 
-- `GeminiPlanClientTest` on `MockWebServer`: the path names `gemini-2.5-flash`; `x-goog-api-key` is
+- `GeminiPlanClientTest` on `MockWebServer`: the path names `gemini-3.8-flash`; `x-goog-api-key` is
   present and the key is **absent from the URL**; the body carries one `propose_edit` declaration (§14), the
   system instruction, the image part and the user's sentence verbatim; `toolConfig.mode` is `ANY`;
   two `functionCall` parts decode into two steps **in order**; a text part between them is skipped;

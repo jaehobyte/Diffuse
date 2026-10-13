@@ -8,7 +8,7 @@ Amends: editor_shell.md ("The tool strip is driven by this list")
 ## 1. The problem, stated as a number
 The strip holds ten tools today: 라이트 · 색상 · 혼합 · 자르기 · 디테일 · 선택 · 지우기 · 채우기 ·
 확대 · 지시. style_match.md and auto_enhance.md add two more, and every one of the new ones is an
-AI tool.
+AI tool. (auto_enhance.md's 자동 was later removed from the app — work/decisions.md D097.)
 
 DESIGN.md §4 already makes the strip "horizontally scrollable", so nothing is *broken*. What is
 wrong is different: at ten items a phone shows about five, so **half the app is behind a scroll
@@ -21,8 +21,11 @@ committing any tool, comes back.
 
 ```
 rest      [라이트][색상][혼합][자르기][디테일][ AI ]
-AI open   [  ←  ][선택][지우기][채우기][확대][스타일][자동][멀티샷][지시]
+AI open   [  ←  ][선택][지우기][채우기][확대][스타일][멀티샷][지시]
 ```
+
+자동 (auto_enhance.md) is no longer in this list (work/decisions.md D097): no item, greyed item or
+placeholder takes its place, and every other tool keeps its relative order.
 
 This is the only menu (work/decisions.md D092): every photograph gets these two lists in this order.
 Nothing — faces, a detector, a model's readiness or loading time — reorders or filters them. T79's
@@ -117,8 +120,8 @@ like a textbook.
 - **No badge counts, no "new" markers.**
 
 ## 9. Open decisions — a human answers these
-1. **Which tools are AI.** This spec puts 선택 · 지우기 · 채우기 · 확대 · 스타일 · 자동 · 지시 at
-   the AI level and leaves the five adjust-and-crop tools at the root. 선택 is the arguable one: it
+1. **Which tools are AI.** This spec puts 선택 · 지우기 · 채우기 · 확대 · 스타일 · 멀티샷 · 지시
+   at the AI level (자동 was removed by D097) and leaves the five adjust-and-crop tools at the root. 선택 is the arguable one: it
    calls SAM 3, so it is AI by mechanism, but it is a *prerequisite* for three of the others, and
    burying it one level down is what makes 지우기's "먼저 영역을 선택해주세요" a longer trip. The
    alternative is 선택 at the root, where it reads as a manual tool it is not.

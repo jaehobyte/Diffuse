@@ -48,9 +48,9 @@ private fun AdjustKind.globalLabelRes(): Int = lightLabelRes()
     ?: error("$name carries an HslTarget; its label is its channel's")
 
 /**
- * specs/adjust_light.md, and T71's four. No sheet offers those four yet — a preset and the auto
- * boost set them — but the rule above still holds: a kind with no label cannot reach the 지시 step
- * list either.
+ * specs/adjust_light.md, and T71's four. No sheet offers those four yet — a preset sets them, and
+ * documents saved by the removed 자동 보정 tool carry them — but the rule above still holds: a
+ * kind with no label cannot reach the 지시 step list either.
  */
 @StringRes
 private fun AdjustKind.lightLabelRes(): Int? = when (this) {

@@ -129,7 +129,7 @@ Two steps, in this order, because the second is only worth its round trip when t
    normalized parameter space. This is `PhotoTune_v1/reference_style.py`'s `match_style_map`, and
    it is the same maths. If the nearest preset is within `STYLE_MATCH_THRESHOLD`, offer it as a
    selected tile with 참조와 비슷한 스타일 and stop. **No model call.**
-2. **Ask the model.** Otherwise send both images to `gemini-2.5-flash` — the planner's model, not
+2. **Ask the model.** Otherwise send both images to `gemini-3.8-flash` — the planner's model, not
    the image model — and ask for parameters, not pixels.
 
 ### The instruction (English `internal` constant, generative_erase.md §5's rule)
