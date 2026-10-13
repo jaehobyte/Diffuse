@@ -25,7 +25,7 @@ enum class ShotStatus {
     /** Read and on the canvas; nothing has been sent anywhere. */
     Picked,
 
-    /** 피사체 추출 is running: the upload and the first "사람" query. */
+    /** 피사체 추출 is running: the upload and the first query, for the extraction target. */
     Extracting,
 
     /** A SAM 3 session is open on this photograph and the selection can be refined. */
@@ -67,13 +67,13 @@ enum class RunPhase {
     /** The current photo is still being rendered as the hero's input. */
     Preparing,
 
-    /** Uploaded and asked for "person". */
+    /** Uploaded and asked for the run's extraction target. */
     Extracting,
 
     /** The subject is being cut out and written. */
     Saving,
 
-    /** None or several people were found: the run waits for the user's choice on this photo. */
+    /** None or several answers were found: the run waits for the user's choice on this photo. */
     Choosing,
 }
 
@@ -121,7 +121,13 @@ data class MultiShotState(
     val mask: Bitmap? = null,
     val candidateCount: Int = 0,
     val chosenCandidate: Int? = null,
+    /** The extra phrase of an open selection, added to its mask; not the extraction target. */
     val phrase: String = "",
+    /**
+     * §2: what the first query of every extraction asks for — `person` until the user changes it.
+     * The sheet session's own: it is never stored, and a new session starts from `person` again.
+     */
+    val target: String = MultiShotController.PERSON,
     val working: Boolean = false,
     @StringRes val workLabel: Int? = null,
     val server: MultiShotServer = MultiShotServer.Ready,
@@ -191,6 +197,12 @@ data class MultiShotState(
     /** Working, or a run waiting for a choice: the photos and their order stay as they are. */
     val busy: Boolean get() = working || run != null
 
+    /** §2: a new extraction needs something to look for; only blanks around it are dropped. */
+    val hasTarget: Boolean get() = target.isNotBlank()
+
+    /** §2: the target is fixed while a run is under way, also while it waits for a choice. */
+    val targetEditable: Boolean get() = open && run == null
+
     val canAddPhoto: Boolean get() = !busy && mode != null && items.size < MAX_ITEMS
 
     /** Something still has to be extracted before the time layout can be laid out. */
@@ -204,10 +216,10 @@ data class MultiShotState(
     val canRun: Boolean
         get() = timeline && !busy && items.isNotEmpty() &&
             items.none { it.status == ShotStatus.Importing || it.status == ShotStatus.Unreadable } &&
-            (!pending || server != MultiShotServer.NeedsSettings)
+            (!pending || (server != MultiShotServer.NeedsSettings && hasTarget))
 
     val canExtract: Boolean
-        get() = !busy && server != MultiShotServer.NeedsSettings &&
+        get() = !busy && server != MultiShotServer.NeedsSettings && hasTarget &&
             selected?.status.let { it == ShotStatus.Picked || it == ShotStatus.Selecting }
 
     /** A selection exists and no candidate batch is waiting for a choice. */

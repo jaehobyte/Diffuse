@@ -1,6 +1,8 @@
 package com.diffuse.feature.editor.tools.direct
 
+import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -16,7 +18,16 @@ import com.diffuse.core.ai.Availability
 import com.diffuse.core.ai.CropRatio
 import com.diffuse.core.ai.EditPlan
 import com.diffuse.core.ai.PlanStep
-import com.diffuse.core.ai.PromptSuggestionId
+import com.diffuse.core.ai.Confidence
+import com.diffuse.core.ai.FakePlanProvider
+import com.diffuse.core.ai.GoalScope
+import com.diffuse.core.ai.GoalSource
+import com.diffuse.core.ai.Observation
+import com.diffuse.core.ai.PlanGoal
+import com.diffuse.core.ai.PlanMode
+import com.diffuse.core.ai.PlanOutcome
+import com.diffuse.core.ai.PlanProposal
+import com.diffuse.core.ai.WorkflowStep
 import com.diffuse.core.ai.speech.FakeSpeechInput
 import com.diffuse.core.ai.speech.SpeechState
 import com.diffuse.core.imaging.model.AdjustKind
@@ -31,6 +42,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Shadows
+import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import androidx.compose.ui.unit.dp
 
@@ -45,13 +57,13 @@ class DirectSheetTest {
     private val speech = FakeSpeechInput()
     private val submitted = mutableListOf<String>()
     private val picked = mutableListOf<String>()
-    private var finds = 0
+    private val recommends = mutableListOf<Boolean>()
     private var cancels = 0
     private var hides = 0
 
     @Test
     fun `the step list is built from the templates, never from the model's prose`() {
-        show(DirectState(plan = TWO_STEP_PLAN))
+        show(planned(TWO_STEP_PLAN))
 
         compose.onNodeWithTag(DirectStepsTestTag).assertExists()
         compose.onNodeWithText("1. 나무 선택").assertExists()
@@ -63,7 +75,7 @@ class DirectSheetTest {
     @Test
     fun `an unmasked adjust and the argument-less steps read from their own templates`() {
         show(
-            DirectState(
+            planned(
                 plan = EditPlan(
                     listOf(
                         PlanStep.Adjust(AdjustKind.Exposure, -0.4f, masked = false),
@@ -83,7 +95,7 @@ class DirectSheetTest {
     @Test
     fun `a colour range step names the band as well as the channel`() {
         show(
-            DirectState(
+            planned(
                 plan = EditPlan(
                     listOf(
                         PlanStep.Adjust(AdjustKind.HslRedSaturation, 0.4f, masked = false),
@@ -99,7 +111,7 @@ class DirectSheetTest {
     @Test
     fun `an English phrase renders through the Korean template`() {
         show(
-            DirectState(
+            planned(
                 plan = EditPlan(
                     listOf(
                         PlanStep.Select("bus"),
@@ -117,7 +129,7 @@ class DirectSheetTest {
     @Test
     fun `a crop step names the ratio the 자르기 chips use`() {
         show(
-            DirectState(
+            planned(
                 plan = EditPlan(
                     listOf(
                         PlanStep.Select("bus"),
@@ -135,7 +147,7 @@ class DirectSheetTest {
     @Test
     fun `a fill step names what will be put there`() {
         show(
-            DirectState(
+            planned(
                 plan = EditPlan(
                     listOf(
                         PlanStep.Select("chair"),
@@ -159,14 +171,14 @@ class DirectSheetTest {
 
     @Test
     fun `적용 is enabled once a plan is there`() {
-        show(DirectState(plan = TWO_STEP_PLAN))
+        show(planned(TWO_STEP_PLAN))
 
         compose.onNodeWithText("적용").assertIsEnabled()
     }
 
     @Test
     fun `an unusable plan shows the hint under the bar and nothing else`() {
-        show(DirectState(notUnderstood = true))
+        show(DirectState(proposals = ProposalState(phase = ProposalPhase.NotUnderstood)))
 
         compose.onNodeWithTag(DirectHintTestTag).assertExists()
         compose.onNodeWithText("무엇을 할지 모르겠어요. 다르게 말해보세요.").assertExists()
@@ -193,159 +205,257 @@ class DirectSheetTest {
         assertEquals(listOf("나무를 더 푸르게"), submitted)
     }
 
-    // ---- §14, the suggestion area ------------------------------------------
+    // ---- §14, the area under the bar and the review ------------------------
 
     @Test
-    fun `the first suggestion state shows the general examples and the explicit request`() {
-        showSuggestions(DirectState(suggestions = SuggestionState(frameReady = true)))
+    fun `the first state shows the examples and the 보정 추천 entry with its notice`() {
+        showSuggestions(DirectState(proposals = ProposalState(frameReady = true)))
 
         compose.onNodeWithText("이렇게 말해보세요").assertExists()
-        compose.onNodeWithText("이 사진에는 이런 방향도 좋아요").assertDoesNotExist()
-        listOf("조금 더 밝게", "따뜻한 분위기로", "색감을 자연스럽게").forEach {
-            compose.onNodeWithText(it).assertExists()
-        }
-        compose.onNodeWithText("현재 사진의 축소본을 Gemini에 보내 추천해요").assertExists()
-        compose.onNodeWithTag(DirectSuggestionFindTestTag).assertIsEnabled().performScrollTo().performClick()
-        assertEquals(1, finds)
+        ExampleSentence.entries.forEach { compose.onNodeWithTag(it.tag).assertExists() }
+        compose.onNodeWithText("현재 사진의 축소본과 입력한 요청을 Gemini에 보내 추천해요").assertExists()
+        compose.onNodeWithTag(DirectRecommendTestTag).assertIsEnabled().performScrollTo().performClick()
+        assertEquals(listOf(false), recommends)
+        assertEquals("an example is not sent", emptyList<String>(), submitted)
     }
 
     @Test
-    fun `a suggestion request waits for the photo to be ready`() {
-        showSuggestions(DirectState(suggestions = SuggestionState(frameReady = false)))
+    fun `typed text hides the examples but keeps 보정 추천`() {
+        showSuggestions(DirectState(request = "얼굴만 밝게", proposals = ProposalState(frameReady = true)))
 
-        compose.onNodeWithTag(DirectSuggestionFindTestTag).assertIsNotEnabled()
+        compose.onNodeWithTag(ExampleSentence.Brighten.tag).assertDoesNotExist()
+        compose.onNodeWithTag(DirectRecommendTestTag).assertIsEnabled()
+    }
+
+    @Test
+    fun `보정 추천 waits for the photo to be ready`() {
+        showSuggestions(DirectState(proposals = ProposalState(frameReady = false)))
+
+        compose.onNodeWithTag(DirectRecommendTestTag).assertIsNotEnabled()
         compose.onNodeWithText("사진을 준비하는 중").assertExists()
     }
 
     @Test
-    fun `a suggestion in progress says so and can be cancelled`() {
-        showSuggestions(
-            DirectState(suggestions = SuggestionState(phase = SuggestionPhase.Loading, frameReady = true)),
-        )
-
-        compose.onNodeWithText("사진에 맞는 문장을 찾는 중").assertExists()
-        compose.onNodeWithTag(DirectSuggestionCancelTestTag).performScrollTo().performClick()
-        assertEquals(1, cancels)
-        // The bar stays usable: the examples are still there to tap.
-        compose.onNodeWithText("조금 더 밝게").assertExists()
-    }
-
-    @Test
-    fun `picking an example while a suggestion runs keeps the progress and its cancel`() {
+    fun `a recommendation in progress says so inline and can be cancelled`() {
         showSuggestions(
             DirectState(
-                request = "사진 전체를 조금 더 밝게 해줘",
-                requestSource = RequestSource.Suggestion,
-                suggestions = SuggestionState(phase = SuggestionPhase.Loading, frameReady = true),
+                proposals = ProposalState(phase = ProposalPhase.Loading, mode = PlanMode.Recommend, frameReady = true),
             ),
         )
 
-        compose.onNodeWithText("사진에 맞는 문장을 찾는 중").assertExists()
-        compose.onNodeWithTag(DirectSuggestionCancelTestTag).performScrollTo().performClick()
+        compose.onNodeWithText("현재 사진을 살펴보는 중").assertExists()
+        compose.onNodeWithContentDescription("보정 추천 받기 취소").assertExists()
+        compose.onNodeWithTag(DirectRecommendCancelTestTag).performScrollTo().performClick()
         assertEquals(1, cancels)
+        compose.onNodeWithText("적용").assertIsNotEnabled()
     }
 
     @Test
-    fun `tailored suggestions replace the examples under their own title`() {
-        showSuggestions(tailored(PromptSuggestionId.LiftShadows, PromptSuggestionId.Cool))
-
-        compose.onNodeWithText("이 사진에는 이런 방향도 좋아요").assertExists()
-        compose.onNodeWithText("어두운 부분을 밝게").assertExists()
-        compose.onNodeWithText("시원한 분위기로").assertExists()
-        compose.onNodeWithText("조금 더 밝게").assertDoesNotExist()
-        compose.onNodeWithTag(DirectSuggestionFindTestTag).assertDoesNotExist()
-    }
-
-    @Test
-    fun `an empty or failed suggestion answer falls back to the examples with a retry`() {
+    fun `a failed recommendation offers an explicit retry`() {
         showSuggestions(
-            DirectState(suggestions = SuggestionState(phase = SuggestionPhase.Empty, frameReady = true)),
+            DirectState(
+                proposals = ProposalState(phase = ProposalPhase.Failed, mode = PlanMode.Recommend, frameReady = true),
+            ),
         )
-        compose.onNodeWithText("다른 방향을 직접 말해보세요").assertExists()
-        compose.onNodeWithText("다시 찾기").assertExists()
-        compose.onNodeWithText("조금 더 밝게").assertExists()
+
+        compose.onNodeWithText("추천을 받지 못했어요").assertExists()
+        compose.onNodeWithText("다시 시도").performScrollTo().performClick()
+        assertEquals(listOf(false), recommends)
     }
 
     @Test
-    fun `a failed suggestion answer offers a retry and the examples`() {
+    fun `an answered recommendation asks again only through 다시 추천`() {
+        showSuggestions(recommended(FakePlanProvider.DEFAULT_PROPOSAL))
+
+        compose.onNodeWithText("다시 추천").performScrollTo().performClick()
+        assertEquals(listOf(true), recommends)
+    }
+
+    @Test
+    fun `observations, goals, what to keep, steps and checks are separate sections`() {
+        showSuggestions(recommended(FakePlanProvider.DEFAULT_PROPOSAL))
+
+        compose.onNodeWithTag(DirectObservationsTestTag).assertExists()
+        compose.onNodeWithText("나무: 잎의 초록이 주변보다 흐릿해 보여요 (확신 보통)").assertExists()
+        compose.onNodeWithTag(DirectGoalsTestTag).assertExists()
+        compose.onNodeWithText("[사용자 요청] 나무를 더 푸르게 · 나무").assertExists()
+        compose.onNodeWithText("살릴 색: 초록 · 나무").assertExists()
+        compose.onNodeWithTag(DirectPreserveTestTag).assertExists()
+        compose.onNodeWithText("나무만 바꾸기 (추정)").assertExists()
+        compose.onNodeWithTag(DirectStepsTestTag).assertExists()
+        compose.onNodeWithText("1. 나무 선택").assertExists()
+        compose.onNodeWithTag(DirectChecksTestTag).assertExists()
+        compose.onNodeWithText("축소본이라 잎의 세부 질감은 확인하기 어려워요").assertExists()
+        compose.onNodeWithText("적용").assertIsEnabled()
+    }
+
+    @Test
+    fun `a default goal says it is the recommendation's default`() {
         showSuggestions(
-            DirectState(suggestions = SuggestionState(phase = SuggestionPhase.Failed, frameReady = true)),
+            recommended(
+                PlanProposal(
+                    outcome = PlanOutcome.Ready,
+                    goals = listOf(PlanGoal("g1", "원래 분위기를 지키며 얼굴만 조금", GoalSource.Default, GoalScope.Subject)),
+                    workflow = listOf(
+                        WorkflowStep(PlanStep.Select("face"), "g1"),
+                        WorkflowStep(
+                            PlanStep.Adjust(AdjustKind.Exposure, 0.2f, masked = true),
+                            "g1",
+                            effect = "얼굴 형태가 보여요",
+                            caution = "노이즈가 늘 수 있어요",
+                        ),
+                    ),
+                ),
+            ),
         )
 
-        compose.onNodeWithText("다시 찾기").assertExists()
-        compose.onNodeWithText("이렇게 말해보세요").assertExists()
+        compose.onNodeWithText("[추천 기본값] 원래 분위기를 지키며 얼굴만 조금").assertExists()
+        compose.onNodeWithText("2. 선택 영역 노출 20").assertExists()
+        compose.onNodeWithText("예상: 얼굴 형태가 보여요").assertExists()
+        compose.onNodeWithText("주의: 노이즈가 늘 수 있어요").assertExists()
+        compose.onNodeWithText("예상 효과는 실행 전 예측이며 결과를 보장하지 않아요").assertExists()
     }
 
     @Test
-    fun `each suggestion label fills its own reviewed sentence`() {
-        val expected = mapOf(
-            PromptSuggestionId.Brighten to "사진 전체를 조금 더 밝게 해줘",
-            PromptSuggestionId.LiftShadows to "사진 전체의 어두운 부분을 조금 밝게 해줘",
-            PromptSuggestionId.SoftenHighlights to "사진 전체의 너무 밝은 부분을 조금 어둡게 해줘",
-            PromptSuggestionId.Warm to "사진 전체의 색감을 조금 따뜻하게 해줘",
-            PromptSuggestionId.Cool to "사진 전체의 색감을 조금 차갑게 해줘",
-            PromptSuggestionId.NaturalColor to "사진 전체의 과한 채도를 조금 낮춰줘",
-            PromptSuggestionId.VividColor to "사진 전체의 채도를 조금 높여줘",
-            PromptSuggestionId.FilmWarm to "사진 전체에 따뜻한 필름 스타일을 약하게 적용해줘",
+    fun `no_change shows its reason, no steps and leaves 적용 off`() {
+        showSuggestions(
+            DirectState(
+                proposals = ProposalState(
+                    phase = ProposalPhase.NoChange,
+                    mode = PlanMode.Recommend,
+                    proposal = PlanProposal(PlanOutcome.NoChange, reason = "지금도 균형이 좋아요"),
+                    frameReady = true,
+                ),
+            ),
         )
-        var state by androidx.compose.runtime.mutableStateOf(tailored(PromptSuggestionId.Brighten))
+
+        compose.onNodeWithTag(DirectOutcomeTestTag).assertExists()
+        compose.onNodeWithText("지금 사진에는 바꿀 것이 없어요").assertExists()
+        compose.onNodeWithText("지금도 균형이 좋아요").assertExists()
+        compose.onNodeWithTag(DirectStepsTestTag).assertDoesNotExist()
+        compose.onNodeWithText("적용").assertIsNotEnabled()
+    }
+
+    @Test
+    fun `needs_clarification and unsupported read as their own outcome`() {
+        var state by androidx.compose.runtime.mutableStateOf(
+            DirectState(
+                proposals = ProposalState(
+                    phase = ProposalPhase.NeedsClarification,
+                    proposal = PlanProposal(PlanOutcome.NeedsClarification, reason = "누구인지 알 수 없어요"),
+                    frameReady = true,
+                ),
+            ),
+        )
         showSuggestions { state }
+        compose.onNodeWithText("조금 더 알려주세요").assertExists()
+        compose.onNodeWithText("누구인지 알 수 없어요").assertExists()
 
-        expected.forEach { (id, sentence) ->
-            state = tailored(id)
-            compose.waitForIdle()
+        state = DirectState(
+            proposals = ProposalState(
+                phase = ProposalPhase.Unsupported,
+                proposal = PlanProposal(PlanOutcome.Unsupported, reason = "정밀한 자르기는 직접 해주세요"),
+                frameReady = true,
+            ),
+        )
+        compose.waitForIdle()
+        compose.onNodeWithText("지금 도구로는 할 수 없어요").assertExists()
+        compose.onNodeWithText("적용").assertIsNotEnabled()
+    }
+
+    /** §14: model text is plain text — markup and links are shown as characters, not rendered. */
+    @Test
+    fun `model text is shown as plain text`() {
+        val markup = "<b>굵게</b> [링크](https://example.com)"
+        showSuggestions(
+            recommended(
+                FakePlanProvider.DEFAULT_PROPOSAL.copy(limitations = listOf(markup)),
+            ),
+        )
+
+        compose.onNodeWithText(markup).assertExists()
+    }
+
+    @Test
+    @Config(fontScale = 2f)
+    fun `a long review scrolls inside the sheet and 적용 stays reachable at a large font`() {
+        val long = "가".repeat(240)
+        val proposal = FakePlanProvider.DEFAULT_PROPOSAL.copy(
+            observations = List(8) { Observation("o$it", "영역$it", long, Confidence.Low) },
+            limitations = List(5) { "제한 $it $long" } + "마지막 확인 사항",
+        )
+        show(recommended(proposal))
+
+        compose.onNodeWithText("적용").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("마지막 확인 사항").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun `the 보정 추천 entry is reachable from the keyboard`() {
+        showSuggestions(DirectState(proposals = ProposalState(frameReady = true)))
+
+        compose.onNodeWithTag(DirectRecommendTestTag).assertHasClickAction()
+        compose.onNodeWithTag(DirectRecommendTestTag).performSemanticsAction(SemanticsActions.OnClick)
+        assertEquals(listOf(false), recommends)
+    }
+
+    @Test
+    fun `each example label fills its own reviewed sentence and sends nothing`() {
+        showSuggestions(DirectState(proposals = ProposalState(frameReady = true)))
+
+        mapOf(
+            ExampleSentence.Brighten to "사진 전체를 조금 더 밝게 해줘",
+            ExampleSentence.Warm to "사진 전체의 색감을 조금 따뜻하게 해줘",
+            ExampleSentence.NaturalColor to "사진 전체의 과한 채도를 조금 낮춰줘",
+        ).forEach { (example, sentence) ->
             // The pill sits in a horizontal row inside the sheet's own scroll, which the default
             // Robolectric screen clips; the click action is the pill's own handler.
-            compose.onNodeWithTag(id.wire).performSemanticsAction(SemanticsActions.OnClick)
-            assertEquals(id.wire, sentence, picked.last())
+            compose.onNodeWithTag(example.tag).performSemanticsAction(SemanticsActions.OnClick)
+            assertEquals(sentence, picked.last())
         }
-        assertEquals(expected.size, picked.size)
+        assertEquals(emptyList<String>(), submitted)
+        assertEquals(emptyList<Boolean>(), recommends)
     }
 
     @Test
-    fun `a suggestion pill is a 48dp target that says what a tap does`() {
-        showSuggestions(DirectState(suggestions = SuggestionState(frameReady = true)))
+    fun `an example pill is a 48dp target that says what a tap does`() {
+        showSuggestions(DirectState(proposals = ProposalState(frameReady = true)))
 
-        compose.onNodeWithContentDescription("조금 더 밝게. 사진 전체가 어둡게 느껴진다면. 누르면 문장이 입력돼요")
-            .assertHeightIsAtLeast(48.dp)
+        compose.onNodeWithTag(ExampleSentence.Brighten.tag).assertHeightIsAtLeast(48.dp)
+        compose.onNodeWithContentDescription("조금 더 밝게. 사진 전체가 어둡게 느껴진다면. 누르면 문장이 입력돼요").assertExists()
     }
 
     @Test
-    fun `an unedited suggestion draft keeps the list and says it can be changed`() {
+    fun `an unedited example keeps the list and says it can be changed`() {
         showSuggestions(
             DirectState(
                 request = "사진 전체를 조금 더 밝게 해줘",
                 requestSource = RequestSource.Suggestion,
-                suggestions = SuggestionState(frameReady = true),
+                proposals = ProposalState(frameReady = true),
             ),
         )
 
-        compose.onNodeWithTag(DirectSuggestionsTestTag).assertExists()
+        compose.onNodeWithTag(ExampleSentence.Warm.tag).assertExists()
         compose.onNodeWithText("문장을 바꿔도 좋아요").assertExists()
     }
 
     @Test
-    fun `typed text and 숨기기 both remove the suggestion area`() {
-        var state by androidx.compose.runtime.mutableStateOf(
-            DirectState(suggestions = SuggestionState(frameReady = true)),
-        )
+    fun `숨기기 hides the examples, not 보정 추천`() {
+        var state by androidx.compose.runtime.mutableStateOf(DirectState(proposals = ProposalState(frameReady = true)))
         showSuggestions { state }
 
-        compose.onNodeWithTag(DirectSuggestionHideTestTag).performClick()
+        compose.onNodeWithTag(DirectSuggestionHideTestTag).performScrollTo().performClick()
         assertEquals(1, hides)
         state = state.copy(suggestions = state.suggestions.copy(hidden = true))
         compose.waitForIdle()
-        compose.onNodeWithTag(DirectSuggestionsTestTag).assertDoesNotExist()
-
-        state = DirectState(request = "하늘을", suggestions = SuggestionState(frameReady = true))
-        compose.waitForIdle()
-        compose.onNodeWithTag(DirectSuggestionsTestTag).assertDoesNotExist()
+        compose.onNodeWithTag(ExampleSentence.Brighten.tag).assertDoesNotExist()
+        compose.onNodeWithTag(DirectRecommendTestTag).assertExists()
     }
 
     @Test
     fun `listening hides the suggestion area and a final result still submits`() {
         grantRecordAudio()
-        showSuggestions(DirectState(suggestions = SuggestionState(frameReady = true)))
+        showSuggestions(DirectState(proposals = ProposalState(frameReady = true)))
         compose.onNodeWithTag(DirectSuggestionsTestTag).assertExists()
 
         compose.onNodeWithTag(PromptMicTestTag).performClick()
@@ -358,8 +468,12 @@ class DirectSheetTest {
         assertEquals(emptyList<String>(), picked)
     }
 
-    private fun tailored(vararg ids: PromptSuggestionId) = DirectState(
-        suggestions = SuggestionState(phase = SuggestionPhase.Tailored, ids = ids.toList(), frameReady = true),
+    private fun recommended(proposal: PlanProposal) = DirectState(
+        proposals = ProposalState(ProposalPhase.Ready, PlanMode.Recommend, proposal, frameReady = true),
+    )
+
+    private fun planned(plan: EditPlan) = DirectState(
+        proposals = ProposalState(ProposalPhase.Ready, PlanMode.Direct, FakePlanProvider.ready(plan)),
     )
 
     private fun showSuggestions(state: DirectState) = showSuggestions { state }
@@ -384,7 +498,7 @@ class DirectSheetTest {
                         DirectSuggestionArea(
                             state = current,
                             speech = speech,
-                            onFind = { finds++ },
+                            onRecommend = { recommends += it },
                             onCancel = { cancels++ },
                             onHide = { hides++ },
                             onPick = { picked += it },

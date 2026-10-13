@@ -14,7 +14,6 @@ import com.diffuse.core.ai.FakeFillProvider
 import com.diffuse.core.ai.FakeMatchStyleProvider
 import com.diffuse.core.ai.FakeOutpaintProvider
 import com.diffuse.core.ai.FakePlanProvider
-import com.diffuse.core.ai.FakePromptSuggestionProvider
 import com.diffuse.core.ai.FakeSegmentationProvider
 import com.diffuse.core.ai.gemini.GeminiSettings
 import com.diffuse.core.ai.monet.MonetSettings
@@ -170,7 +169,6 @@ class EditorBackTest {
                 MonetSettings(context),
                 FakeAutoEnhanceProvider(),
                 FakeMatchStyleProvider(),
-                FakePromptSuggestionProvider(),
             ),
             dispatchers = ImmediateDispatchers,
             savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),

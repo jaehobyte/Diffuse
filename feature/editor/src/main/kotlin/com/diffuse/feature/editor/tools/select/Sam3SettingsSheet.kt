@@ -144,7 +144,8 @@ private fun MonetBaseUrlField(value: String, onValueChange: (String) -> Unit) {
                 else R.string.monet_settings_base_url_hint,
             ),
             style = Typography.bodySm,
-            color = if (invalid) colors.error else colors.inkSecondary,
+            // DESIGN.md §2: small error text uses the darker errorText to keep 4.5:1 on the sheet.
+            color = if (invalid) colors.errorText else colors.inkSecondary,
             modifier = Modifier.padding(top = 4.dp),
         )
     }

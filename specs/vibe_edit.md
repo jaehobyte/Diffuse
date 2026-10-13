@@ -27,9 +27,9 @@ SAM 3, adjustments still come from `Ops.kt`, and the erase still comes from
 "나무를 좀 더 푸르게 해줘"  (typed, or spoken → prompt_input.md §3)
   └─ GeminiPlanProvider                                      §7, §8
        1. encode the current preview  (GeminiImageCodec, ≤1024, JPEG q90)
-       2. POST …/gemini-2.5-flash:generateContent with 7 functionDeclarations   §5
-       3. read candidates[0].content.parts[*].functionCall, in order            §5
-  └─ EditPlan(steps = [Select("나무"), Adjust(Saturation, +0.3, masked = true)])
+       2. POST …/gemini-2.5-flash:generateContent with one propose_edit envelope   §5, §14
+       3. read the single functionCall, decode and check it whole                §5, §14
+  └─ PlanProposal(observations, goals, …, workflow = [Select("tree"), Adjust(Saturation, +0.3, masked)])
   └─ validate against the document                            §9.1
   └─ preview list, [취소 | 적용]                               §3
   └─ PlanRunner                                               §9
@@ -59,7 +59,7 @@ The sheet, top to bottom (DESIGN.md §4 Bottom sheet; max 45% height, the step l
 [ 🎤   무엇을 바꿀까요? 예: 나무를 더 푸르게    ➤ ]   VoicePromptBar, prompt_input.md §2–§3
 1. 나무 선택                                     bodyMd, appears when a plan arrives
 2. 선택 영역 채도 +30
-                                    [취소 | 적용]  Apply is the sheet's one accent
+                                    [취소 | 적용]  Apply is the sheet's one filled primary
 ```
 
 - The bar is `VoicePromptBar` with a different placeholder (§11). That placeholder becomes a
@@ -70,8 +70,8 @@ The sheet, top to bottom (DESIGN.md §4 Bottom sheet; max 45% height, the step l
 - Submitting asks for a plan. While that call is in flight the bar is disabled and the progress
   overlay shows `direct_planning` with a cancel button (DESIGN.md §4 State display, §7).
 - A plan arrives → the step list replaces nothing; it appears under the bar and 적용 becomes
-  enabled. 적용 is `primary`, and it is the surface's one accent — the prompt bar's send icon stays
-  `editInk` (prompt_input.md §2).
+  enabled. 적용 is `primary`, the surface's one filled primary — the prompt bar's send icon stays
+  neutral (prompt_input.md §2).
 - Submitting a second phrase replaces the previous plan. Nothing has been applied yet, so there is
   nothing to undo.
 - 적용 runs the plan (§9). The sheet closes when the run ends, whether it completed or stopped.
@@ -81,10 +81,15 @@ The sheet, top to bottom (DESIGN.md §4 Bottom sheet; max 45% height, the step l
 Korean in `strings.xml`, and a model-authored sentence would route around that — it could not be
 reviewed, translated or kept in tone. Each `PlanStep` renders through one template (§11) using the
 adjustment labels the sheets already use (`light_exposure`, `color_saturation`, …). Text parts in
-the response are therefore ignored, not shown.
+the response are therefore ignored, not shown. §14 allows only its validated, length-capped
+plain-text fields (observations, goals, constraints, effects, limitations) on screen, under local
+headings.
 
 ## 4. The function catalog (T45, extended by T58 and T62)
-Seven functions — everything the editor can do that a sentence can plausibly ask for. Names,
+Eight tools — everything the editor can do that a sentence can plausibly ask for (`apply_style`
+from style_match.md §6 is the eighth). Since 2026-10-13 (§14) they are no longer separate function
+declarations: they are the closed `tool` enum of a workflow step inside the one `propose_edit`
+envelope, with the same argument names, enums, ranges and conversions. Names,
 descriptions and enum values are **English code constants**: they are wire payload sent to a model,
 not strings a person reads (the same rule generative_erase.md §5 applies to its instruction).
 
@@ -173,7 +178,7 @@ POST {baseUrl}/v1beta/models/gemini-2.5-flash:generateContent
       { "text": "<the user's sentence, verbatim>" }
     ]
   }],
-  "tools": [{ "functionDeclarations": [ /* §4's seven, OpenAPI-subset schemas */ ] }],
+  "tools": [{ "functionDeclarations": [ /* one: propose_edit (§14) */ ] }],
   "toolConfig": { "functionCallingConfig": { "mode": "ANY" } }
 }
 ```
@@ -190,25 +195,25 @@ POST {baseUrl}/v1beta/models/gemini-2.5-flash:generateContent
   generation and a 60 s wait for one would mean something is wrong. Cancellable.
 - camelCase on both sides (`inlineData`, `functionCall`, `functionDeclarations`).
 
-**Reading the response.** `candidates[0].content.parts` is scanned in order and every part carrying
-`functionCall { name, args }` is kept; text parts are skipped, the way the eraser skips them
-(generative_erase.md §5). A part whose `name` is not one of §4's seven, or whose `args` do not
-satisfy §4's types, is **dropped with a log warning** rather than failing the whole plan — the same
-rule `EditDocumentJson` applies to an unknown operation, and for the same reason: one bad element
-should not lose the good ones. `value` is clamped to the kind's range from edit_model.md
-(−1…1, or 0…1 for `sharpen` and `vignette`); a non-finite `value` drops the step.
+**Reading the response (replaced 2026-10-13, §14).** The user part carries the image, a context
+text (mode, current settings as final values, selection, crop) and — when not blank — the user's
+text verbatim. Text parts in the answer are skipped. Exactly one `functionCall`, named
+`propose_edit`, must be present; none, two, or another name refuses the answer. The envelope is
+decoded **atomically**: a missing required field, an unknown tool/kind/ratio/style/colour, a
+non-numeric or non-finite number, a dangling goal or observation id, a duplicate id, a text over
+240 characters or a list over its cap refuses the **whole** proposal as
+`Invalid("unplannable:<rule>")`. The old "drop the bad call, keep the rest" rule is gone: a workflow
+that silently lost its select step would run its masked adjust on a leftover selection. A finite
+`value` outside the kind's range is still clamped, and the step list shows the clamped value.
 
-**`crop_ratio` is normalized after decoding (T58).** However many the model emitted and wherever
-it put them, the client keeps the **last** one and moves it to the **end** of the step list. Two
-crops in one plan is the model restating itself, not a request to crop twice, and `Operation.Crop`
-is at-most-one anyway (edit_model.md). An unknown `ratio` value drops the step, the same rule every
-other malformed argument gets. No other step is reordered — the model's order is the plan
+**`crop_ratio` is normalized after decoding (T58).** Wherever the model put it, the client moves the
+one crop to the **end** of the step list. Since §14 a second crop refuses the proposal (it was the
+model restating itself), and an unknown `ratio` refuses it too. No other step is reordered — the model's order is the plan
 everywhere else.
 
-**Zero function calls is a valid answer, not an error.** It is what the last line of the system
-instruction asks for when the request is out of scope, and it surfaces as the `direct_not_understood`
-hint (§10) — never a snackbar, matching the way `byText` returning nothing is a hint in
-selection_tool.md §7.
+**Zero function calls is refused, not an empty plan (§14).** A judgement that nothing should run
+is the explicit `no_change` / `needs_clarification` / `unsupported` outcome with a reason; a refused
+answer surfaces as the `direct_not_understood` hint (§10), never a snackbar.
 
 ## 6. Error mapping
 Identical to generative_erase.md §6, row for row, onto the same `AppError` cases. **No new case is
@@ -216,7 +221,7 @@ added.** Two rows differ because a plan is not an image:
 
 | Condition | `AppError` |
 |---|---|
-| `200` with no `functionCall` part | *not an error* — an empty `EditPlan`, shown as the §10 hint |
+| `200` with no `propose_edit`, two envelopes, or an envelope §14 refuses | `Invalid("unplannable:<rule>")`, shown as the §10 hint |
 | `200` with `promptFeedback.blockReason`, or `finishReason` `SAFETY` / `PROHIBITED_CONTENT` | `Invalid("blocked:<reason>")`, shown as `direct_blocked` |
 
 ## 7. The plan model (T44)
@@ -240,9 +245,11 @@ data class EditPlan(val steps: List<PlanStep>)
 
 interface EditPlanProvider {
     val availability: StateFlow<Availability>
-    suspend fun plan(image: Bitmap, request: String): Result<EditPlan>
+    suspend fun plan(image: Bitmap, request: PlanRequest): Result<PlanProposal>   // §14
 }
 ```
+
+`EditPlan` stays the runner's input: `PlanProposal.plan` is its workflow's steps in order.
 
 `PlanStep.Adjust` carries `AdjustKind`, which makes `core:ai → core:imaging` a real build edge for
 the first time — the module was written against `Bitmap` and never actually imported anything from
@@ -272,7 +279,8 @@ class GeminiPlanProvider @Inject internal constructor(
 ```
 
 `plan(image, request)`:
-1. `request.isBlank()` → `Invalid("empty request")` before any encoding.
+1. `mode == Direct && text.isBlank()` → `Invalid("empty request")` before any encoding. A blank
+   `Recommend` is sent (§14).
 2. `GeminiImageCodec.encode` — the existing encoder, unchanged: longest edge to 1024, JPEG q90
    falling back to 75 once, `TooLarge` past 20 MB. No mask is involved.
 3. `ensureActive()`, then the §5 call on `dispatchers.io`.
@@ -442,7 +450,7 @@ No test reaches an external host; `GeminiPlanClient`'s `baseUrl` seam is what ma
 every UI test uses `FakePlanProvider`.
 
 - `GeminiPlanClientTest` on `MockWebServer`: the path names `gemini-2.5-flash`; `x-goog-api-key` is
-  present and the key is **absent from the URL**; the body carries seven `functionDeclarations`, the
+  present and the key is **absent from the URL**; the body carries one `propose_edit` declaration (§14), the
   system instruction, the image part and the user's sentence verbatim; `toolConfig.mode` is `ANY`;
   two `functionCall` parts decode into two steps **in order**; a text part between them is skipped;
   an unknown function name is dropped and the rest survive; an out-of-range `value` is clamped and a
@@ -491,45 +499,73 @@ every UI test uses `FakePlanProvider`.
   What survives is the operations it produced, which the document model already knows how to store.
 - **No prompt history.** D11 if it is ever wanted.
 
-## 14. Sentence suggestions (2026-10-07)
-For a user who finds it hard to say what they want, the area directly under the bar offers short
-sentences to pick, edit and send. It is an **input aid**: it never plans, previews or edits.
+## 14. 보정 추천 and the shared evaluation (2026-10-13, replaces the 2026-10-07 suggestions)
+D091's photo-tailored sentence ids are replaced by D094: one planner evaluates the photo and an
+optional request, keeps observation and goal apart, and proposes a workflow the user reviews and
+applies. Example sentences remain an input aid.
 
-- **First open:** `이렇게 말해보세요` and three general examples (`조금 더 밝게`, `따뜻한 분위기로`,
-  `색감을 자연스럽게`) appear at once, with no claim of analysis. Beside them is the explicit
-  `사진에 맞는 문장 보기` with `현재 사진의 축소본을 Gemini에 보내 추천해요`. Only that tap sends anything;
-  opening the photo or sheet, typing and recomposition do not.
-- **Catalog:** eight reviewed ids (`PromptSuggestionId`: brighten, lift_shadows, soften_highlights,
-  warm, cool, natural_color, vivid_color, film_warm), each with a Korean label, a complete sentence,
-  a conditional hint (resources in `feature:editor`), a conflict group and the capability it should
-  plan into (an existing adjust kind or the FilmWarm style — checked by tests, never executed).
-- **The call:** the current preview through `GeminiImageCodec` (≤1024, JPEG) and the catalog text
-  to `gemini-2.5-flash` with one forced function, `suggest_directions(ids: [enum])`. Only the ids
-  are read. Unknown ids are dropped; the model's order is kept; one id per group (warm/cool/
-  film_warm, brighten/lift_shadows, natural/vivid); at most three. An empty list is the valid
-  "nothing fits". Prose without the call, a missing/non-list `ids`, an undecodable body, a block or
-  a non-STOP finish are failures. Status codes map as in §6. 12 s for the whole request,
-  cancellable, no automatic retry. No draft, EXIF or file path is sent; nothing is logged but ids.
-- **Frame:** only a preview rendered from the document on screen may be sent
-  (`EditorUiState.renderedDocument == document`). While a render is in flight, or after a failed
-  render left an older frame, the request is disabled with `사진을 준비하는 중`.
-- **States:** idle (examples), loading (`사진에 맞는 문장을 찾는 중` + 취소, inline in the area — the
-  DESIGN.md §4 exception), tailored (`이 사진에는 이런 방향도 좋아요`, 1–3 pills, no ranking or default),
-  empty (`다른 방향을 직접 말해보세요` + examples + `다시 찾기`), failed (snackbar + examples +
-  `다시 찾기`), hidden (`숨기기`, for the rest of the sheet session).
-- **Picking** fills the bar with the sentence and records its source as a suggestion; it calls no
-  planner, runner or commit and does not open the keyboard. The list stays while the bar is empty
-  or holds an unedited suggestion (which may be swapped), and hides on typing or while listening.
-  An answer only updates the list, never the bar.
-- **Plan invalidation:** any change of the sentence drops the waiting plan and `canApply` and
-  cancels a plan still being asked for; a late plan for an older sentence is discarded. Nothing
-  changes the sentence while a run is applying.
-- **Lifetime:** owned by `DirectController` through its `DirectSuggestions` collaborator. A request
-  is identified by the document it was rendered from plus a generation that every invalidation
-  bumps, so even an answer from a provider that ignores cancellation is dropped. A different
-  document (undo/redo/crop/adjust/run), a Gemini settings change, closing the sheet, another tool,
-  submit or a final voice result cancel it; nothing re-asks on its own. The last answer for the
-  current document is kept in memory only and reused on re-entry and recomposition; process death
-  restores nothing.
-- **Step list unchanged:** the step list is still built from validated `PlanStep` templates (§11);
-  suggestion labels and sentences come from the app's catalog, never from model prose.
+- **Entry.** Under the bar: `이렇게 말해보세요` with three examples (`조금 더 밝게`, `따뜻한 분위기로`,
+  `색감을 자연스럽게`) — a pick only fills the bar (`RequestSource.Suggestion`), never sends — and the
+  separate `보정 추천 받기` with `현재 사진의 축소본과 입력한 요청을 Gemini에 보내 추천해요`. It works with an
+  empty bar and while typing (examples hide on typing or during review; 숨기기 hides only them).
+  Opening the sheet, typing, document or settings changes send nothing.
+- **One planner, two modes.** `보정 추천 받기` is `PlanRequest(text, Recommend, context)`; send/voice
+  final is `PlanRequest(text, Direct, context)` (blank still refused). Same system instruction,
+  same envelope, same priorities, same checks. One tap or send is one call; nothing retries itself.
+- **Context.** `planContextOf(document)` sends every `Adjust` as the final value `withAdjust` would
+  replace (masked or whole-photo), the selection and crop flags. The instruction says values are
+  final settings ("더 밝게" at exposure 0.40 means a value above 0.40), a new masked adjust starts
+  at 0 on top of whole-photo values, and a style replaces the whole-photo values it carries.
+- **Evaluation rules** (in `PLAN_SYSTEM_INSTRUCTION`, not only here): observation ≠ taste (dark,
+  empty, desaturated are not defects; silhouettes, night, high/low-key allowed; `no_change` when
+  nothing needs doing); readable shape/texture of what matters over average brightness, material
+  lightness differences kept, shadow lifting may add noise, no histogram centring; colour roles
+  (preserve / emphasize / background — no global saturation that mostly strengthens the sky; skin,
+  product, petal differences kept); white balance only for a clear cast or a request; no promise
+  that sharpening recovers blur; composition observed, never enforced, reframing only on request
+  and only by ratio; minimal steps and conservative values; one goal set, keep-the-mood default.
+- **Priorities.** `PlanPriority`: explicit goal 5, explicit object 3, unrequested improvement 1 —
+  ranks, not probabilities or value multipliers. Hard constraints (`subject_only`,
+  `keep_background`, `keep_colors`, `other`) outrank any sum. Naming an object is not a goal;
+  unidentifiable targets and contradictions are `needs_clarification`; free crops and missing
+  tools are `unsupported` or a limitation.
+- **Envelope `propose_edit`.** `outcome`, `reason`, `observations[{id, subject, note, confidence
+  high|medium|low, unknown}]`, `intent{targets, wants, constraints[{text, kind, explicit}]}`,
+  `goals[{id, text, source user|default, scope global|subject|color_range, target,
+  observation_ids}]`, `color_roles[{role, color, target}]`, `workflow[{tool, goal_id, args, effect,
+  caution}]`, `limitations[]`. Caps: 240 chars per text, 8 observations, 8 goals, 12 workflow
+  items, 6 limitations, 8 colour roles. `masked` left out follows the goal's scope.
+- **Mechanical checks (`ProposalCheck`)**, any one refuses the whole answer: ready ⇔ non-empty
+  workflow with at least one non-Select step and no reason needed; other outcomes have no workflow
+  and a reason; a user goal needs non-blank text; Style/Crop/Erase/CutOut/Fill only under a user
+  goal; a subject goal uses only Select and selection-consuming steps, each after its **own**
+  goal's Select; a global goal only unmasked Adjust, Style, Crop; a colour-range goal only unmasked
+  HSL; every Select is used before the next one; `subject_only`/`keep_background` allow no
+  whole-photo tone step (crop allowed); `keep_colors` allows no temperature/tint/saturation/
+  vibrance/HSL/style; at most one style and no unmasked non-HSL adjust beside it; at most one crop.
+  `PlanRunner.validate` (§9.1) still runs on arrival. Whether the model *understood* the photo is
+  not checkable here — that is the image evaluation's job.
+- **States** (`ProposalPhase`): idle, loading (inline + 취소 for Recommend; overlay for Direct),
+  ready, no_change, needs_clarification, unsupported (reason + `요청을 고쳐 다시 추천받을 수 있어요`),
+  not understood (hint), failed (snackbar `추천을 받지 못했어요`/`direct_failed`, text kept, explicit
+  `다시 시도`), cancelled. 적용 is enabled only for ready.
+- **Review.** `관찰 근거` (subject: note (확신 높음/보통/낮음), unknowns), `보정 목표` ([사용자 요청] or
+  [추천 기본값] + target, colours to emphasize), `보존할 내용` (constraints, inferred ones marked
+  `(추정)`, colours to keep/background), `실행 단계` (local §11 templates with final values, plus
+  `예상:`/`주의:` and that predictions are not guarantees), `확인 사항` (limitations). Model text is
+  plain `Text`, never markup or links; step lines stay local templates. The sheet's content scrolls,
+  [취소 | 적용] stay pinned.
+- **Snapshot and lifetime (`DirectProposals`).** A request is pinned to (document — the one the
+  frame was rendered from, its id is the project — text, mode, context, Gemini settings generation)
+  and a sequence number. Only a frame with `renderedDocument == document` is sent; a Direct send
+  before that waits for it behind the overlay, a recommendation is disabled with `사진을 준비하는 중`.
+  Text, document (undo/redo/adjust; not the run's own commits), settings, project, closing the sheet
+  or another tool and 취소 drop the answer, the cache and the request; a late answer is dropped even
+  if the provider ignored cancellation. A new send cancels a recommendation in flight. The last
+  answer is cached in memory for an identical snapshot only; `다시 추천` asks once more. 적용 checks
+  the snapshot again, runs the **reviewed** plan without re-planning, and a double tap runs once.
+  Process death keeps nothing and resumes nothing.
+- **Unchanged:** no automatic upload or apply; §9's per-step history, partial runs and Undo;
+  segmentation failure stops the run with no global fallback; bitmap ownership, IO dispatcher,
+  cancellation and session release. The analysis fields are not logged — only the outcome and step
+  kinds.

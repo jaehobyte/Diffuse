@@ -16,6 +16,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.diffuse.core.ui.components.TertiaryPill
+import com.diffuse.core.ui.theme.OverlayTextShadow
 import com.diffuse.core.ui.theme.Tokens
 import com.diffuse.core.ui.theme.Typography
 
@@ -26,8 +27,8 @@ const val ExportCancelTestTag = "ExportCancel"
 
 /**
  * DESIGN.md §4 (State display) and §7: always show progress and a cancel button during
- * long work. The indicator is bound to the render's own progress rather than spinning
- * indefinitely.
+ * long work, in `canvasOverlayInk` over the scrim. The indicator is bound to the render's
+ * own progress rather than spinning indefinitely.
  */
 @Composable
 fun ExportProgressOverlay(
@@ -50,13 +51,14 @@ fun ExportProgressOverlay(
         Box(modifier = Modifier.height(12.dp))
         Text(
             text = stringResource(R.string.export_saving),
-            style = Typography.bodyMd,
-            color = Tokens.editInk,
+            style = Typography.bodyMd.copy(shadow = OverlayTextShadow),
+            color = Tokens.canvasOverlayInk,
         )
         Box(modifier = Modifier.height(12.dp))
         TertiaryPill(
             text = stringResource(R.string.export_cancel),
             onClick = onCancel,
+            color = Tokens.canvasOverlayInk,
             modifier = Modifier.testTag(ExportCancelTestTag),
         )
     }

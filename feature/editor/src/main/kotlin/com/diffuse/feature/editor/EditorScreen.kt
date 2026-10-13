@@ -30,6 +30,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.diffuse.core.ui.theme.AppTheme
+import com.diffuse.core.ui.theme.LocalAppColors
 import com.diffuse.core.ui.theme.ThemeMode
 import com.diffuse.core.ui.theme.Tokens
 import com.diffuse.feature.editor.canvas.CanvasGestureMode
@@ -80,7 +81,7 @@ fun EditorScreen(
     message: String? = null,
     onMessageShown: () -> Unit = {},
 ) {
-    // DESIGN.md §1: the editor is always warm-dark chrome, never the browse palette.
+    // DESIGN.md §1: light controls around a dark canvas surround — Edit is not a dark theme.
     AppTheme(mode = ThemeMode.Edit) {
         var viewport by rememberSaveable(stateSaver = ViewportSaver) {
             mutableStateOf(CanvasViewport())
@@ -183,12 +184,20 @@ private fun EditorBody(
             disabledTools = disabledTools,
             level = toolLevel.level,
             onLevelChange = toolLevel.onChange,
-            modifier = Modifier.navigationBarsPadding().onSizeChanged { onToolStripHeight(it.height) },
+            // DESIGN.md §8: the strip's light surface runs under the transparent navigation bar,
+            // so its dark icons have something to stand on instead of the dark canvas surround.
+            modifier = Modifier
+                .background(LocalAppColors.current.surface)
+                .navigationBarsPadding()
+                .onSizeChanged { onToolStripHeight(it.height) },
         )
     }
 }
 
-/** DESIGN.md §4 State display: errors are a snackbar on a dark surface, never a toast. */
+/**
+ * DESIGN.md §4 State display: errors are a snackbar, never a toast. Its dark surface and
+ * light text come from AppTheme's inverse slots, not from the controls' black editInk.
+ */
 @Composable
 private fun ShowMessage(
     message: String?,

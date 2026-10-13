@@ -11,8 +11,8 @@ const val FillSheetTestTag = "FillSheet"
 
 /**
  * specs/generative_fill.md §6. Title, the prompt bar that supplies the noun, and the pinned
- * [취소 | 적용] row `EditSheet` owns — 적용 is the sheet's one accent, so the send icon stays
- * `editInk` and every sheet commits the same way (DESIGN.md §4).
+ * [취소 | 적용] row `EditSheet` owns — 적용 is the sheet's one filled primary, so the send icon stays
+ * neutral and every sheet commits the same way (DESIGN.md §4).
  */
 @Composable
 fun FillSheet(

@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Placeholder only. DESIGN.md tokens and AppTheme arrive in T02. -->
-    <style name="Theme.Diffuse" parent="android:Theme.Material.Light.NoActionBar" />
+    <!--
+        The starting window, before Compose draws: DESIGN.md §2 canvasLight with dark status-bar
+        icons, light regardless of the OS dark setting (§8). Everything after it is AppTheme.
+    -->
+    <style name="Theme.Diffuse" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#FFFCFCFF</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
 </resources>

@@ -98,8 +98,9 @@ private fun DrawScope.drawPoints(
             radius = radius,
             center = centre,
         )
+        // A dark rim, so the white background point still reads over a bright photo.
         drawCircle(
-            color = Tokens.editHairline,
+            color = Tokens.editBackground,
             radius = radius,
             center = centre,
             style = Stroke(width = stroke),

@@ -532,7 +532,6 @@ class AutoToolTest {
             monetSettings,
             enhancer,
             FakeMatchStyleProvider(),
-            com.diffuse.core.ai.FakePromptSuggestionProvider(),
         ),
         dispatchers = TestDispatchers,
         savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),

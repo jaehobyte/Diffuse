@@ -16,6 +16,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.diffuse.core.ui.components.TertiaryPill
+import com.diffuse.core.ui.theme.OverlayTextShadow
 import com.diffuse.core.ui.theme.Tokens
 import com.diffuse.core.ui.theme.Typography
 
@@ -25,8 +26,9 @@ const val SelectionOverlayProgressTestTag = "SelectionProgressOverlay"
 const val SelectionCancelTestTag = "SelectionCancel"
 
 /**
- * DESIGN.md §4 (State display) and §7: 40% scrim, an accent spinner, one line of text and a
- * cancel button, for the whole time the model is working.
+ * DESIGN.md §4 (State display) and §7: 40% scrim, a blue spinner, one line of
+ * `canvasOverlayInk` text and a cancel button, for the whole time the model is working. The
+ * controls' black `editInk` would vanish on the scrim, so neither uses it.
  *
  * Unlike export there is no progress to report — the backend does not stream one — so the
  * indicator spins.
@@ -49,13 +51,14 @@ fun SelectionProgressOverlay(
         Box(modifier = Modifier.height(12.dp))
         Text(
             text = stringResource(labelRes),
-            style = Typography.bodyMd,
-            color = Tokens.editInk,
+            style = Typography.bodyMd.copy(shadow = OverlayTextShadow),
+            color = Tokens.canvasOverlayInk,
         )
         Box(modifier = Modifier.height(12.dp))
         TertiaryPill(
             text = stringResource(R.string.select_cancel_work),
             onClick = onCancel,
+            color = Tokens.canvasOverlayInk,
             modifier = Modifier.testTag(SelectionCancelTestTag),
         )
     }

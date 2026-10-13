@@ -203,12 +203,14 @@ class EditorShellTest {
 
         val bar = compose.onNodeWithTag(TopBarTestTag).getUnclippedBoundsInRoot()
         val pill = compose.onNodeWithTag(ExportTestTag).getUnclippedBoundsInRoot()
-        val natural = compose.onNodeWithTag(naturalPillTag).getUnclippedBoundsInRoot()
+        // Widths in whole layout pixels: subtracting two dp offsets can differ in the last float
+        // digit between equal widths at different positions.
+        val pillWidth = compose.onNodeWithTag(ExportTestTag).fetchSemanticsNode().size.width
+        val naturalWidth = compose.onNodeWithTag(naturalPillTag).fetchSemanticsNode().size.width
 
         assertTrue(
-            "the export label is squeezed: pill is ${pill.right - pill.left}, " +
-                "the label needs ${natural.right - natural.left}",
-            pill.right - pill.left >= natural.right - natural.left,
+            "the export label is squeezed: pill is ${pillWidth}px, the label needs ${naturalWidth}px",
+            pillWidth >= naturalWidth,
         )
         assertTrue(
             "the export pill runs past the bar: pill ends at ${pill.right}, bar at ${bar.right}",

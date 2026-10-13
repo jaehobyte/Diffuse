@@ -18,14 +18,15 @@ class FakePlanProviderTest {
 
     @Test
     fun `the default plan is the two-step story vibe_edit was specified from`() = runTest {
-        val plan = provider.plan(image(), "나무를 좀 더 푸르게 해줘").valueOrFail()
+        val proposal = provider.plan(image(), direct("나무를 좀 더 푸르게 해줘")).valueOrFail()
 
+        assertEquals(PlanOutcome.Ready, proposal.outcome)
         assertEquals(
             listOf(
                 PlanStep.Select("나무"),
                 PlanStep.Adjust(AdjustKind.Saturation, 0.3f, masked = true),
             ),
-            plan.steps,
+            proposal.plan.steps,
         )
         assertEquals(1, provider.planCount)
     }
@@ -35,24 +36,28 @@ class FakePlanProviderTest {
         val custom = EditPlan(listOf(PlanStep.CutOut))
         provider.next(custom)
 
-        assertEquals(custom, provider.plan(image(), "배경 지워줘").valueOrFail())
-        assertEquals(FakePlanProvider.DEFAULT_PLAN, provider.plan(image(), "다시").valueOrFail())
+        assertEquals(custom, provider.plan(image(), direct("배경 지워줘")).valueOrFail().plan)
+        assertEquals(FakePlanProvider.DEFAULT_PLAN, provider.plan(image(), direct("다시")).valueOrFail().plan)
     }
 
     @Test
-    fun `an empty plan is a valid answer`() = runTest {
-        provider.next(EditPlan(emptyList()))
+    fun `it records the request it was asked`() = runTest {
+        val request = PlanRequest("", PlanMode.Recommend, PlanContext(hasSelection = true))
 
-        assertEquals(emptyList<PlanStep>(), provider.plan(image(), "?").valueOrFail().steps)
+        provider.plan(image(), request)
+
+        assertEquals(request, provider.lastRequest)
     }
 
     @Test
     fun `failNext fails exactly one call`() = runTest {
         provider.failNext(AppError.Unavailable)
 
-        assertEquals(Result.Failure(AppError.Unavailable), provider.plan(image(), "나무"))
-        assertEquals(FakePlanProvider.DEFAULT_PLAN, provider.plan(image(), "나무").valueOrFail())
+        assertEquals(Result.Failure(AppError.Unavailable), provider.plan(image(), direct("나무")))
+        assertEquals(FakePlanProvider.DEFAULT_PLAN, provider.plan(image(), direct("나무")).valueOrFail().plan)
     }
+
+    private fun direct(text: String) = PlanRequest(text, PlanMode.Direct)
 
     private fun image(): Bitmap = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888)
 

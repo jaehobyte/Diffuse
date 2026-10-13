@@ -14,6 +14,7 @@ import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.core.imaging.model.ImageRef
 import com.diffuse.core.ui.components.EditSheetTestTag
 import com.diffuse.feature.editor.EditorScreen
+import com.diffuse.feature.editor.EditorToolStrip
 import com.diffuse.feature.editor.Tool
 import com.diffuse.feature.editor.canvas.testImage
 import com.diffuse.core.imaging.model.HslBand
@@ -21,6 +22,7 @@ import com.diffuse.feature.editor.tools.color.ColorKinds
 import com.diffuse.feature.editor.tools.detail.DetailKinds
 import com.diffuse.feature.editor.tools.mix.mixKinds
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
+import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -44,7 +46,6 @@ class ToolSheetHostTest {
             EditorScreen(
                 preview = testImage(),
                 selectedTool = selected,
-                // Tapping the selected tool again closes it (specs/editor_shell.md).
                 onToolClick = { selected = if (selected == it) null else it },
                 canUndo = false,
                 canRedo = false,
@@ -118,15 +119,24 @@ class ToolSheetHostTest {
         DetailKinds.forEach { compose.onNodeWithTag(adjustSliderTag(it)).assertExists() }
     }
 
+    /**
+     * specs/editor_shell.md: re-tapping the selected tool closes it where that tool is exposed.
+     * An open sheet covers the strip, so this is the strip on its own; beneath a sheet the tool
+     * is unreachable (SheetCancelTest) and 취소 closes it instead.
+     */
     @Test
-    fun `tapping the selected tool again closes its sheet`() {
-        showEditor()
-        compose.onNodeWithTag(toolTag(Tool.Color)).performClick()
-        compose.waitForIdle()
+    fun `tapping the selected tool again on an exposed strip closes it`() {
+        var selected by mutableStateOf<Tool?>(Tool.Color)
+        compose.setContent {
+            EditorToolStrip(
+                selectedTool = selected,
+                onToolClick = { selected = if (selected == it) null else it },
+            )
+        }
 
         compose.onNodeWithTag(toolTag(Tool.Color)).performClick()
         compose.waitForIdle()
 
-        compose.onNodeWithTag(EditSheetTestTag).assertDoesNotExist()
+        assertNull(selected)
     }
 }

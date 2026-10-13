@@ -1,150 +1,191 @@
 package com.diffuse.core.ui.theme
 
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.ExperimentalTextApi
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.diffuse.core.ui.R
 
 /**
- * Raw design values from DESIGN.md §2. DESIGN.md names this file the source of
- * truth, so these literals are the definition, not a copy. TokensTest asserts
- * every one of them against the §2 table.
+ * Raw design values from DESIGN.md §2. DESIGN.md names this file the home of its
+ * tokens, so these literals are the definition, not a copy. TokensTest asserts
+ * every one of them against the §2 tables.
  */
 object Tokens {
 
-    // --- Brand ---
-    val accent = Color(0xFFE60023)
-    val accentPressed = Color(0xFFCC001F)
+    // --- Brand & light surfaces ---
+    val accent = Color(0xFF387AFF)
+    val accentPressed = Color(0xFF2864D9)
+
+    /** A filled primary button: white text on [accent] would miss 4.5:1, so it is darker. */
+    val primaryFill = Color(0xFF2864D9)
     val onAccent = Color(0xFFFFFFFF)
-
-    // --- Browse mode (light) ---
-    val canvasLight = Color(0xFFFFFFFF)
-    val surfaceSoft = Color(0xFFFBFBF9)
-    val surfaceCard = Color(0xFFF6F6F3)
-    val surfaceSecondary = Color(0xFFE5E5E0)
-    val hairline = Color(0xFFDADAD3)
+    val canvasLight = Color(0xFFFCFCFF)
+    val surfaceSoft = Color(0xFFFCFCFF)
+    val surfaceCard = Color(0xFFF5F4F6)
+    val surfaceSecondary = Color(0xFFEBEFF5)
+    val hairline = Color(0xFFE6E6E9)
     val ink = Color(0xFF000000)
-    val inkSecondary = Color(0xFF5F5F5A)
+    val inkSecondary = Color(0xFF4D4D52)
+    val inkMuted = Color(0xFF8E8E92)
+    val selectionFill = Color(0xFFD9E2F6)
+    val selectionBorder = Color(0xFF8FB2F5)
+    val promptTint = Color(0xFFD7E4FF)
 
-    // --- Edit mode (dark) ---
-    val editBackground = Color(0xFF1C1C19)
-    val editSurface = Color(0xFF262622)
-    val editSurfaceRaised = Color(0xFF33332E)
-    val editHairline = Color(0xFF3F3F39)
-    val editInk = Color(0xFFF6F6F3)
-    val editInkSecondary = Color(0xFFA3A39B)
-    val canvasCheckerA = Color(0xFF2E2E2A)
-    val canvasCheckerB = Color(0xFF262622)
+    // --- Editor & glass ---
+    val editBackground = Color(0xFF1C1C1E)
+    val editSurface = Color(0xFFFCFCFF)
+    val editSurfaceRaised = Color(0xFFF5F4F6)
+    val editHairline = Color(0xFFE6E6E9)
+    val editInk = Color(0xFF000000)
+    val editInkSecondary = Color(0xFF4D4D52)
+
+    /** Text and guides over the dark canvas or a progress scrim; never the controls' [editInk]. */
+    val canvasOverlayInk = Color(0xFFFCFCFF)
+    val canvasCheckerA = Color(0xFF2C2C2E)
+    val canvasCheckerB = Color(0xFF242426)
+    val sheetGlassTop = Color(0xF5F7F8FB)
+    val sheetGlassBottom = Color(0xF0E6E9F1)
+    val sheetEdge = Color(0xCCFFFFFF)
+    val sheetHandle = Color(0xFFB4B6BC)
+    val pillStatus = Color(0xFFA8A8AC)
 
     // --- Semantic ---
     val success = Color(0xFF1E7A46)
     val warning = Color(0xFFB8741A)
 
-    /** Same value as [accent] by design; DESIGN.md §2 keeps the token separate. */
-    val error = Color(0xFFE60023)
+    /** DESIGN.md §2: HighlightRed, kept apart from the blue brand. */
+    val error = Color(0xFFFF3B30)
+
+    /**
+     * DESIGN.md §2 asks small link and error text for 4.5:1 on its real background. [accent]
+     * and [error] fall short on the glass sheet, so text uses these darker siblings — chosen to
+     * hold 4.5:1 even where the sheet's bottom edge sits over black.
+     */
+    val linkText = Color(0xFF1F57C7)
+    val errorText = Color(0xFFB3261E)
 }
 
 /**
- * DESIGN.md §3. Pretendard ships as a single variable font, so each weight is a
- * variation of one resource rather than a separate file.
+ * DESIGN.md §4 State display: text over a progress scrim or the canvas. The 40% scrim alone
+ * leaves [Tokens.canvasOverlayInk] under 3:1 where the photo beneath is white, so overlay
+ * text carries a soft dark shadow that holds it apart from a bright photo too.
  */
-@OptIn(ExperimentalTextApi::class)
-private fun pretendard(weight: Int) = Font(
-    resId = R.font.pretendard_variable,
-    weight = FontWeight(weight),
-    variationSettings = FontVariation.Settings(FontVariation.weight(weight)),
-)
+val OverlayTextShadow = Shadow(color = Color.Black.copy(alpha = 0.6f), offset = Offset(0f, 1f), blurRadius = 6f)
 
-val PretendardFamily = FontFamily(
-    pretendard(weight = 400),
-    pretendard(weight = 500),
-    pretendard(weight = 600),
-    pretendard(weight = 700),
-)
+/** DESIGN.md §4–§6: the shared sizes and shapes the components and screens reuse. */
+object Shapes {
+    /** Buttons, chips and the prompt bar are full pills. */
+    val pill = RoundedCornerShape(percent = 50)
+
+    /** Photo tiles and option cards. */
+    val card = RoundedCornerShape(16.dp)
+}
+
+object Dimens {
+    /** DESIGN.md §4 Buttons: the default height of every pill button. */
+    val buttonHeight = 48.dp
+
+    /** DESIGN.md §5: the smallest touch target anywhere. */
+    val touchTarget = 48.dp
+}
+
+/**
+ * DESIGN.md §3: the Android system sans-serif, as the reference app uses. The bundled
+ * Pretendard file stays in the resources; no style names it any more.
+ */
+private val SystemSans = FontFamily.Default
 
 val JetBrainsMonoFamily = FontFamily(
     Font(resId = R.font.jetbrains_mono_medium, weight = FontWeight.W500),
 )
 
-/** DESIGN.md §3. Line heights are the table's multipliers resolved against the size. */
+/** DESIGN.md §3. Letter spacing is left at the default. */
 object Typography {
 
     val headingXl = TextStyle(
-        fontFamily = PretendardFamily,
+        fontFamily = SystemSans,
         fontWeight = FontWeight.W700,
-        fontSize = 28.sp,
-        lineHeight = 33.6.sp,
-        letterSpacing = (-0.5).sp,
+        fontSize = 27.sp,
+        lineHeight = 32.sp,
     )
 
     val headingLg = TextStyle(
-        fontFamily = PretendardFamily,
-        fontWeight = FontWeight.W600,
-        fontSize = 22.sp,
-        lineHeight = 27.5.sp,
-        letterSpacing = 0.sp,
+        fontFamily = SystemSans,
+        fontWeight = FontWeight.W700,
+        fontSize = 17.sp,
+        lineHeight = 24.sp,
     )
 
     val headingMd = TextStyle(
-        fontFamily = PretendardFamily,
+        fontFamily = SystemSans,
         fontWeight = FontWeight.W600,
-        fontSize = 18.sp,
-        lineHeight = 23.4.sp,
-        letterSpacing = 0.sp,
+        fontSize = 13.sp,
+        lineHeight = 19.sp,
     )
 
     val bodyMd = TextStyle(
-        fontFamily = PretendardFamily,
+        fontFamily = SystemSans,
         fontWeight = FontWeight.W400,
-        fontSize = 16.sp,
-        lineHeight = 22.4.sp,
-        letterSpacing = 0.sp,
+        fontSize = 14.sp,
+        lineHeight = 21.sp,
     )
 
     val bodyStrong = TextStyle(
-        fontFamily = PretendardFamily,
+        fontFamily = SystemSans,
         fontWeight = FontWeight.W600,
-        fontSize = 16.sp,
-        lineHeight = 22.4.sp,
-        letterSpacing = 0.sp,
+        fontSize = 14.sp,
+        lineHeight = 21.sp,
     )
 
     val bodySm = TextStyle(
-        fontFamily = PretendardFamily,
+        fontFamily = SystemSans,
         fontWeight = FontWeight.W400,
-        fontSize = 14.sp,
-        lineHeight = 19.6.sp,
-        letterSpacing = 0.sp,
+        fontSize = 13.sp,
+        lineHeight = 20.sp,
     )
 
     val label = TextStyle(
-        fontFamily = PretendardFamily,
-        fontWeight = FontWeight.W500,
+        fontFamily = SystemSans,
+        fontWeight = FontWeight.W400,
         fontSize = 12.sp,
-        lineHeight = 15.6.sp,
-        letterSpacing = 0.2.sp,
+        lineHeight = 17.sp,
     )
 
-    /** DESIGN.md §3 gives no line height for `mono`; it follows `label` at 1.3. */
+    val labelSmall = TextStyle(
+        fontFamily = SystemSans,
+        fontWeight = FontWeight.W600,
+        fontSize = 11.sp,
+        lineHeight = 15.sp,
+    )
+
+    val link = TextStyle(
+        fontFamily = SystemSans,
+        fontWeight = FontWeight.W600,
+        fontSize = 13.sp,
+        lineHeight = 18.sp,
+    )
+
     val mono = TextStyle(
         fontFamily = JetBrainsMonoFamily,
         fontWeight = FontWeight.W500,
         fontSize = 13.sp,
-        lineHeight = 16.9.sp,
-        letterSpacing = 0.sp,
+        lineHeight = 18.sp,
     )
 }
 
-/** DESIGN.md §6: exactly one shadow level; dark mode uses a hairline border instead. */
+/**
+ * DESIGN.md §6: only the glass sheet casts a shadow, with a 1dp light edge; a photo's
+ * iconCircle may lift 2dp. Everything else is flat.
+ */
 object Elevation {
-    val shadowOffsetY = 2.dp
-    val shadowBlur = 8.dp
-    val shadowColor = Color(0x1F000000)
-    val darkBorderWidth = 1.dp
+    val sheetShadow = 10.dp
+    val sheetEdgeWidth = 1.dp
+    val iconCircle = 2.dp
 }

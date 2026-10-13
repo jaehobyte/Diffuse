@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -26,8 +27,7 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import com.diffuse.core.imaging.render.CanvasPoint
-import com.diffuse.core.ui.theme.AppColors
-import com.diffuse.core.ui.theme.LocalAppColors
+import com.diffuse.core.ui.theme.Tokens
 import com.diffuse.core.ui.theme.Typography
 import com.diffuse.feature.editor.R
 import com.diffuse.feature.editor.canvas.LocalCanvasTransform
@@ -67,7 +67,7 @@ fun MultiShotOverlay(
         val guide = if (baseline) R.string.multishot_baseline_description else R.string.multishot_slots_description
         drag + ". " + stringResource(guide, slots.size)
     }
-    val colors = LocalAppColors.current
+    val colors = GuideColors
     val measurer = rememberTextMeasurer()
     val labelStyle = Typography.label.copy(color = colors.ink)
     Box(
@@ -94,7 +94,7 @@ fun MultiShotOverlay(
             .drawBehind {
                 if (marker == null || frame.isEmpty) return@drawBehind
                 val centre = Offset(frame.left + marker.x * frame.width, frame.top + marker.y * frame.height)
-                // DESIGN.md: 적용 is the one accent, so the marker is ink and grows while it is the target.
+                // A light dot on a dark ring reads on any photo; it grows while it is the target.
                 val radius = (if (anchorEditing) MARKER_EDITING_RADIUS else MARKER_RADIUS).toPx()
                 drawCircle(color = colors.surface, radius = radius + MARKER_RING.toPx(), center = centre)
                 drawCircle(color = colors.ink, radius = radius, center = centre)
@@ -108,7 +108,7 @@ private fun DrawScope.drawPath(
     pathStart: CanvasPoint?,
     pathEnd: CanvasPoint?,
     slots: List<SlotMarker>,
-    colors: AppColors,
+    colors: GuideColors,
     measurer: TextMeasurer,
     labelStyle: TextStyle,
 ) {
@@ -137,7 +137,7 @@ private fun DrawScope.drawPath(
 }
 
 /** §4.3: the line every anchor sits on, across the canvas, and a square on the hero's own slot. */
-private fun DrawScope.drawBaseline(frame: Rect, hero: CanvasPoint, colors: AppColors) {
+private fun DrawScope.drawBaseline(frame: Rect, hero: CanvasPoint, colors: GuideColors) {
     if (frame.isEmpty) return
     val y = frame.top + hero.y * frame.height
     drawLine(
@@ -155,6 +155,15 @@ private fun DrawScope.drawBaseline(frame: Rect, hero: CanvasPoint, colors: AppCo
         size = androidx.compose.ui.geometry.Size(side, side),
         style = Stroke(MARKER_RING.toPx()),
     )
+}
+
+/**
+ * DESIGN.md §2, §9: guides drawn over the photo are overlay roles, not the light controls'
+ * palette — a dark `surface` under light `ink`, so each mark reads on bright and dark photos.
+ */
+private object GuideColors {
+    val surface: Color = Tokens.editBackground
+    val ink: Color = Tokens.canvasOverlayInk
 }
 
 private val MARKER_RADIUS = 6.dp

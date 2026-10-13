@@ -17,9 +17,15 @@ The frame hosting canvas, tools, and sheets. Owns editor-level state (selected t
 │ ○빛 ○색 ○혼합 ○자르기 ○디테일 ○선택 ○지우기 ○채우기 ○확대 ○지시 │
 └──────────────────────────────┘
 ```
+The top bar and tool strip are light (`editSurface`, black `editInk`); only the canvas surround is
+dark (`editBackground`), and text or guides over it use `canvasOverlayInk` (DESIGN.md §1, §2). The
+strip's surface runs under the transparent navigation bar, and both system bars use dark icons
+regardless of the OS dark setting (DESIGN.md §8).
+
 Sheets (`EditSheet`) slide up over the tool strip, max 45% height. **A sheet covers the strip, so
 while one is open the strip must not receive taps that land on the sheet** — the [취소 | 적용] row
-sits directly over the strip's leftmost items. See T57.
+sits directly over the strip's leftmost items. See T57. This covers the whole sheet, including its
+padding and the gap between 취소 and 적용: `EditSheet` is one hit target, and only its own controls react.
 
 The strip scrolls (`LazyRow`) and has since it passed four items, so a new tool needs no
 reordering; it needs one `Tool` entry and one `ToolSheetHost` branch (architecture.md §5.2).
@@ -46,7 +52,8 @@ Single `EditorViewModel`, MVI-style: UI sends `EditorIntent`, VM reduces to `Edi
 - Export pill: opens the export sheet (T20). Disabled while a tool sheet is open.
 
 ## Tool strip behavior
-- Tapping a tool sets `selectedTool` and opens its sheet. Tapping the selected tool again closes it (= Cancel).
+- Tapping a tool sets `selectedTool` and opens its sheet. Tapping the selected tool again closes it (= Cancel)
+  where that tool is exposed; while a sheet covers the strip it is not reachable, and 취소 or Back closes the sheet.
 - Selected state: accent icon + label + 2dp indicator.
 - `LazyRow`; selected item scrolls into view. Seven tools do not fit on a phone, so the row scrolls — which is why it was a `LazyRow` from T11, when four did fit.
 - New tools are **appended**. The order is the order they shipped in, not a ranking; reordering would move the item under a user's thumb for no stated reason.

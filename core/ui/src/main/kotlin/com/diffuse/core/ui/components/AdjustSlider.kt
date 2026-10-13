@@ -50,10 +50,18 @@ private const val PERCENT_SCALE = 100f
 
 const val AdjustSliderTestTag = "AdjustSlider"
 
+/** DESIGN.md §4: the inactive track must read on the near-white glass sheet. */
+private const val TRACK_ALPHA = 0.35f
+
+/** A soft shade under the white thumb, so it stands off the light sheet as well as the track. */
+private val ThumbShade = Color.Black.copy(alpha = 0.14f)
+private val ThumbShadeOffset = 1.dp
+
 /**
- * DESIGN.md §4: 4dp track, 20dp white thumb with a 1dp hairline stroke, the value pinned
- * to the right in `mono` rather than floating over the thumb, and a 2dp centre tick when
- * the adjustment is zero-centred. Double-tap returns to the neutral value.
+ * DESIGN.md §4: 4dp track with the active span in blue, 20dp white thumb with a 1dp hairline
+ * stroke, the value pinned to the right in `mono` rather than floating over the thumb, and a
+ * 2dp centre tick when the adjustment is zero-centred. Double-tap returns to the neutral value.
+ * The active span runs from the neutral point — the centre when zero-centred, else the start.
  */
 @Composable
 fun AdjustSlider(
@@ -112,7 +120,8 @@ fun AdjustSlider(
                     fraction = fractionOf(currentValue, range),
                     zeroCentered = zeroCentered,
                     sliderColors = SliderColors(
-                        track = colors.surfaceRaised,
+                        track = colors.inkMuted.copy(alpha = TRACK_ALPHA),
+                        active = colors.accent,
                         tick = colors.inkSecondary,
                         stroke = colors.hairline,
                     ),
@@ -169,7 +178,7 @@ private fun defaultFormat(value: Float, zeroCentered: Boolean): String {
 }
 
 /** DrawScope is itself a Density, so the dp values convert without one being passed in. */
-private data class SliderColors(val track: Color, val tick: Color, val stroke: Color)
+private data class SliderColors(val track: Color, val active: Color, val tick: Color, val stroke: Color)
 
 private fun DrawScope.drawSlider(
     fraction: Float,
@@ -189,6 +198,14 @@ private fun DrawScope.drawSlider(
         cornerRadius = androidx.compose.ui.geometry.CornerRadius(trackHeightPx / 2f),
     )
 
+    val thumbX = thumbRadiusPx + fraction * (size.width - 2f * thumbRadiusPx)
+    val neutralX = if (zeroCentered) size.width / 2f else 0f
+    drawRect(
+        color = sliderColors.active,
+        topLeft = Offset(minOf(neutralX, thumbX), centreY - trackHeightPx / 2f),
+        size = Size(abs(thumbX - neutralX), trackHeightPx),
+    )
+
     if (zeroCentered) {
         drawRect(
             color = sliderColors.tick,
@@ -197,7 +214,11 @@ private fun DrawScope.drawSlider(
         )
     }
 
-    val thumbX = thumbRadiusPx + fraction * (size.width - 2f * thumbRadiusPx)
+    drawCircle(
+        color = ThumbShade,
+        radius = thumbRadiusPx,
+        center = Offset(thumbX, centreY + ThumbShadeOffset.toPx()),
+    )
     drawCircle(color = Color.White, radius = thumbRadiusPx, center = Offset(thumbX, centreY))
     drawCircle(
         color = sliderColors.stroke,

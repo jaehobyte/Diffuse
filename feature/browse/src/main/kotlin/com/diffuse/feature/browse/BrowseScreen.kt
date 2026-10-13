@@ -35,7 +35,9 @@ import androidx.compose.ui.unit.dp
 import com.diffuse.core.data.ProjectSummary
 import com.diffuse.core.ui.components.PrimaryPill
 import com.diffuse.core.ui.theme.AppTheme
+import com.diffuse.core.ui.theme.Dimens
 import com.diffuse.core.ui.theme.LocalAppColors
+import com.diffuse.core.ui.theme.OverlayTextShadow
 import com.diffuse.core.ui.theme.ThemeMode
 import com.diffuse.core.ui.theme.Tokens
 import com.diffuse.core.ui.theme.Typography
@@ -44,7 +46,8 @@ import com.diffuse.core.ui.theme.Typography
 private val GridGap = 8.dp
 private val ScreenPadding = 16.dp
 private val TopBarHeight = 56.dp
-private val CtaHeight = 48.dp
+/** The CTA is the shared 48dp pill; the grid leaves that much room for it to float over. */
+private val CtaHeight = Dimens.buttonHeight
 private const val WIDE_SCREEN_DP = 600
 private const val WIDE_COLUMNS = 3
 private const val PHONE_COLUMNS = 2
@@ -111,8 +114,7 @@ fun BrowseScreen(
                         .testTag(BrowseCtaTestTag)
                         .align(Alignment.BottomCenter)
                         .navigationBarsPadding()
-                        .padding(bottom = ScreenPadding)
-                        .height(CtaHeight),
+                        .padding(bottom = ScreenPadding),
                 )
             }
 
@@ -143,7 +145,8 @@ private fun TopBar() {
     ) {
         Text(
             text = stringResource(R.string.browse_app_mark),
-            style = Typography.headingMd,
+            // DESIGN.md §3: 17sp is the title size; headingMd is now a 13sp section label.
+            style = Typography.headingLg,
             color = colors.ink,
         )
     }
@@ -215,12 +218,12 @@ private fun EmptyState(modifier: Modifier, enabled: Boolean, onNewProject: () ->
             text = stringResource(R.string.browse_new_project),
             onClick = onNewProject,
             enabled = enabled,
-            modifier = Modifier.testTag(BrowseCtaTestTag).height(CtaHeight),
+            modifier = Modifier.testTag(BrowseCtaTestTag),
         )
     }
 }
 
-/** DESIGN.md §4 (State display): 40% scrim, accent circular progress, one line of text. */
+/** DESIGN.md §4 (State display): 40% scrim, blue circular progress, one line of overlay text. */
 @Composable
 private fun BoxScope.ImportOverlay() {
     val colors = LocalAppColors.current
@@ -236,8 +239,8 @@ private fun BoxScope.ImportOverlay() {
         Box(modifier = Modifier.height(GridGap))
         Text(
             text = stringResource(R.string.browse_importing),
-            style = Typography.bodyMd,
-            color = Tokens.onAccent,
+            style = Typography.bodyMd.copy(shadow = OverlayTextShadow),
+            color = Tokens.canvasOverlayInk,
         )
     }
 }
@@ -247,7 +250,7 @@ private fun DeleteConfirmation(onConfirm: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier.testTag(BrowseDeleteDialogTestTag),
-        title = { Text(stringResource(R.string.browse_delete_title), style = Typography.headingMd) },
+        title = { Text(stringResource(R.string.browse_delete_title), style = Typography.headingLg) },
         text = { Text(stringResource(R.string.browse_delete_message), style = Typography.bodyMd) },
         confirmButton = {
             TextButton(onClick = onConfirm) {

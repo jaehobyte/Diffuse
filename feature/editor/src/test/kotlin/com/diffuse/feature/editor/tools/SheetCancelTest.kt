@@ -127,6 +127,49 @@ class SheetCancelTest {
     }
 
     /**
+     * REVIEW R1: the gap between 취소 and 적용 and the row's side padding are empty sheet, not
+     * holes in it. Real touches there reach no tool and leave the sheet open.
+     */
+    @Test
+    fun `taps on the sheet's empty action-row area reach no tool`() {
+        showEditor()
+        openDetail()
+
+        val cancel = compose.onNodeWithText("취소").getUnclippedBoundsInRoot()
+        val apply = compose.onNodeWithText("적용").getUnclippedBoundsInRoot()
+        val sheet = compose.onNodeWithTag(EditSheetTestTag).getUnclippedBoundsInRoot()
+        val points = with(compose.density) {
+            val y = ((cancel.top + cancel.bottom) / 2).toPx()
+            listOf(
+                (cancel.right + apply.left) / 2,
+                (sheet.left + cancel.left) / 2,
+                (apply.right + sheet.right) / 2,
+            ).map { Offset(it.toPx(), y) }
+        }
+
+        points.forEach { point ->
+            compose.onRoot().performTouchInput { down(point); up() }
+            compose.waitForIdle()
+        }
+
+        assertEquals("sheet action-row gap must not reach tools", emptyList<Tool>(), toolClicks)
+        compose.onNodeWithTag(EditSheetTestTag).assertExists()
+    }
+
+    /** 적용 sits over the strip's right-hand items the way 취소 sits over its left ones. */
+    @Test
+    fun `tapping 적용 closes the sheet and selects no other tool`() {
+        showEditor()
+        openDetail()
+
+        compose.onNodeWithText("적용").performClick()
+        compose.waitForIdle()
+
+        assertEquals("적용 must not reach the tool strip", emptyList<Tool>(), toolClicks)
+        compose.onNodeWithTag(EditSheetTestTag).assertDoesNotExist()
+    }
+
+    /**
      * The device's gesture, modelled: the press lands on 취소, the sheet is removed while the
      * finger is still down, and the release then falls on whatever is now under it.
      */

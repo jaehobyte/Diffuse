@@ -4,6 +4,242 @@
 
 CHANGES_REQUESTED
 
+2026-10-13 Codex 독립 리뷰 — 최신 `work/tasks.md` / `work/RESULT.md`의 **보정 추천 워크플로우**.
+15039 ADB 서버의 최신 기기 **SM-S948N / R5KL10GAH3B / Android 16**에 현재 소스로 빌드한 APK를 설치하고 실제 Gemini와 UI를 검증했다.
+기본 추천·직접 지시·no_change·취소·부분 완료 Undo/Redo를 확인했다. **15:00 SAM 복구 후 얼굴 선택·국소 보정·Undo/Redo·재열기도 실기기 통과**했다. 구조화된 계획 검증의 아래 두 차단 결함은 별개로 남아 있다.
+자동 검사 통과를 추천 품질 또는 모든 실기기 시나리오의 승인으로 확대하지 않는다.
+
+## Blocking
+
+### R1 [P1] 이전 goal의 Select가 존재하기만 하면 다른 객체의 활성 마스크를 사용함
+
+Location:
+`core/ai/src/main/kotlin/com/diffuse/core/ai/gemini/GeminiProposal.kt:269`
+관련: `feature/editor/src/main/kotlin/com/diffuse/feature/editor/tools/direct/PlanRunner.kt:175`.
+
+Problem:
+`ownSelection`은 앞선 모든 단계에서 같은 goal의 Select가 있었는지만 검사한다.
+`Select(face,g1) → Adjust(g1) → Select(flowers,g2) → Adjust(g2) → Adjust(g1)`을 정상 계획으로 수용한다.
+그러나 runner의 활성 마스크는 마지막 Select의 꽃이며, 마지막 얼굴 조정도 꽃에 적용된다.
+각 Select 뒤에 소비 단계가 있으므로 “사용되지 않는 Select” 검사도 이 경우를 막지 못한다.
+임시 단위 테스트에서 거부를 기대한 assertion이 실제 null 반환으로 실패했다.
+
+Impact:
+검토한 목표와 실제 편집 대상이 달라진다. 얼굴·꽃 등 복수 객체 요청에서 잘못된 객체를 보정하거나
+지우기/채우기를 수행할 수 있으며, 요구 5의 선택 대상과 후속 masked 조정 일치 계약을 위반한다.
+
+Required fix:
+선택을 소비하는 매 단계에서 **현재 활성 Select**가 해당 goal의 선택인지 검증하고, 불일치 계획은
+전체 거부한다. 과거 goal로 돌아가려면 해당 객체를 다시 선택해야 한다. runner에 별도 실행 언어를 추가할 필요는 없다.
+
+### R2 [P1] 배경 보존 조건에서 CutOut을 국소 작업으로 오판함
+
+Location:
+`core/ai/src/main/kotlin/com/diffuse/core/ai/gemini/GeminiProposal.kt:277`
+관련: 같은 파일 `isLocal` / `consumesSelection`, `PlanRunner.kt`의 `cutOut`.
+
+Problem:
+`isLocal`이 `consumesSelection`을 그대로 허용하므로 CutOut도 국소 변경으로 분류된다.
+`keep_background` 제약과 user/subject goal을 가진 `Select(face) → CutOut`이 검증을 통과한다.
+CutOut은 선택 영역 밖을 삭제하므로 선언한 배경 보존과 기계적으로 확인 가능한 모순이다.
+임시 단위 테스트에서 해당 계획의 거부 assertion도 실패했다.
+
+Impact:
+앱이 “배경은 그대로”를 보존 조건으로 표시하면서 실제 적용은 배경을 제거할 수 있다.
+요구 4의 hard constraint 및 모순되는 요청 처리, 요구 5의 원자적 거부 계약을 충족하지 않는다.
+
+Required fix:
+선택을 필요로 하는지와 실제로 변경하는 영역을 구분한다. 최소한 `keep_background`에서 CutOut을
+전체 거부하고, `subject_only`도 동일한 실제 영향 범위 기준으로 검토한다. 모순 요청은 확인 필요로
+처리하거나 안전하게 거부하며 보존 조건을 조용히 무시하지 않는다.
+
+## Tests Missing
+
+### R3 활성 선택 교체 및 CutOut 보존 조건의 회귀 검사
+
+- g1 선택/조정 → g2 선택/조정 → g1 조정의 전체 거부, g1을 다시 선택하면 허용.
+- Adjust뿐 아니라 Erase/Fill/CutOut 등 선택 소비 단계의 활성 goal 일치.
+- keep_background + CutOut 거부와, 보존 제약 없는 명시 CutOut 요청 허용.
+
+기존 `GeminiProposalRefusalTest`의 “own goal selection” 검사는 g2가 아예 Select되지 않은 경우만
+다룬다. `PlanRunnerProposalTest`는 순차적인 올바른 선택은 확인하지만 위 교차 goal 응답을 검출하지 못한다.
+
+## Non-blocking
+
+### N1 실제 이미지 품질 평가는 여전히 PARTIAL
+
+이번 모델 응답을 실기기에서 확인한 것은 아래 1개 사진의 세 요청이다. 요구 7의 12종 fixture·각 3회·
+6축 0/1/2 평가는 수행하지 않았다. 첫 추천은 겹쳐진 투구 장면을 인식했지만 빨간 색 대상에 흰 공을
+포함했고, 직접 지시의 관찰 필드에는 사용자 요청도 섞였다. 구조 검증 통과와 시각적/의미적 품질을
+구분해야 한다. 전체 품질 합격 또는 안정적인 거부율을 주장할 근거는 아직 없다.
+
+## Validation Notes
+
+### 2026-10-13 15:00–15:06 KST — SAM 정상 기동 후 실기기 재검증 완료
+
+**이 항목이 아래 14시대 환경 차단 기록을 대체하는 최신 서버/기기 상태다.** 서버 기동과 정상 국소 보정 검증은
+완료했으며, R1/R2 코드 결함은 수정되지 않았으므로 리뷰 전체는 CHANGES_REQUESTED를 유지한다.
+
+#### 서버
+
+- 14:59:48 GPU 사용량 839MiB로 메모리 확보를 확인하고 기존 `sam3-validation.service`를 재시작했다.
+  이전 NLUT 종료 명령은 권한 오류였으므로, 이번 GPU 확보를 Codex가 해당 작업을 종료한 결과라고 주장하지 않는다.
+- 실제 SAM3 모델이 **15:00:18 startup complete**. PID 3890569, 내부 18091, 기존 Caddy 8090 유지.
+- `SM-S948N / R5KL10GAH3B`의 curl로 `http://44.233.156.159:8090/healthz`의
+  `{"status":"ok"}` / **HTTP 200**을 기동 직후와 검증 종료 시 확인했다.
+- 최종 두 unit 모두 active. GPU 전체 4,663MiB / 15,360MiB, SAM 프로세스 3,824MiB.
+  모델과 프록시는 **켜둔다**. transient unit이며 부팅 자동 시작 설정을 추가한 것은 아니다.
+
+#### 야구 샘플 — 선택 실패 처리 PASS, 선택 품질은 실패
+
+- 기존 프로젝트 `9d263833-a7dc-4c59-9f87-1a456b66617e`의 검토된 계획
+  `baseball pitcher 선택 → 선택 영역 Exposure=0.30`을 실제 적용했다.
+- 연결 거부가 아니라 정상 SAM 호출 뒤 `baseball pitcher을(를) 찾지 못했어요`로 중단했다.
+  `sam-live-before.json`과 `sam-live-applied.json`은 **전체 동일**하다. 후속 전역 대체/국소 조정 없음,
+  기존 Vibrance/Contrast/Exposure 각 0.15만 유지되고 Undo는 비활성이다.
+- 겹쳐진 작은 사진의 이 문구로 피사체를 찾는 품질은 통과하지 못했다. 안전한 실패 처리 통과와 구분한다.
+
+#### 단일 인물 — 실제 선택·국소 보정·Undo/Redo·복원 PASS
+
+- 기기의 기존 테스트용 NASA 인물 사진을 Photo Picker로 열어 새 프로젝트
+  **`44040b3f-bd3e-4863-9eed-bacac48f13f3`**를 생성했다. 원본 **3200×4000**,
+  SHA-256 `f026060fbbc4c9f4bda516f8c28905ed5ba648ff4fc519c08a29b7614b2e7c88`.
+- 실제 요청: `Brighten only the face. Keep the background unchanged.`.
+  Gemini가 사용자 목표 `얼굴을 밝게`, 보존 조건 `배경은 그대로 유지`,
+  `face 선택 → 선택 영역 노출 15`를 제안했다. 적용 전 저장 operations는 빈 배열이었다.
+- 15:03:26 업로드 **201**, 15:03:27 text segmentation **200**, 15:03:28 DELETE **204**.
+  세션 ID `a991c3dd-a1d4-4c7f-bcc6-230884d2afae`를 해당 적용 시간의 서버 journal에서 확인했다.
+- 적용 후 저장 문서: mask `036029de-95df-47af-8202-0245bf7308bd`와 이를 참조하는
+  **Exposure=0.15** 연산. 전역 Adjust는 없다. 실제 저장 마스크를 가져와 **864×1080 RGBA** decode와
+  얼굴 범위 포함을 육안 확인했다.
+- UI Undo 한 번 → mask는 유지, Exposure 제거. UI Redo → 같은 maskId의 Exposure=0.15 복원.
+  각 단계의 저장 JSON을 대조했다. 선택과 조정을 단계별 history로 유지하는 기존 계약과 일치한다.
+- 적용/Redo 캔버스 `(0,263)-(1080,2095)` RGB 픽셀 차이는 **없음**.
+  Undo/Redo의 변화 bounding box는 캔버스 상대 `(514,459)-(775,776)`으로 얼굴 영역에 국한됐다.
+  그 밖의 배경/의상/손 영역의 스크린샷 픽셀은 동일했다. 원본 해상도 export 픽셀 검증은 아니다.
+- force-stop → 재실행 → 새 프로젝트 재열기. 재열기/Redo 캔버스 RGB 픽셀 차이 **없음**.
+  재시작 후 Undo 초기화는 저장 편집 결과 복원과 구분한다.
+- 얼굴은 밝아졌으나 턱/목 마스크 경계의 밝기 단차가 보인다. 기능 흐름 통과를 자연스러운 경계 품질이나
+  전체 사진 평가 합격으로 확대하지 않는다. 기존 마스크/렌더 구현을 이번 리뷰에서 수정하지 않았다.
+
+증거: `/tmp/recommend-device-review/face-{before,applied,undo,redo}.json`,
+`face-{applied,undo,redo,reopened}.png`, `face-mask.png`, `face-source.jpg`, `sam-face-steps.xml`,
+`sam-live-{before,applied}.json`, `sam-live-planner.log`. 임시 경로이며 영구 보관을 보장하지 않는다.
+최종 기기 화면은 새 인물 프로젝트의 편집 화면이고 얼굴 보정은 적용된 상태다.
+기존 설치 APK를 사용했으며 제품 코드·테스트는 수정하지 않았다. 서버 기동/기기 검증만 수행했으므로
+자동 검사를 반복 실행하지 않았고, 문서 변경 후 `git diff --check`는 통과했다.
+실제 export·다양한 사진/문구 반복·정량 마스크 품질·PSS/성능 측정은 이번 범위에서 미실행이다.
+
+### 2026-10-13 14:09–14:14 KST — SAM 서버 재기동 요청 후 확인
+
+사용자 요청에 따라 실제 SAM3와 기존 8090 프록시를 기동했으나, **다른 계정의 GPU 작업과 메모리 충돌로 재검증은 아직 환경 차단**이다.
+
+- 처음 확인한 GPU 사용량은 839MiB / 15,360MiB였고, 기존 SAM 임시 unit은 없었다.
+- 기존 deploy 환경 파일을 사용해 `sam3-validation.service` (실제 모델, `127.0.0.1:18091`, max sessions 1)와
+  `sam3-validation-public.service` (기존 Caddy 8090→18091)를 생성했다. 모델/제품 코드는 수정하지 않았다.
+- 첫 SAM 프로세스는 14:11:46, 재시작 프로세스는 14:13:22에 CUDA OutOfMemory로 종료됐다.
+  초기화 시 다른 작업이 약 12.94GiB를 사용했고 잔여 메모리는 4.75MiB였다.
+- 충돌 작업은 `ubuntu` 계정의 `/mnt/efs/beomjin.ahn/pstbench-work/envs/l4/bin/python inference_finetuning_image.py`.
+  content/style 순차 벤치마크로 PID가 바뀌며 재실행되고 있었다. 다른 사용자의 작업은 중단하지 않았다.
+- 기기 `R5KL10GAH3B`에서 기존 테스트 프로젝트에 `Brighten only the pitcher. Keep the background unchanged.`로
+  실제 Gemini 추천을 요청했다. `baseball pitcher 선택 → 선택 영역 노출 30`, 배경 보존 조건을 표시했다.
+  `sam-before.json`과 `sam-reviewed.json`은 전체 동일해 적용 전 무변경을 확인했다.
+- 서버 준비 전에는 적용하지 않았다. 기기에서 기존 주소 `/healthz`는 HTTP 502(모델 미기동)를 반환했다.
+  정상 선택/국소 보정/Undo/Redo 성공으로 보고하지 않는다. 기기는 미적용 검토 화면에 있다.
+- 현 상태: SAM unit failed, Caddy proxy active. GPU 자원이 확보되면 SAM unit restart 후 실제 적용·마스크·
+  Undo/Redo·세션 해제를 검증해야 한다. 다른 계정 작업 중단 여부를 사용자에게 확인 중이다.
+- 증거: `/tmp/recommend-device-review/sam-{before,reviewed}.json`, `sam-plan.{xml,png}`.
+  기존 R1/R2 판정은 변경하지 않는다.
+
+### 2026-10-13 14:57 KST — NLUT 중단 승인 후 OS 권한 차단
+
+사용자는 NLUT 벤치마크 중단과 SAM 기동을 명시 승인했다. 그러나 현재 실행 계정 `jaeho`에서
+`sudo -n kill -TERM`은 `a password is required`, 직접 `kill -TERM`은 `Operation not permitted`로 실패했다.
+대상은 `ubuntu` 소유의 루프 PID 2576986과 그 시점의 inference 자식이며, 작업은 종료되지 않았다.
+GPU 사용량 14,091MiB / 15,360MiB (NLUT 13,252MiB)를 확인했다.
+재시도한 SAM 초기화는 메모리 충돌을 피하도록 중지했다. 프록시 설정은 유지했고 실제 기기 적용은 수행하지 않았다.
+권한 있는 계정에서 해당 루프와 자식을 종료한 뒤 SAM을 재시작해야 한다. 추가 사용자 동의가 아닌 OS 권한 문제다.
+
+### 저장소 검사와 재현
+
+- tasks/RESULT/기존 REVIEW, DESIGN, D093/D094, `vibe_edit`/`ai_provider`/`prompt_input`/`editor_shell`,
+  provider·decoder·validator·controller·ViewModel 연결·runner·UI와 관련 테스트/변경 diff를 대조했다.
+  기존 미커밋 전체 디자인 변경은 최신 추천 기능의 신규 변경과 구분했다.
+- `scripts/check.sh` → **exit 0** (lint/detekt/unit/golden/dependencyGuard, 증분·캐시 포함).
+  최초 sandbox 실행은 Gradle 캐시 lock 쓰기 차단으로 실패했고 승인된 호스트 실행은 통과했다.
+  로그 `/tmp/recommend-review-check.log` (quiet 성공이라 내용 없음).
+- `./gradlew --offline --quiet :app:assembleDebug -Pdiffuse.localCreds` → **exit 0**.
+  APK SHA-256 `503dd74e032eefab820e69dc3732bdff4b6d0aafb2e4d1dc9ef4335d45f65b2f`.
+- 임시 `ReviewSelectionReproTest` → **2 tests / 2 assertion failures**. 위 R1/R2의 거부 누락을 각각 재현했다.
+  제품 코드는 변경하지 않았고 임시 테스트는 제거했다. 재현 소스는 `/tmp/recommend-device-review/ReviewSelectionReproTest.kt`,
+  로그는 `/tmp/recommend-review-repro.log`에 있다. 이 추가 재현의 실패와 기존 canonical 통과를 구분한다.
+- 임시 테스트 제거 후 `./gradlew --offline --quiet :core:ai:testDebugUnitTest` → **exit 0**.
+  로그 `/tmp/recommend-review-core-final.log`.
+- `git diff --check` → 통과. 저장소의 최종 수정 대상은 `work/REVIEW.md`뿐이며 commit하지 않았다.
+
+### 실제 기기·샘플·모델
+
+- 연결: `adb -H 127.0.0.1 -P 15039 -s R5KL10GAH3B` (ADB 서버 포트이며 `adb connect` 대상 adbd 포트가 아님).
+  모델 `SM-S948N`, Android 16, 화면 1080×2340. offline emulator는 사용하지 않았다.
+- 기기에 앱이 없어서 새로 설치했다. 최초 90초 제한 설치는 전송 timeout, 재시도는 `Success`.
+  신규 앱의 Gemini 설정에는 기존 저장소 로컬 키를 사용했다. 키 값은 보고서에 포함하지 않는다.
+- 입력: 저장소 `test.jpg`, 400×426 야구 투구 합성 이미지.
+  SHA-256 `2ca07806cdde0b83d0c1cb9c6cc2f82c6a2869baee7486553452811b687acd8a`.
+  `/sdcard/Download/recommend-review-baseball.jpg`로 전송하고 Photo Picker로 열었다.
+  개인 사진 대신 신규 프로젝트 **`9d263833-a7dc-4c59-9f87-1a456b66617e`**를 사용했다.
+- 실제 모델 `gemini-2.5-flash`, 프롬프트는 현재 `PLAN_SYSTEM_INSTRUCTION`.
+  소스 파일 `GeminiPlanCatalog.kt` SHA-256 `c344b844c4b035ca8adffa64c2a5f3539f1256f76e3b11b442d339bdb66a4d52`.
+- 정상 응답 3건 + 응답 전 취소 요청 1건. 각 요청을 3회 반복한 품질 평가가 아니다.
+
+### 실기기 결과
+
+| 시나리오 | 직접 확인한 결과 |
+| --- | --- |
+| 빈 입력 `보정 추천 받기` | inline 진행 후 Ready. 관찰·기본 목표·색 역할·4단계와 예상 효과 표시, 내부 스크롤 가능 |
+| 적용 전 무변경 | 저장 JSON의 operations는 빈 배열 유지, Undo 비활성. 최초 파일과 updatedAt은 재열기 때문에 달라 전체 파일 동일성으로 보고하지 않음 |
+| 추천 적용·선택 실패 | 전역 Vibrance=0.15, Contrast=0.15 완료 후 SAM3 `/sessions` 연결 거부. `적용하지 못했어요` 표시, 후속 masked Contrast는 실행되지 않음 |
+| 부분 완료 Undo/Redo | 실제 UI Undo로 Contrast 제거(Vibrance 유지), Redo로 두 연산 복원. 각 저장 JSON 확인 |
+| 일반 예시 선택 | `조금 더 밝게`는 `사진 전체를 조금 더 밝게 해줘`만 입력, 자동 계획/적용 없음 |
+| 직접 전송·적용 | overlay 후 사용자 목표/노출 15 검토. 적용으로 Exposure=0.15 추가, 앞선 두 연산 유지. planner 로그에는 추가 재계획 없음 |
+| 입력 중 추천·취소 | `Keep the photo unchanged` 입력 상태에서 추천 가능. inline 취소 후 입력 유지, 취소 안내, 적용 비활성 |
+| 재요청 no_change | 동일 입력을 명시 재요청해 NoChange(0), 이유 표시, 적용 비활성 확인 |
+| IME | 입력창 터치 시 시트가 키보드 위로 이동하고 취소/적용 접근 가능. Back으로 IME만 숨겨 입력·시트 유지 |
+| 글자 확대 | 시스템 font_scale 1.0→2.0에서 고정 취소/적용과 추천 진입 확인. 이후 1.0으로 복원. 큰 글자 전체 내용 스크롤은 미검증 |
+| 시트 터치 차단 | 지시 시트 하단 `(540,2190)`, `(12,2190)`, `(1068,2190)` 터치 후 지시 유지, 뒤 도구 전환 없음 |
+| 시스템 Back | 시트 닫기, 별도 AI 메뉴→Root, Root→Browse 확인. 이전 Back 리뷰의 독립 실기기 미확인 항목 해소 |
+| 재시작·재열기 | force-stop/재실행 후 프로젝트의 앞선 Vibrance/Contrast 보정 복원, 미적용 제안 자동 복원/재실행 없음 |
+
+- SAM3 설정 서버의 TCP 연결이 `ECONNREFUSED`여서 정상 segmentation 완료·국소 보정 성공·마스크 품질은
+  **환경 차단**이다. Gemini 자체와 전역 조정은 성공했다. 서버 설정/서비스를 임의 변경하지 않았다.
+- 중간에 입력창 진입을 확인하지 않은 좌표/ADB text 주입 뒤 흰 화면이 한 번 관찰됐다.
+  crash buffer는 비어 있었고 force-stop 후 복구됐다. 이후 입력창 focus를 확인한 정상 IME 흐름에서는
+  재현되지 않아 현재 변경의 원인으로 단정하지 않는다. 임시 `ime.png`/`app.log`에 관찰을 남겼다.
+- 증거: `/tmp/recommend-device-review/`의 UI XML/스크린샷, `before.json`, `reviewing.json`,
+  `applied-partial.json`, `undo.json`, `redo.json`, `direct-applied.json`, `planner.log`.
+  임시 경로이며 영구 평가 자료로 간주하지 않는다.
+- 검증 프로젝트/입력 샘플/설치 앱은 기기에 남아 있다. 최종 화면은 Browse, 글자 배율은 원래 1.0.
+- 이번 미실행: 실제 export, TalkBack·음성, 네트워크 차단 전체 흐름, 12MP/PSS, 다양한 사진의 마스크/품질,
+  needs_clarification/unsupported 실제 모델 응답, 높은 기존 Exposure에서 추가 밝게 요청의 실기기 반복.
+
+### 이전 리뷰 상태와 미해결 인계
+
+- 디자인 리뷰 R1/R2의 시트 터치 누출은 수정 코드·좌표 회귀 테스트·이번 실제 세 지점 터치로 해소 확인.
+  이전 Back 수정도 이번 실기기에서 확인했다. 과거 15309 연결 거부는 이번에 요청한 15039 검증을 막지 않는다.
+- 교체된 구형 추천의 6종/8문장 평가는 새 워크플로우의 완료 근거로 사용하지 않는다.
+- 멀티샷 서버 ASGI 취소/큰 정수 metadata, 전체 사진 품질·offline·12MP/PSS,
+  D084 피부 지원 0개 및 서버 품질/lifecycle, Jev 미구현, 음성/TalkBack 미완료는 유지한다.
+- 아래 과거 리뷰의 상세 증거는 보존하지만 과거 Status는 이번 추천 기능의 판정이 아니다.
+
+---
+
+# 이전 리뷰 기록 — 현재 판정과 구분
+
+# Review
+
+## Status
+
+CHANGES_REQUESTED
+
 2026-10-12 Codex 독립 리뷰 — 현재 `work/tasks.md`의 **피부 보정·얼굴 감지 메뉴 분기 제거**.
 최신 APK를 AWS `127.0.0.1:15039`의 실제 SM-S948U에 설치해 검증했다.
 삭제 범위·고정 메뉴·저장 보정 호환성에서는 차단 결함을 발견하지 못했다.

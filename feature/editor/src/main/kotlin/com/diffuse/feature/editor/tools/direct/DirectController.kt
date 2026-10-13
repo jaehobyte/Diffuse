@@ -6,10 +6,10 @@ import com.diffuse.core.ai.Availability
 import com.diffuse.core.ai.CropRatio
 import com.diffuse.core.ai.EditPlan
 import com.diffuse.core.ai.EditPlanProvider
+import com.diffuse.core.ai.PlanMode
+import com.diffuse.core.ai.PlanProposal
 import com.diffuse.core.ai.PlanStep
-import com.diffuse.core.ai.PromptSuggestionProvider
 import com.diffuse.core.common.AppError
-import com.diffuse.core.common.Result
 import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.feature.editor.R
 import kotlinx.coroutines.CoroutineScope
@@ -70,67 +70,84 @@ interface DirectHost {
     fun onFinished(cropRatio: CropRatio?)
 }
 
-/** specs/vibe_edit.md §3. Sheet state; nothing here reaches the document until 적용. */
+/** specs/vibe_edit.md §3, §14. Sheet state; nothing here reaches the document until 적용. */
 data class DirectState(
     val availability: Availability = Availability.Unavailable(AppError.Unavailable),
     val request: String = "",
-    /** §14: an unedited suggestion may be swapped for another; a typed sentence is the user's. */
+    /** §14: an unedited example may be swapped for another; a typed sentence is the user's. */
     val requestSource: RequestSource = RequestSource.Typed,
-    /** The plan waiting for 적용, or null. It is never persisted (§13). */
-    val plan: EditPlan? = null,
-    val planning: Boolean = false,
+    /** §14: the request in flight or answered — the proposal, its outcome and its mode. */
+    val proposals: ProposalState = ProposalState(),
     val running: Boolean = false,
-    /**
-     * §10: an empty plan and one `validate` rejected are the same event to the user — a hint
-     * under the bar, never a snackbar and never a dialog.
-     */
-    val notUnderstood: Boolean = false,
     val message: DirectMessage? = null,
     val suggestions: SuggestionState = SuggestionState(),
 ) {
 
     val enabled: Boolean get() = availability is Availability.Ready
 
+    val phase: ProposalPhase get() = proposals.phase
+
+    val proposal: PlanProposal? get() = proposals.proposal
+
+    /** DESIGN.md §7: a sent 지시 plans behind the overlay. */
+    val planning: Boolean get() = phase == ProposalPhase.Loading && proposals.mode == PlanMode.Direct
+
+    /** §14: 보정 추천 runs inline, with its own 취소, and keeps the bar usable. */
+    val recommending: Boolean get() = phase == ProposalPhase.Loading && proposals.mode == PlanMode.Recommend
+
     /** DESIGN.md §7: both the planning call and the run show progress and a way out. */
     val working: Boolean get() = planning || running
 
+    /** The plan waiting for 적용 — only for a ready proposal. It is never persisted (§13). */
+    val plan: EditPlan? get() = proposal?.takeIf { phase == ProposalPhase.Ready }?.plan
+
     val canApply: Boolean get() = plan != null && !working
 
+    /** §10: a refused answer is a hint under the bar, never a snackbar and never a dialog. */
+    val notUnderstood: Boolean get() = phase == ProposalPhase.NotUnderstood
+
+    /** §14: the 보정 추천 entry needs a frame of the document on screen and nothing else running. */
+    val canRecommend: Boolean get() = enabled && proposals.frameReady && !working && !recommending
+
     /**
-     * §14: only over an empty bar or an unedited suggestion, so a list can never overwrite what
-     * the user wrote, and never while a run is changing the photo.
+     * §14: the example sentences, only over an empty bar or an unedited example, so they can
+     * never overwrite what the user wrote, and never while a run is changing the photo. A
+     * proposal under review takes their place, so its sections stay inside the 45% sheet.
      */
-    val showSuggestions: Boolean
-        get() = !suggestions.hidden && !running &&
+    val showExamples: Boolean
+        get() = !suggestions.hidden && !running && proposal == null &&
             (request.isEmpty() || requestSource == RequestSource.Suggestion)
 }
 
 /**
- * specs/vibe_edit.md §3, §10. Owns the plan between the response and 적용. Running it is
+ * specs/vibe_edit.md §3, §10, §14. Owns the proposal between the response and 적용. Running it is
  * `EditorViewModel`'s job, because only it holds the `HistoryStack` — the split the selection
  * and erase tools already use.
  */
 class DirectController(
-    private val provider: EditPlanProvider,
+    provider: EditPlanProvider,
     private val runner: PlanRunner,
     private val scope: CoroutineScope,
     private val host: DirectHost,
-    suggestionProvider: PromptSuggestionProvider,
-    /** §14: the Gemini settings; any change drops the suggestions asked under the old ones. */
+    /** §14: the Gemini settings; any change drops the proposal asked under the old ones. */
     settingsChanges: Flow<Any>,
 ) {
 
     private val _state = MutableStateFlow(DirectState())
     val state: StateFlow<DirectState> = _state.asStateFlow()
 
-    private var job: Job? = null
+    private var run: Job? = null
 
-    /** §14: bumped whenever the sentence changes, so a plan for an older one is never shown. */
-    private var planSeq = 0
-
-    /** specs/vibe_edit.md §14: the read-only suggestions under the bar. */
-    val suggestions = DirectSuggestions(suggestionProvider, scope, settingsChanges) { error ->
-        showMessage(if (error is AppError.Unauthorized) R.string.direct_needs_key else R.string.direct_suggest_failed)
+    /** specs/vibe_edit.md §14: the one planning request, for 보정 추천 and a sent 지시 alike. */
+    val proposals = DirectProposals(provider, runner, scope, settingsChanges, { _state.value.running }) { error, mode ->
+        showMessage(
+            when {
+                error is AppError.Unauthorized -> R.string.direct_needs_key
+                error is AppError.Invalid && error.detail.startsWith(BLOCKED_PREFIX) -> R.string.direct_blocked
+                mode == PlanMode.Recommend -> R.string.direct_recommend_failed
+                else -> R.string.direct_failed
+            },
+        )
     }
 
     init {
@@ -138,7 +155,7 @@ class DirectController(
             provider.availability.collect { _state.value = _state.value.copy(availability = it) }
         }
         scope.launch {
-            suggestions.state.collect { _state.value = _state.value.copy(suggestions = it) }
+            proposals.state.collect { _state.value = _state.value.copy(proposals = it) }
         }
     }
 
@@ -151,15 +168,20 @@ class DirectController(
             DirectTap.OpenSettings
         }
 
+    /** §14: what the canvas is showing, with a frame only when it was rendered from it. */
+    fun onCanvas(document: EditDocument?, preview: Bitmap?) {
+        proposals.onCanvas(document, preview)
+    }
+
     /**
-     * §14: a different sentence invalidates the plan waiting for 적용, and cancels one still being
-     * asked for — it would be a plan for words that are no longer in the bar.
+     * §14: a different sentence invalidates the proposal waiting for 적용, and cancels one still
+     * being asked for — it would answer words that are no longer in the bar.
      */
     fun setRequest(request: String) {
         replaceRequest(request, RequestSource.Typed)
     }
 
-    /** §14: a suggestion fills the bar and nothing else — no plan, no edit, no history. */
+    /** §14: an example fills the bar and nothing else — no plan, no edit, no history. */
     fun pickSuggestion(request: String) {
         replaceRequest(request, RequestSource.Suggestion)
     }
@@ -167,72 +189,59 @@ class DirectController(
     private fun replaceRequest(request: String, source: RequestSource) {
         val state = _state.value
         if (state.running || (request == state.request && source == state.requestSource)) return
-        if (state.planning || state.plan != null) {
-            planSeq++
-            job?.cancel()
-        }
-        _state.value = state.copy(
-            request = request,
-            requestSource = source,
-            plan = null,
-            planning = false,
-            notUnderstood = false,
-        )
+        if (request != state.request) proposals.invalidate()
+        _state.value = _state.value.copy(request = request, requestSource = source)
+    }
+
+    /**
+     * §14 보정 추천 받기 / 다시 추천: the current photo and whatever the bar holds — empty is fine.
+     * One call per tap; [again] asks anew even for an identical snapshot.
+     */
+    fun recommend(again: Boolean = false) {
+        if (!_state.value.canRecommend) return
+        _state.value = _state.value.copy(message = null)
+        proposals.ask(_state.value.request, PlanMode.Recommend, force = again)
     }
 
     /**
      * §3: submitting asks for a plan, and a second phrase replaces the first — nothing has been
-     * applied yet, so there is nothing to undo. §9.1 validates it before it is ever shown.
+     * applied yet, so there is nothing to undo. A recommendation still being asked is dropped.
      */
     fun submit(request: String) {
-        val canvas = host.canvas()
-        if (request.isBlank() || canvas == null) return
-        // §14: the user's own request comes first; a suggestion still being looked for is dropped.
-        suggestions.cancel()
-        job?.cancel()
-        val seq = ++planSeq
-        _state.value = _state.value.copy(
-            request = request,
-            plan = null,
-            planning = true,
-            notUnderstood = false,
-            message = null,
-        )
-        job = scope.launch {
-            val result = provider.plan(canvas.preview, request)
-            if (seq != planSeq) return@launch
-            _state.value = when (result) {
-                is Result.Success -> accept(result.value, canvas.document)
-                is Result.Failure -> _state.value.copy(
-                    planning = false,
-                    message = DirectMessage(messageFor(result.error)),
-                )
-            }
-        }
+        val state = _state.value
+        if (request.isBlank() || state.running || !state.enabled) return
+        _state.value = state.copy(request = request, message = null)
+        proposals.ask(request, PlanMode.Direct, force = true)
+    }
+
+    /** §14: the inline 취소 of a recommendation; the bar and the document stay as they are. */
+    fun cancelRecommendation() {
+        if (_state.value.recommending) proposals.cancel()
+    }
+
+    /** §14: 숨기기 hides the examples for the session; 보정 추천 stays reachable. */
+    fun hideExamples() {
+        _state.value = _state.value.copy(suggestions = _state.value.suggestions.copy(hidden = true))
     }
 
     /**
-     * §5, §9.1: an empty plan is a valid answer and a rejected one is the same event to the
-     * user. Both leave 적용 disabled and show the hint.
-     */
-    private fun accept(plan: EditPlan, document: EditDocument): DirectState {
-        val usable = plan.steps.isNotEmpty() && runner.validate(plan, document) == null
-        return _state.value.copy(
-            planning = false,
-            plan = plan.takeIf { usable },
-            notUnderstood = !usable,
-        )
-    }
-
-    /**
-     * §9.2, §9.3: 적용 runs the plan, one history entry per step and no coalesce key, and the
-     * sheet closes when the run ends.
+     * §9.2, §9.3, §14: 적용 runs the reviewed plan — never a new one — one history entry per step
+     * and no coalesce key, and only while the document, the text and the settings it was asked
+     * from still hold. The sheet closes when the run ends.
      */
     fun apply() {
-        val plan = _state.value.plan ?: return
-        val canvas = host.canvas() ?: return
-        _state.value = _state.value.copy(running = true, message = null)
-        job = scope.launch {
+        val state = _state.value
+        val canvas = host.canvas()
+        if (!state.canApply || canvas == null) return
+        val proposal = proposals.readyFor(canvas.document, state.request)
+        if (proposal == null) {
+            proposals.invalidate()
+            showMessage(R.string.direct_stale)
+            return
+        }
+        val plan = proposal.plan
+        _state.value = state.copy(running = true, message = null)
+        run = scope.launch {
             if (plan.steps.any { it is PlanStep.Select }) host.releaseSession()
             var error: AppError? = null
             runner.run(
@@ -257,38 +266,38 @@ class DirectController(
         }
     }
 
-    /** §9.3: the run ended, whichever way. The plan dies with the sheet either way (§13). */
+    /** §9.3: the run ended, whichever way. The proposal dies with the sheet either way (§13). */
     private fun onRunEnded(error: AppError?) {
         _state.value = _state.value.copy(
             running = false,
-            plan = null,
             request = "",
             requestSource = RequestSource.Typed,
-            notUnderstood = false,
             message = error?.let(::messageOf),
         )
+        proposals.invalidate()
     }
 
-    /** 취소 or system back: the plan is discarded and the document was never touched (§3). */
+    /** 취소, system back or another tool: the proposal is discarded; nothing ran before 적용 (§3). */
     fun close() {
-        job?.cancel()
-        planSeq++
-        suggestions.endSession()
+        if (_state.value.running) run?.cancel()
+        proposals.invalidate()
         _state.value = _state.value.copy(
             request = "",
             requestSource = RequestSource.Typed,
-            plan = null,
-            planning = false,
             running = false,
-            notUnderstood = false,
+            suggestions = _state.value.suggestions.copy(hidden = false),
         )
     }
 
-    /** DESIGN.md §7: the overlay's cancel button. */
+    /**
+     * DESIGN.md §7: the overlay's cancel button. A cancelled run keeps the steps it committed
+     * (§9.3) and its proposal goes — the document is no longer the one it was asked about.
+     */
     fun cancelWork() {
-        job?.cancel()
-        planSeq++
-        _state.value = _state.value.copy(planning = false, running = false)
+        val running = _state.value.running
+        run?.cancel()
+        if (running) proposals.invalidate() else proposals.cancel()
+        _state.value = _state.value.copy(running = false)
     }
 
     fun showMessage(@StringRes res: Int) {

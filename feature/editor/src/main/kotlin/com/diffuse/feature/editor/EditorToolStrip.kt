@@ -44,7 +44,7 @@ const val ToolStripTestTag = "EditorToolStrip"
 /**
  * specs/tool_groups.md §2. One strip, two levels: [level] decides which list is bound to it.
  * Height, item size and scrolling are the same at both — no second row appears, so the strip is
- * still one surface with one accent (DESIGN.md §1).
+ * still one surface (DESIGN.md §1).
  */
 @Composable
 fun EditorToolStrip(

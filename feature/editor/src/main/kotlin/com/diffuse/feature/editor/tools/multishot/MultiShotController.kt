@@ -139,6 +139,9 @@ class MultiShotController(
         val owned = mutableMapOf<String, ImageRef?>()
         var seg: SegSession? = null
         var segKey: String? = null
+
+        /** The extraction target [seg] was first asked for; a run for another target never reuses it. */
+        var segTarget: String? = null
         var baseMask: Bitmap? = null
         var candidates: List<Bitmap> = emptyList()
         var job: Job? = null
@@ -151,11 +154,14 @@ class MultiShotController(
         var pick: PickRequest? = null
 
         /** The run under way — a fresh object per run, so a step of one that ended goes no further. */
-        var run: Any? = null
+        var run: Run? = null
 
         /** The run's photographs: the hero first, then the added photos in the order shown. */
         var runKeys: List<String> = emptyList()
     }
+
+    /** One press of the run, with the extraction target fixed when it was pressed. */
+    private class Run(val target: String)
 
     init {
         scope.launch {
@@ -586,6 +592,8 @@ class MultiShotController(
         val entry = current.entries[key] ?: return
         val photo = entry.photo ?: return
         if (!state.canExtract) return
+        // Fixed at the press: a target typed while the photo uploads belongs to the next extraction.
+        val target = state.target.trim()
         closeSegmentation(current)
         val token = ++entry.request
         updateItem(key) { it.copy(status = ShotStatus.Extracting, problem = null) }
@@ -605,14 +613,15 @@ class MultiShotController(
                 is Result.Success -> {
                     current.seg = opened.value
                     current.segKey = key
-                    findPerson(current, key, token, opened.value)
+                    current.segTarget = target
+                    findTarget(current, key, token, opened.value, target)
                 }
             }
         }
     }
 
-    private suspend fun findPerson(current: Session, key: String, token: Int, seg: SegSession) {
-        val found = segmentation.byText(seg, PERSON)
+    private suspend fun findTarget(current: Session, key: String, token: Int, seg: SegSession, target: String) {
+        val found = segmentation.byText(seg, target)
         if (!isCurrent(current, key, token)) return
         when (found) {
             is Result.Failure -> {
@@ -620,7 +629,7 @@ class MultiShotController(
                 failExtraction(key, found.error)
             }
             is Result.Success -> {
-                // Only a mask with something in it is a person; an empty one is no answer.
+                // Only a mask with something in it is the target; an empty one is no answer.
                 val people = withContext(dispatchers.default) {
                     found.value.map { it.alpha }.filterNot(MaskOutline::isEmpty)
                 }
@@ -700,6 +709,16 @@ class MultiShotController(
 
     fun setPhrase(phrase: String) {
         _state.value = _state.value.copy(phrase = phrase)
+    }
+
+    /**
+     * §2: what the first extraction asks for, `person` until the user changes it. Typing sends
+     * nothing; the value is fixed by the next 피사체 추출 or run, and a run — also one waiting for a
+     * choice — keeps the field locked. Subjects already saved stay as they are.
+     */
+    fun setTarget(target: String) {
+        if (session == null || _state.value.run != null) return
+        _state.value = _state.value.copy(target = target)
     }
 
     /** §2 requirement 5: "골프채" — its candidates are offered and the chosen one is added. */
@@ -852,7 +871,7 @@ class MultiShotController(
             return
         }
         val keys = (listOf(HERO_KEY) + state.timeOrder).filterNot { state.isDone(it) }
-        val run = Any()
+        val run = Run(state.target.trim())
         current.run = run
         current.runKeys = keys
         _state.value = state.copy(
@@ -871,7 +890,7 @@ class MultiShotController(
     }
 
     /** Takes the run's photos in turn until one needs the user or fails; then, all done, lays out. */
-    private suspend fun continueRun(current: Session, run: Any) {
+    private suspend fun continueRun(current: Session, run: Run) {
         while (session === current && current.run === run) {
             val index = current.runKeys.indexOfFirst { !_state.value.isDone(it) }
             if (index < 0) {
@@ -887,7 +906,7 @@ class MultiShotController(
     }
 
     /** One photo of the run: true once its subject is saved and the run may go on. */
-    private suspend fun runStep(current: Session, run: Any, key: String, step: Int): Boolean {
+    private suspend fun runStep(current: Session, run: Run, key: String, step: Int): Boolean {
         val total = current.runKeys.size
         if (key == HERO_KEY && current.entries[HERO_KEY]?.photo == null) {
             // The hero's input canvas is still being rendered: wait for it, said as such.
@@ -899,7 +918,8 @@ class MultiShotController(
         val photo = entry?.photo
         if (entry == null || photo == null) return endRun(current, run)
         // An open selection on this photo from before: a finished choice is saved, an open one waits.
-        if (current.segKey != key) {
+        // One opened for another target is not this run's answer, so the photo is asked again.
+        if (current.segKey != key || current.segTarget != run.target) {
             progress(step, total, RunPhase.Extracting, R.string.multishot_extracting)
             if (!extractFor(current, run, entry, photo)) return false
         }
@@ -919,8 +939,8 @@ class MultiShotController(
         return _state.value.statusOf(key) == ShotStatus.Ready || endRun(current, run)
     }
 
-    /** The run's upload and "person" query for one photo; false when it failed or was overtaken. */
-    private suspend fun extractFor(current: Session, run: Any, entry: Entry, photo: Photo): Boolean {
+    /** The run's upload and target query for one photo; false when it failed or was overtaken. */
+    private suspend fun extractFor(current: Session, run: Run, entry: Entry, photo: Photo): Boolean {
         val key = entry.key
         closeSegmentation(current)
         val token = ++entry.request
@@ -939,7 +959,8 @@ class MultiShotController(
             is Result.Success -> {
                 current.seg = opened.value
                 current.segKey = key
-                findPerson(current, key, token, opened.value)
+                current.segTarget = run.target
+                findTarget(current, key, token, opened.value, run.target)
             }
         }
         if (!isCurrent(current, key, token)) return false
@@ -947,7 +968,7 @@ class MultiShotController(
     }
 
     /** Ends [run] if it is still the session's; always false, so a step can return it. */
-    private fun endRun(current: Session, run: Any): Boolean {
+    private fun endRun(current: Session, run: Run): Boolean {
         if (current.run === run) {
             current.run = null
             current.runKeys = emptyList()
@@ -1394,6 +1415,7 @@ class MultiShotController(
         val key = current.segKey
         current.seg = null
         current.segKey = null
+        current.segTarget = null
         current.baseMask = null
         current.candidates = emptyList()
         _state.value = _state.value.copy(mask = null, candidateCount = 0, chosenCandidate = null)
@@ -1438,8 +1460,9 @@ class MultiShotController(
         const val SLOT_TOLERANCE = 0.005f
         const val THUMBNAIL_PX = 96
         /**
-         * §2: the concept sent for the default extraction. The UI stays Korean; SAM 3 answered
-         * nothing for "사람" on the device samples and found the person for "person" (work/RESULT.md).
+         * §2: the extraction target a session starts with; the user may change it. The UI stays
+         * Korean; SAM 3 answered nothing for "사람" on the device samples and found the person for
+         * "person" (work/RESULT.md).
          */
         const val PERSON = "person"
         const val AFTERIMAGE_SINGLE = 0.5f

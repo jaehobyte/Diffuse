@@ -28,7 +28,7 @@ unapplied draft after process death.
 - **Entry.** `Tool.MultiShot` ("멀티샷") at the **AI level** of the one menu (tool_groups.md §2,
   D092), appended before 지시 so every existing tool keeps its relative order. No face or content
   condition.
-- **Sheet** (`EditSheet`: 45% max height, fixed 취소 | 적용, 적용 the one accent):
+- **Sheet** (`EditSheet`: 45% max height, fixed 취소 | 적용, 적용 the one filled primary):
   - New composite: "어떻게 배치할까요?" with 시간 순서 배치 / 자유 배치 and one line each. Nothing can
     be added before a layout is chosen. A stored composite opens in its stored layout; a row of the
     two at the top switches explicitly (§2.1).
@@ -51,13 +51,34 @@ unapplied draft after process death.
   composite. The sheet says where it will be sent ("피사체 추출을 누르면 이 사진이 SAM 3 서버(host)로
   전송돼요") and shows the server's state with 다시 확인 / 서버 설정. Nothing is uploaded until
   **피사체 추출** is pressed (free layout; the time layout sends only through its run, §2.1).
+- **Extraction target** (D090, extended 2026-10-13). Before the first extraction both layouts show an
+  editable **추출 대상** field (`PromptBar`), starting at **`person`** in every new sheet session, with
+  the hint "기본값은 person이에요. 영어 대상명이 가장 잘 찾아져요 (예: dog, car)". Free layout: above
+  피사체 추출, its keyboard action is that press. Time layout: under the run's pill row while
+  something is still to extract, its keyboard action is the run. The value is sent as typed with only
+  its outer blanks trimmed — no fixed list, no translation, never silently replaced by `person`;
+  Korean is not blocked but its recognition is not promised. Typing sends nothing.
+  - Blank (empty or only spaces): "추출할 대상을 입력해 주세요", and 피사체 추출 / a run that would extract
+    are disabled. A run with nothing left to extract (layout only) is not blocked by it.
+  - Fixed at the press: 피사체 추출 fixes it for that photo; a run fixes it for the hero and every
+    photo it extracts. A value typed while an upload is on the wire belongs to the next press. A run —
+    also one waiting for a choice — locks the field; the photo's own points and extra phrase stay
+    usable. After 진행 취소 or a failure it can be changed and the run pressed again.
+  - A new target reaches only photos still to extract: saved subjects and the hero mask are never
+    removed or re-extracted for it ("바꾼 대상은 아직 추출하지 않은 사진에만 적용돼요…" once something is
+    saved); a finished photo changes through 교체 / 주인공 다시 선택. A selection left open for another
+    target is not reused by a run for the new one: that photo is uploaded and asked again.
+  - The target belongs to the controller's sheet session: it survives selecting, adding, deleting,
+    switching layouts and retries, and is never written to the project JSON/DB. A stored composite
+    reopens as it was, with `person` in the field, and extracts nothing.
 - **Extraction.** 피사체 추출 releases the selection tool's SAM 3 session, opens one on this photo
-  (≤1080 px long edge) and asks "사람".
-  - 0 answers: "사람을 찾지 못했어요…" — never replaced by the whole photo or a first guess.
-  - The concept sent is **`person`** (the UI stays Korean). On the device samples SAM 3 answered
+  (≤1080 px long edge) and asks for the extraction target.
+  - 0 answers: "대상을 찾지 못했어요…" — never replaced by the whole photo, a person or a first guess.
+  - The default concept is **`person`** (the UI stays Korean). On the device samples SAM 3 answered
     nothing for "사람" and found the person for "person" (work/RESULT.md); no translation service
     is added and free Korean input is not promised. The phrase field's examples are model inputs
-    (`person`, `golf club`); point selection is the fallback.
+    (`person`, `golf club`); point selection is the fallback. The extra phrase (추가할 대상) is a
+    separate field of the open selection: submitting or clearing it never changes the target.
   - 1 answer: taken. Several: listed as 후보 1…n; the user picks one before 추출 완료 is enabled.
   - Refine: tap = add the region under the finger, long-press = remove it (`byPoints`, merged with
     `MaskOps`). An extra phrase (`golf club`) offers its candidates and the chosen one is **added**
@@ -91,7 +112,7 @@ Pick several → **모두 추출하고 자동 배치** (one press) → laid-out 
 are never redone: a stored composite reopens settled, and opening it or switching layouts never
 extracts or lays out anything.
 - **The run.** Under the timeline, whichever tile or step is shown, one main action (a tertiary pill:
-  적용 stays the one accent) with 순서 뒤집기 beside it. Before it, "보이는 순서대로 배치해요… 누르면
+  적용 stays the one filled primary) with 순서 뒤집기 beside it. Before it, "보이는 순서대로 배치해요… 누르면
   원본(주인공)과 추가 사진이 차례로 SAM 3 서버(host)로 전송돼요" and the server row. Choosing the layout
   and picking send nothing; **the press confirms the order shown and starts sending**.
   - Its label says what is left: 모두 추출하고 자동 배치 (nothing extracted yet) / 남은 사진 추출하고
@@ -102,7 +123,7 @@ extracts or lays out anything.
     its input canvas if it is still rendering), then the added photos **in the order shown**. Items
     already extracted are reused, not sent again. One photo and one SAM 3 session at a time; the
     session is closed before the next photo.
-  - Per photo: upload, "person". Exactly one non-empty answer → taken and saved (§5, §7) without a
+  - Per photo: upload, the run's extraction target. Exactly one non-empty answer → taken and saved (§5, §7) without a
     press. None, or several → the run **stops on that photo** (selected, candidates or the not-found
     line, point/phrase refinement), never taking the first or the largest. Its 추출 완료 saves the
     choice and the run **goes on by itself**; the hero follows the same rule.

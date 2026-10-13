@@ -8,6 +8,113 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+## D095 - 멀티샷 추출 대상: `person` by default, typed by the user, fixed per press (extends D090)
+
+Status: Accepted (2026-10-13, work/tasks.md 멀티샷 추가 5장·추출 대상 입력). Extends D090 and
+specs/multishot.md §2/§2.1, which asked every first query for a fixed `person`; candidates, manual
+refinement, the sequential run, hero protection and the 5-photo limit (`MAX_SHOTS`) stand.
+
+Decision:
+- `MultiShotState.target` (default `MultiShotController.PERSON`) is the first query of every
+  extraction, edited through `setTarget`, shown as 추출 대상 (`PromptBar`) above 피사체 추출 (free) and
+  under the run's pills while something is pending (time). Only outer blanks are trimmed; blank
+  disables `canExtract` and a `canRun` that would extract, not a layout-only run.
+- The value is fixed at the press: `extract()` captures it; a run carries it in its `Run` object, so
+  the hero and every photo of one press share it and a pause for a choice resumes with it.
+  `setTarget` is refused while `run != null` (running or waiting); the photo's points and the extra
+  `phrase` stay separate and usable.
+- The open SAM 3 session remembers the target it was asked for (`segTarget`); a run for another target
+  closes it and asks that photo again instead of saving the old candidates. Saved subjects and the
+  hero are never re-extracted for a new target. Late answers are still dropped by the request token.
+- The target lives in the controller's sheet session: `open`/`close` reset it to `person`; it is not
+  written to JSON/DB, so stored composites and their format are unchanged.
+
+Reason:
+The user asked to extract other subjects (dog, car) than people. Fixing the value per press keeps
+"nothing is sent before an explicit press" and makes a run's six queries consistent; refusing to
+reuse another target's open candidates keeps "never take a first guess" for the new target.
+
+Consequences:
+The not-found line is target-neutral ("대상을 찾지 못했어요…"). Free Korean input is not translated.
+The run golden's states keep their visible area; the field sits below the fold of the 45% sheet.
+
+## D094 - 보정 추천: one evaluating planner, observation apart from goal, reviewed before 적용
+
+Status: Accepted (2026-10-13, work/tasks.md 보정 추천 워크플로우). specs/vibe_edit.md §14. Extends and
+replaces the photo-tailored half of D091; D091's example sentences (input aid only) stand.
+
+Decision:
+- One `EditPlanProvider.plan(image, PlanRequest(text, mode, context))` serves 보정 추천
+  (`Recommend`, text may be empty) and a sent 지시 (`Direct`, blank refused). Same instruction,
+  envelope, `PlanPriority` (5/3/1 ranks) and checks. `PromptSuggestionProvider`, `GeminiSuggestion*`
+  and their fakes/tests are removed; the three example ids moved to `feature:editor` as
+  `ExampleSentence`.
+- The answer is one forced `propose_edit` envelope (observations, intent with typed constraints,
+  goals with source/scope, colour roles, workflow of the eight existing tools, limitations,
+  outcome). `ProposalDecoder` + `ProposalCheck` accept it **whole or not at all**
+  (`Invalid("unplannable:…")`), replacing §5's per-call drop rule; finite out-of-range values are
+  still clamped. A second crop is now a refusal, a single crop still moves last.
+- Data boundary: `core:ai` gets `PlanContext` (adjustments as final values, selection, crop) built by
+  `planContextOf(document)` in `feature:editor`; it never sees `EditDocument`. Values on the wire are
+  final settings (the old "relative strength" wording made "더 밝게" lower a raised exposure because
+  `withAdjust` replaces).
+- Execution boundary: the reviewed `PlanProposal.plan` is what `PlanRunner` runs — no re-plan, no
+  second runner, §9.1 `validate` still on arrival. `DirectProposals` (owned by `DirectController`)
+  pins each request to (rendered document, text, mode, context, settings generation) + a sequence,
+  invalidates on any change, caches only an identical snapshot, and `apply` re-checks the snapshot.
+- Model text appears only in the validated, capped plain-text fields under local section titles;
+  step lines remain local templates. Only outcome and step kinds are logged.
+
+Reason:
+The task asks for evaluation that keeps what was seen apart from what to want, honours named
+objects and hard constraints, and stays executable. Two planners would drift in policy; a separate
+recommendation id catalog could not express object scope. All-or-nothing acceptance is the only way a
+structural check means something: dropping one step silently changes the meaning of the rest.
+
+Consequences:
+- A masked step must follow its **own goal's** Select, so "선택 영역만 밝게" reusing a selection the
+  document already had is now refused by `ProposalCheck` (the model is told about the selection but
+  must re-select). Revisit if that request matters on device.
+- Real-model quality (whether Gemini's observations and constraint kinds are right) is not proven by
+  any test here; `PlanScenarioTest` only fixes the structure of acceptable/forbidden answers.
+- Goldens: `direct_suggest_loading`/`direct_suggest_tailored` removed; `direct_recommend_loading`,
+  `direct_recommend_review`, `direct_recommend_no_change` added; `direct_sheet_open` and
+  `direct_plan_preview` re-recorded. During review the example sentences hide so the review fits the
+  45% sheet.
+
+## D093 - Autographer visual system: light controls, dark canvas, overlay roles kept apart
+
+The Pinterest red / warm-dark visual rules are replaced by DESIGN.md's cool white, blue and glass
+sheet (2026-10-13 task). What the code settled that DESIGN.md left open:
+
+- **`ThemeMode.Edit` is not a dark theme.** Both modes use a light Material scheme; Edit differs only in
+  `AppColors.background` (`editBackground`, the canvas surround). `primary` is `primaryFill`, so stock
+  TextButton/Switch/TextField focus colours keep 4.5:1; the snackbar's inverse slots are
+  `editBackground` + `canvasOverlayInk`. `MainActivity` wraps everything in `AppTheme(Browse)` so the
+  export snackbar/dialog outside a screen's own theme never fall back to Material's default palette.
+- **Overlay roles are separate tokens.** Anything over the photo or a scrim uses `canvasOverlayInk`
+  (progress text, overlay cancel, crop/expand guides) or a dark/light pair (multishot guides, selection
+  points), never the controls' black `editInk`. A 40% scrim over a white photo leaves light text under
+  3:1, so overlay text carries `OverlayTextShadow`; crop/expand guides sit on a thin dark rim.
+- **Small blue/red text gets darker siblings.** `accent` and `error` miss 4.5:1 on the glass sheet, so
+  `linkText #1F57C7` and `errorText #B3261E` were added, chosen to hold 4.5:1 even where the 94% glass
+  sits over black (TokensTest asserts it).
+- **One shared `OptionChip`, `SecondaryPill`.** Every "one choice among several" control (crop presets,
+  merge mode, export, auto styles, style variants, multishot choices) is the light-blue selected chip
+  with selected semantics; the filled primary stays the sheet's 적용. Image tiles/swatches/thumbs show
+  selection as a blue ring instead, since a fill would sit under the picture; HSL swatches keep their
+  band colour.
+- **Heights are minimums.** Pills (48dp), the prompt bar (56dp) and the editor top bar (56dp) use
+  `heightIn(min)`, so large font scales grow them; the sheet's 45% cap is unchanged and content scrolls.
+- **The whole sheet blocks taps to the strip.** `EditSheet` is a single pointer-input hit target, so its
+  padding and the 취소/적용 gap no longer pass touches to the covered strip (REVIEW R1); its own controls
+  still react first. The re-tap-to-close rule applies only to an exposed tool (specs/editor_shell.md),
+  so `ToolSheetHostTest` checks it on the strip alone and `SheetCancelTest` taps the empty areas.
+- **System bars are fixed light-style (dark icons)**, independent of the OS dark setting; the tool strip's
+  surface runs under the transparent navigation bar.
+- **Goldens use the system font** in the existing Robolectric pin (Pixel6a, NATIVE, android-all 16,
+  fontScale 1.0); the bundled Pretendard file stays in resources unused.
+
 ## D092 - One tool menu for every photograph; 피부 보정 is no longer offered as a new edit
 
 Status: Accepted (2026-10-12, work/tasks.md 피부 보정·face detect 메뉴 분기 제거). Supersedes T79's

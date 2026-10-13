@@ -76,8 +76,9 @@ class SelectSheetTest {
         showSheet(SelectionState(mask = mask()))
 
         compose.onNodeWithText("적용").assertIsEnabled()
-        compose.onNodeWithTag(SelectInvertTestTag).performClick()
-        compose.onNodeWithTag(SelectClearTestTag).performClick()
+        // The sheet caps at 45% of the screen, so this row can start below the fold.
+        compose.onNodeWithTag(SelectInvertTestTag).performScrollTo().performClick()
+        compose.onNodeWithTag(SelectClearTestTag).performScrollTo().performClick()
         compose.onNodeWithText("적용").performClick()
 
         assertEquals(1, inverts)

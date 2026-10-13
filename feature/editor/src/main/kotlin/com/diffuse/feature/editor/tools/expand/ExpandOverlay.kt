@@ -10,6 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -22,6 +23,13 @@ import com.diffuse.feature.editor.canvas.LocalCanvasTransform
 /** specs/outpaint.md §6: four 24dp handles on the midpoint of each edge. */
 private val HandleLength = 24.dp
 private val HandleThickness = 3.dp
+
+/**
+ * DESIGN.md §2: `canvasOverlayInk` handles on a 1dp dark rim, the same pairing the crop guides
+ * use, so they read over a white photo and the dark checkerboard alike.
+ */
+private val HandleShade = Color.Black.copy(alpha = 0.45f)
+private val ShadeExtra = 1.dp
 
 /** DESIGN.md §5: a 48dp touch target, so a 24dp radius around each handle's centre. */
 private val HandleTouchRadius = 24.dp
@@ -86,8 +94,14 @@ private fun DrawScope.drawHandles(frame: Rect) {
     ExpandDrag.handleCenters(frame).forEach { (edge, center) ->
         val vertical = edge == ExpandEdge.Left || edge == ExpandEdge.Right
         val size = if (vertical) Size(thickness, length) else Size(length, thickness)
+        val rim = ShadeExtra.toPx()
         drawRect(
-            color = Tokens.editInk,
+            color = HandleShade,
+            topLeft = Offset(center.x - size.width / 2f - rim, center.y - size.height / 2f - rim),
+            size = Size(size.width + 2 * rim, size.height + 2 * rim),
+        )
+        drawRect(
+            color = Tokens.canvasOverlayInk,
             topLeft = Offset(center.x - size.width / 2f, center.y - size.height / 2f),
             size = size,
         )

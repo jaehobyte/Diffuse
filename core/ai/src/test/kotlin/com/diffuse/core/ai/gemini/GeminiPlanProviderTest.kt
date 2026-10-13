@@ -6,7 +6,8 @@ import android.graphics.Color
 import android.util.Base64
 import androidx.test.core.app.ApplicationProvider
 import com.diffuse.core.ai.Availability
-import com.diffuse.core.ai.EditPlan
+import com.diffuse.core.ai.PlanMode
+import com.diffuse.core.ai.PlanRequest
 import com.diffuse.core.ai.PlanStep
 import com.diffuse.core.common.AppError
 import com.diffuse.core.common.DispatcherProvider
@@ -89,12 +90,23 @@ class GeminiPlanProviderTest {
     // ---- the guard --------------------------------------------------------
 
     @Test
-    fun `a blank request fails before anything is encoded`() = runTest {
+    fun `a blank 지시 fails before anything is encoded`() = runTest {
         assertEquals(
             Result.Failure(AppError.Invalid("empty request")),
-            provider.plan(image(SIZE, SIZE), "   "),
+            provider.plan(image(SIZE, SIZE), PlanRequest("   ", PlanMode.Direct)),
         )
         assertEquals(0, server.requestCount)
+    }
+
+    /** §14: 보정 추천 needs no words — the photo alone is a valid question. */
+    @Test
+    fun `a blank recommendation is sent`() = runTest {
+        server.enqueue(planResponse(source = "default"))
+
+        val result = provider.plan(image(SIZE, SIZE), PlanRequest("", PlanMode.Recommend))
+
+        assertTrue(result is Result.Success)
+        assertEquals(1, server.requestCount)
     }
 
     // ---- the encoder, reused unchanged ------------------------------------
@@ -125,30 +137,25 @@ class GeminiPlanProviderTest {
     fun `the sentence reaches the model and the steps come back`() = runTest {
         server.enqueue(planResponse())
 
-        val plan = provider.plan(image(SIZE, SIZE), REQUEST)
+        val proposal = provider.plan(image(SIZE, SIZE), REQUEST)
 
         assertEquals(
-            Result.Success(
-                EditPlan(
-                    listOf(
-                        PlanStep.Select("나무"),
-                        PlanStep.Adjust(AdjustKind.Saturation, 0.3f, masked = true),
-                    ),
-                ),
+            listOf(
+                PlanStep.Select("tree"),
+                PlanStep.Adjust(AdjustKind.Saturation, 0.3f, masked = true),
             ),
-            plan,
+            (proposal as Result.Success).value.plan.steps,
         )
-        assertEquals(REQUEST, sentText())
+        assertEquals(REQUEST.text, sentText())
     }
 
+    /** §14: prose is nothing the app can run, and it is refused rather than read as "nothing". */
     @Test
-    fun `zero function calls is an empty plan, not a failure`() = runTest {
+    fun `zero function calls is refused, not an empty plan`() = runTest {
         server.enqueue(json("""{"candidates":[{"content":{"parts":[{"text":"I cannot."}]}}]}"""))
 
-        assertEquals(
-            Result.Success(EditPlan(emptyList())),
-            provider.plan(image(SIZE, SIZE), REQUEST),
-        )
+        val error = (provider.plan(image(SIZE, SIZE), REQUEST) as Result.Failure).error
+        assertTrue((error as AppError.Invalid).detail.startsWith(GeminiPlanClient.UNPLANNABLE_PREFIX))
     }
 
     @Test
@@ -180,13 +187,17 @@ class GeminiPlanProviderTest {
     }
 
     private fun sentText(): String =
-        sentParts(sentBody())[1].jsonObject["text"]!!.jsonPrimitive.content
+        sentParts(sentBody())[2].jsonObject["text"]!!.jsonPrimitive.content
 
-    private fun planResponse() = json(
+    private fun planResponse(source: String = "user") = json(
         """
         {"candidates":[{"content":{"parts":[
-          {"functionCall":{"name":"select_region","args":{"phrase":"나무"}}},
-          {"functionCall":{"name":"adjust","args":{"kind":"saturation","value":0.3}}}
+          {"functionCall":{"name":"propose_edit","args":{"outcome":"ready",
+            "goals":[{"id":"g1","text":"나무를 더 푸르게","source":"$source","scope":"subject"}],
+            "workflow":[
+              {"tool":"select_region","goal_id":"g1","args":{"phrase":"tree"}},
+              {"tool":"adjust","goal_id":"g1","args":{"kind":"saturation","value":0.3}}
+            ]}}}
         ]}}]}
         """.trimIndent(),
     )
@@ -203,7 +214,7 @@ class GeminiPlanProviderTest {
 
     private companion object {
         const val API_KEY = "AIza-test-key"
-        const val REQUEST = "나무를 좀 더 푸르게 해줘"
+        val REQUEST = PlanRequest("나무를 좀 더 푸르게 해줘", PlanMode.Direct)
         const val SIZE = 64
     }
 }

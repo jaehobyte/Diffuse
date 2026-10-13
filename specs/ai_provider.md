@@ -122,10 +122,14 @@ same reason `Adjust` carries `AdjustKind` (§2): the plan model must be able to 
 It maps to `AspectPreset` at the `feature:editor` boundary; `core:ai` does not reach for crop
 geometry.
 
-`PromptSuggestionProvider.suggest(image): Result<List<PromptSuggestionId>>` (vibe_edit.md §14) is
-read-only: it returns at most three catalog ids from distinct groups, an empty list meaning
-"nothing fits", and never a plan. `PromptSuggestionId` carries an `AdjustKind`/`StyleId` capability
-for checking only, under §2's existing `AdjustKind` edge.
+`EditPlanProvider.plan(image, PlanRequest): Result<PlanProposal>` (vibe_edit.md §7, §14) serves both
+보정 추천 (`PlanMode.Recommend`, text may be empty) and a sent 지시 (`PlanMode.Direct`). `PlanRequest`
+carries the text verbatim and a pure `PlanContext` (current adjustments as final values, selection,
+crop) built in `feature:editor`, so `core:ai` never reads an `EditDocument`. `PlanProposal` keeps
+observations, intent, goals, colour roles, workflow (`WorkflowStep` = `PlanStep` + goal id + effect
+/caution), limitations and an outcome (`Ready`/`NoChange`/`NeedsClarification`/`Unsupported`) apart. A
+response that fails decoding or the proposal checks is `Invalid("unplannable:…")`, refused whole.
+The separate `PromptSuggestionProvider` and its Gemini client were removed (D094).
 
 `EraseProvider` says nothing about *how* the hole is described to a model. Painting the masked
 region white is `GeminiEraseProvider`'s private business (generative_erase.md §4), so swapping the
@@ -176,15 +180,12 @@ backend under this interface leaves `EraseController` and `FakeEraseProvider` un
 `FakeEraseProvider`: fills the mask region with the mean color of the pixels in a 4px band just
 outside the mask. Deterministic, so goldens are stable.
 
-`FakePlanProvider`: `availability = Ready`; `next(plan)` sets what the following call returns and
-`failNext(error)` makes it fail. The default plan is
-`EditPlan(listOf(Select("나무"), Adjust(Saturation, 0.3f, masked = true)))` — the request vibe_edit.md
-was specified from, so the goldens read as that story.
-
-`FakePromptSuggestionProvider` (vibe_edit.md §14): returns lift_shadows, warm, vivid_color unless
-`next(ids)`/`failNext(error)` override the following call; `hold(ignoreCancellation)`/`release()`
-park a call so tests can prove late answers are dropped. `FakePlanProvider.hold()/release()` does
-the same for a plan.
+`FakePlanProvider`: `availability = Ready`; `next(proposal)` (or `next(plan)`, wrapped as a ready
+proposal with one requested whole-photo goal) sets what the following call returns and
+`failNext(error)` makes it fail; `lastRequest`/`lastImage` record what was asked. The default is
+`DEFAULT_PROPOSAL`, whose plan is `Select("나무"), Adjust(Saturation, 0.3f, masked = true)` — the
+request vibe_edit.md was specified from. `hold(ignoreCancellation)`/`release()` park a call so tests
+can prove late answers are dropped.
 
 No test reaches an external host. The `Sam3Client`, `GeminiEraseClient` and `GeminiPlanClient`
 tests use `MockWebServer` on localhost; all three take their base URL as a constructor seam, which
@@ -197,7 +198,6 @@ abstract class AiModule {
     @Binds abstract fun seg(impl: Sam3SegmentationProvider): SegmentationProvider
     @Binds abstract fun erase(impl: GeminiEraseProvider): EraseProvider
     @Binds abstract fun plan(impl: GeminiPlanProvider): EditPlanProvider
-    @Binds abstract fun promptSuggestion(impl: GeminiSuggestionProvider): PromptSuggestionProvider
 }
 ```
 Tests replace it with `@TestInstallIn` binding the fakes.

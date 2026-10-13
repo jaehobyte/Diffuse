@@ -38,10 +38,16 @@ internal fun ThemeSwatches() {
             swatches = listOf(
                 "accent" to Tokens.accent,
                 "accentPressed" to Tokens.accentPressed,
+                "primaryFill" to Tokens.primaryFill,
                 "onAccent" to Tokens.onAccent,
+                "selectionFill" to Tokens.selectionFill,
+                "selectionBorder" to Tokens.selectionBorder,
+                "promptTint" to Tokens.promptTint,
                 "success" to Tokens.success,
                 "warning" to Tokens.warning,
                 "error" to Tokens.error,
+                "linkText" to Tokens.linkText,
+                "errorText" to Tokens.errorText,
             ),
         )
 
@@ -56,29 +62,35 @@ internal fun ThemeSwatches() {
                     "hairline" to Tokens.hairline,
                     "ink" to Tokens.ink,
                     "inkSecondary" to Tokens.inkSecondary,
+                    "inkMuted" to Tokens.inkMuted,
                 ),
             )
         }
 
         AppTheme(ThemeMode.Edit) {
-            SwatchGroup(
-                title = "Edit",
-                swatches = listOf(
-                    "editBackground" to Tokens.editBackground,
-                    "editSurface" to Tokens.editSurface,
-                    "editSurfaceRaised" to Tokens.editSurfaceRaised,
-                    "editHairline" to Tokens.editHairline,
-                    "editInk" to Tokens.editInk,
-                    "editInkSecondary" to Tokens.editInkSecondary,
-                    "canvasCheckerA" to Tokens.canvasCheckerA,
-                    "canvasCheckerB" to Tokens.canvasCheckerB,
-                ),
-            )
+            SwatchGroup(title = "Edit", swatches = EditSwatches)
         }
 
         TypeScale()
     }
 }
+
+private val EditSwatches = listOf(
+    "editBackground" to Tokens.editBackground,
+    "editSurface" to Tokens.editSurface,
+    "editSurfaceRaised" to Tokens.editSurfaceRaised,
+    "editHairline" to Tokens.editHairline,
+    "editInk" to Tokens.editInk,
+    "editInkSecondary" to Tokens.editInkSecondary,
+    "canvasOverlayInk" to Tokens.canvasOverlayInk,
+    "canvasCheckerA" to Tokens.canvasCheckerA,
+    "canvasCheckerB" to Tokens.canvasCheckerB,
+    "sheetGlassTop" to Tokens.sheetGlassTop,
+    "sheetGlassBottom" to Tokens.sheetGlassBottom,
+    "sheetEdge" to Tokens.sheetEdge,
+    "sheetHandle" to Tokens.sheetHandle,
+    "pillStatus" to Tokens.pillStatus,
+)
 
 private const val SWATCHES_PER_ROW = 4
 
@@ -127,6 +139,8 @@ private fun TypeScale() {
         "bodyStrong" to Typography.bodyStrong,
         "bodySm" to Typography.bodySm,
         "label" to Typography.label,
+        "labelSmall" to Typography.labelSmall,
+        "link" to Typography.link,
         "mono" to Typography.mono,
     )
     Column(

@@ -32,6 +32,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.unit.dp
 import com.diffuse.core.data.ProjectSummary
+import com.diffuse.core.ui.theme.Dimens
 import com.diffuse.core.ui.theme.LocalAppColors
 import com.diffuse.core.ui.theme.Typography
 
@@ -88,7 +89,8 @@ fun BrowseTile(
             thumbnail()
             if (showActions) {
                 Row(
-                    modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
+                    // The 48dp targets carry 4dp of their own margin around the 40dp circles.
+                    modifier = Modifier.align(Alignment.TopEnd).padding(4.dp),
                     action = {
                         IconCircle(
                             icon = Icons.Rounded.ContentCopy,
@@ -118,11 +120,11 @@ fun BrowseTile(
 private fun Row(modifier: Modifier, action: @Composable () -> Unit) {
     androidx.compose.foundation.layout.Row(
         modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(0.dp),
     ) { action() }
 }
 
-/** DESIGN.md §4: 40dp circle over a photo, black at 60%. */
+/** DESIGN.md §4: a 40dp circle over a photo, black at 60%, inside a 48dp touch target. */
 @Composable
 private fun IconCircle(
     icon: ImageVector,
@@ -134,13 +136,20 @@ private fun IconCircle(
     Box(
         modifier = Modifier
             .testTag(testTag)
-            .size(IconCircleSize)
+            .size(Dimens.touchTarget)
             .clip(CircleShape)
-            .background(Color.Black.copy(alpha = ICON_CIRCLE_SCRIM))
             .clickable(role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(imageVector = icon, contentDescription = label, tint = Color.White)
+        Box(
+            modifier = Modifier
+                .size(IconCircleSize)
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = ICON_CIRCLE_SCRIM)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(imageVector = icon, contentDescription = label, tint = Color.White)
+        }
     }
 }
 

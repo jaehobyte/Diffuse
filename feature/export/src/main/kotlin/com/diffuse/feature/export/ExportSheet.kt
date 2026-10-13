@@ -1,28 +1,21 @@
 package com.diffuse.feature.export
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.diffuse.core.ui.components.EditSheet
+import com.diffuse.core.ui.components.OptionChip
 import com.diffuse.core.ui.theme.LocalAppColors
-import com.diffuse.core.ui.theme.Tokens
 import com.diffuse.core.ui.theme.Typography
 
-private val ChipHeight = 32.dp
-private val ChipRadius = 16.dp
 private val RowSpacing = 8.dp
 private val SectionSpacing = 4.dp
 
@@ -85,23 +78,18 @@ private fun <T> ChipSection(
             style = Typography.label,
             color = colors.inkSecondary,
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(RowSpacing)) {
+        // The 48dp chips and a larger font scale can outgrow a phone's width, so the row scrolls.
+        Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(RowSpacing),
+        ) {
             options.forEach { option ->
                 val label = stringResource(labelOf(option))
-                val isSelected = option == selected
-                Text(
+                OptionChip(
                     text = label,
-                    style = Typography.label,
-                    color = if (isSelected) Tokens.onAccent else colors.ink,
-                    modifier = Modifier
-                        .testTag(chipTag(label))
-                        .height(ChipHeight)
-                        .background(
-                            color = if (isSelected) Tokens.accent else colors.surfaceRaised,
-                            shape = RoundedCornerShape(ChipRadius),
-                        )
-                        .clickable(role = Role.RadioButton) { onSelect(option) }
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    selected = option == selected,
+                    onClick = { onSelect(option) },
+                    modifier = Modifier.testTag(chipTag(label)),
                 )
             }
         }

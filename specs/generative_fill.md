@@ -150,13 +150,13 @@ max 45%):
 ```
 채우기                                          headingLg
 [ 🎤   무엇으로 채울까요? 예: 빨간 우산       ➤ ]   VoicePromptBar, prompt_input.md §2–§3
-                                    [취소 | 적용]  Apply is the sheet's one accent
+                                    [취소 | 적용]  Apply is the sheet's one filled primary
 ```
 
 - The bar is `VoicePromptBar` with the §7 placeholder, through the `placeholder` parameter T48
   added. The three prompt-bar goldens must pass **without re-recording**.
 - 적용 is disabled while the prompt is blank (`EditSheet.applyEnabled`, already a parameter).
-- The send icon stays `editInk`. **The sheet's one accent is 적용** — DESIGN.md §4's prompt-bar
+- The send icon stays neutral. **The sheet's one filled primary is 적용** — DESIGN.md §4's prompt-bar
   rule, so every sheet commits the same way. Submitting from the IME Done key does what 적용 does.
 - While the call is in flight the progress overlay shows `fill_working` with a cancel button
   (DESIGN.md §7). Cancelling leaves the document byte-for-byte untouched, as 지우기 promises.

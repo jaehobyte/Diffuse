@@ -1,7 +1,6 @@
 package com.diffuse.feature.editor.tools.crop
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -9,10 +8,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.RotateLeft
 import androidx.compose.material.icons.rounded.RotateRight
@@ -21,14 +17,17 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.diffuse.core.ui.components.AdjustSlider
 import com.diffuse.core.ui.components.EditSheet
+import com.diffuse.core.ui.components.OptionChip
+import com.diffuse.core.ui.theme.Dimens
 import com.diffuse.core.ui.theme.LocalAppColors
-import com.diffuse.core.ui.theme.Tokens
+import com.diffuse.core.ui.theme.Shapes
 import com.diffuse.core.ui.theme.Typography
 import com.diffuse.feature.editor.R
 import java.util.Locale
@@ -121,22 +120,8 @@ fun CropSheet(
 
 @Composable
 private fun PresetChip(preset: AspectPreset, selected: Boolean, onClick: () -> Unit) {
-    val colors = LocalAppColors.current
     val label = stringResource(presetLabelRes(preset))
-    Text(
-        text = label,
-        style = Typography.label,
-        color = if (selected) Tokens.onAccent else colors.ink,
-        modifier = Modifier
-            .testTag(label)
-            .height(32.dp)
-            .background(
-                color = if (selected) Tokens.accent else colors.surfaceRaised,
-                shape = RoundedCornerShape(16.dp),
-            )
-            .clickable(role = Role.RadioButton, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-    )
+    OptionChip(text = label, selected = selected, onClick = onClick, modifier = Modifier.testTag(label))
 }
 
 @Composable
@@ -147,11 +132,13 @@ private fun RotateButton(
     icon: @Composable (contentDescription: String) -> Unit,
 ) {
     val colors = LocalAppColors.current
+    // DESIGN.md §4: a secondary action, so the round `surfaceSecondary` fill of a secondary pill.
     Column(
         modifier = Modifier
             .testTag(testTag)
-            .size(48.dp)
-            .border(1.dp, colors.hairline, RoundedCornerShape(16.dp))
+            .size(Dimens.touchTarget)
+            .clip(Shapes.pill)
+            .background(colors.surfaceSecondary)
             .clickable(role = Role.Button, onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,

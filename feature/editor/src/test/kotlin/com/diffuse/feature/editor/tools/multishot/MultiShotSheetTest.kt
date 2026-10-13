@@ -9,6 +9,7 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasAnyChild
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasTestTag
@@ -17,8 +18,10 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTextReplacement
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.diffuse.core.imaging.model.ImageRef
@@ -28,6 +31,7 @@ import com.diffuse.core.imaging.model.TimelineArrangement
 import com.diffuse.core.imaging.model.Shot
 import com.diffuse.core.imaging.model.ShotPlacement
 import com.diffuse.core.ui.components.EditSheetTestTag
+import com.diffuse.core.ui.components.PromptFieldTestTag
 import com.diffuse.feature.editor.EditorScreen
 import com.diffuse.feature.editor.R
 import com.diffuse.feature.editor.Tool
@@ -37,6 +41,7 @@ import com.diffuse.feature.editor.ToolStripTestTag
 import com.diffuse.feature.editor.canvas.testImage
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -341,7 +346,89 @@ class MultiShotSheetTest {
         compose.onNodeWithTag(MultiShotSheetTestTag).assertExists()
     }
 
+    // ---- 추출 대상 직접 입력 (tasks.md 2026-10-13) ----------------------------------------------
+
+    @Test
+    fun `the free layout's target is offered before its press, editable, and its key is the press`() {
+        show(picked(MultiShotMode.Free))
+
+        targetField().performScrollTo().assert(hasText(MultiShotController.PERSON)).assertIsEnabled()
+        compose.onNodeWithText(string(R.string.multishot_target_label)).assertExists()
+        compose.onNodeWithText(string(R.string.multishot_target_hint)).assertExists()
+        targetField().performTextReplacement("dog")
+        targetField().performImeAction()
+        compose.onNodeWithTag(MultiShotExtractTestTag).performScrollTo().assertIsEnabled()
+        assertEquals(listOf("target:dog", "extract"), calls)
+    }
+
+    @Test
+    fun `the time layout's target is offered with the run and a blank one blocks it`() {
+        var state by mutableStateOf(picked(MultiShotMode.Timeline))
+        compose.setContent { MultiShotSheet(state, actions()) }
+        targetField().performScrollTo().assert(hasText(MultiShotController.PERSON)).assertIsEnabled()
+        compose.onNodeWithTag(MultiShotRunTestTag).performScrollTo().assertIsEnabled()
+
+        state = picked(MultiShotMode.Timeline).copy(target = "  ")
+        compose.onNodeWithText(string(R.string.multishot_target_needed)).assertExists()
+        compose.onNodeWithTag(MultiShotRunTestTag).performScrollTo().assertIsNotEnabled()
+
+        state = picked(MultiShotMode.Free).copy(target = "")
+        calls.clear()
+        compose.onNodeWithText(string(R.string.multishot_target_needed)).assertExists()
+        compose.onNodeWithTag(MultiShotExtractTestTag).performScrollTo().assertIsNotEnabled()
+        targetField().performImeAction()
+        assertEquals("a blank target is not sent", emptyList<String>(), calls)
+    }
+
+    @Test
+    fun `a run locks the target but not the photo's own phrase, and says what a new target reaches`() {
+        show(
+            timedHero().copy(
+                items = listOf(ShotItem("a", ShotStatus.Ready), ShotItem("b", ShotStatus.Selecting)),
+                selectedKey = "b",
+                panel = TimelinePanel.Photos,
+                candidateCount = 2,
+                target = "dog",
+                run = RunProgress(step = 2, total = 2, phase = RunPhase.Choosing),
+            ),
+        )
+
+        targetField().performScrollTo().assert(hasText("dog")).assertIsNotEnabled()
+        compose.onNode(hasTestTag(PromptFieldTestTag) and hasAnyAncestor(hasTestTag(MultiShotTargetTestTag)).not())
+            .performScrollTo().assertIsEnabled()
+        compose.onNodeWithText(string(R.string.multishot_target_scope)).assertExists()
+    }
+
+    @Test
+    fun `nothing found is said without naming a person`() {
+        show(
+            picked(MultiShotMode.Free).copy(
+                items = listOf(ShotItem("a", ShotStatus.Selecting, problem = R.string.multishot_not_found)),
+                target = "car",
+            ),
+        )
+
+        val notFound = string(R.string.multishot_not_found)
+        compose.onNodeWithTag(MultiShotStatusTestTag).assert(hasText(notFound))
+        assertFalse(notFound.contains("사람"))
+        compose.onNodeWithTag(MultiShotFinishTestTag).performScrollTo().assertIsNotEnabled()
+    }
+
     // ---- fixtures ------------------------------------------------------------------------------
+
+    /** One added photo, read and not yet sent, in [mode]. */
+    private fun picked(mode: MultiShotMode) = MultiShotState(
+        open = true,
+        mode = mode,
+        items = listOf(ShotItem("a", ShotStatus.Picked)),
+        timeOrder = listOf("a"),
+        hero = ShotItem(MultiShotState.HERO_KEY, ShotStatus.Picked).takeIf { mode == MultiShotMode.Timeline },
+        selectedKey = "a",
+        serverHost = HOST,
+    )
+
+    private fun targetField() =
+        compose.onNode(hasTestTag(PromptFieldTestTag) and hasAnyAncestor(hasTestTag(MultiShotTargetTestTag)))
 
     private fun arranged() = MultiShotState(
         open = true,
@@ -414,6 +501,7 @@ class MultiShotSheetTest {
         onSpacingChange = { calls += "spacing" },
         onDirectionChange = { calls += "direction:${it.toInt()}" },
         onAnchorEditingChange = { calls += "anchor:$it" },
+        onTargetChange = { calls += "target:$it" },
     )
 
     private fun context() = ApplicationProvider.getApplicationContext<android.content.Context>()

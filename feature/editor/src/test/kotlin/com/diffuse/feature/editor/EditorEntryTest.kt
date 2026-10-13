@@ -148,7 +148,6 @@ class EditorEntryTest {
             MonetSettings(ApplicationProvider.getApplicationContext()),
             FakeAutoEnhanceProvider(),
             FakeMatchStyleProvider(),
-            com.diffuse.core.ai.FakePromptSuggestionProvider(),
         ),
         dispatchers = TestDispatchers,
         savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),

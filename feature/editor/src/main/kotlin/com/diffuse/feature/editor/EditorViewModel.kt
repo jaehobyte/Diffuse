@@ -252,7 +252,6 @@ class EditorViewModel @Inject constructor(
                 }
             }
         },
-        suggestionProvider = ai.promptSuggestion,
         settingsChanges = ai.geminiSettings.config,
     )
 
@@ -379,22 +378,22 @@ class EditorViewModel @Inject constructor(
         viewModelScope.launch {
             direct.state.collect { _uiState.value = _uiState.value.copy(direct = it) }
         }
-        // specs/vibe_edit.md §14: a suggestion may only be asked of a frame rendered from the
-        // document on screen — never an older render, nor one a failed render left behind.
+        // specs/vibe_edit.md §14: a plan may only be asked of a frame rendered from the document
+        // on screen — never an older render, nor one a failed render left behind.
         viewModelScope.launch {
             _uiState.map { state ->
                 state.document to state.preview?.takeIf { state.renderedDocument == state.document }
             }
                 .distinctUntilChanged()
                 .collect { (document, preview) ->
-                    direct.suggestions.onCanvas(document, preview?.asAndroidBitmap())
+                    direct.onCanvas(document, preview?.asAndroidBitmap())
                 }
         }
         // §14: closing the sheet, a finished run or another tool ends the session's request.
         viewModelScope.launch {
             _uiState.map { it.selectedTool == Tool.Direct }
                 .distinctUntilChanged()
-                .collect { open -> if (!open) direct.suggestions.endSession() }
+                .collect { open -> if (!open && !direct.state.value.running) direct.close() }
         }
     }
 

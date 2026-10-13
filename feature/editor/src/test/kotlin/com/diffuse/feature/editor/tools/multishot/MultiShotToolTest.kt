@@ -105,6 +105,21 @@ class MultiShotToolTest {
     }
 
     @Test
+    fun `a target typed in one sheet is gone after 취소, and the stored composite does not extract`() = runTest {
+        val viewModel = viewModel()
+        viewModel.onToolClick(Tool.MultiShot)
+        viewModel.multiShot.setMode(MultiShotMode.Free)
+        viewModel.multiShot.setTarget("dog")
+        assertEquals("dog", viewModel.uiState.value.multiShot.target)
+
+        viewModel.cancelSheet()
+        viewModel.onToolClick(Tool.MultiShot)
+
+        assertEquals(MultiShotController.PERSON, viewModel.uiState.value.multiShot.target)
+        assertEquals(0, segmentation.openCount)
+    }
+
+    @Test
     fun `적용 is one history step, and undo and redo move exactly it`() = runTest {
         val viewModel = viewModel()
         val entry = viewModel.uiState.value.document!!
@@ -269,7 +284,6 @@ class MultiShotToolTest {
             MonetSettings(context),
             FakeAutoEnhanceProvider(),
             FakeMatchStyleProvider(),
-            com.diffuse.core.ai.FakePromptSuggestionProvider(),
         ),
         dispatchers = TestDispatchers,
         savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),

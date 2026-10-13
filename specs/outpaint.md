@@ -148,7 +148,8 @@ Error mapping is generative_erase.md §6, row for row. **No new `AppError` case.
 - The photo shrinks to leave room, and the pending margins are drawn as `editBackground` with the
   8dp `canvasCheckerA`/`canvasCheckerB` pattern DESIGN.md §2 already defines for transparency — this area has no
   pixels yet, and the checkerboard is the app's existing word for that.
-- Four edge handles, 24dp, `editInk`, on the midpoint of each edge. **They drag outward only**; an
+- Four edge handles, 24dp, `canvasOverlayInk` on a 1dp dark rim (so they read over a white photo
+  and the dark checkerboard alike), on the midpoint of each edge. **They drag outward only**; an
   inward drag clamps at 0. Shrinking is 자르기's job and the two tools do not overlap.
 - Dragging past `MAX_MARGIN_FRACTION` stops at it. No rubber-band, no snap.
 - Touch targets 48dp (DESIGN.md §5), and a drag outside a handle pans the canvas, exactly as the
@@ -158,7 +159,7 @@ Error mapping is generative_erase.md §6, row for row. **No new `AppError` case.
 ```
 확대                                            headingLg
 비율  4:3 → 9:16                                 mono, right-aligned  (§7)
-                                    [취소 | 적용]  Apply is the sheet's one accent
+                                    [취소 | 적용]  Apply is the sheet's one filled primary
 ```
 - The ratio readout is `mono`, DESIGN.md §3's role for "pixel coordinates, file size, HEX values" —
   a computed number, not prose.

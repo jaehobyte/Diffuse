@@ -533,11 +533,12 @@ private fun MultiShotToolSheet(state: EditorUiState, viewModel: EditorViewModel)
             onStrengthChange = multiShot::setStrength,
             onAnchorEditingChange = multiShot::setAnchorEditing,
             onReselectHero = multiShot::reselectHero,
+            onTargetChange = multiShot::setTarget,
         ),
     )
 }
 
-/** specs/vibe_edit.md §3: the bar, the step list, and [취소 | 적용] with 적용 the one accent. */
+/** specs/vibe_edit.md §3: the bar, the step list, and [취소 | 적용], 적용 the filled primary. */
 @Composable
 private fun DirectToolSheet(state: EditorUiState, viewModel: EditorViewModel) {
     DirectSheet(
@@ -559,9 +560,9 @@ private fun DirectToolSheet(state: EditorUiState, viewModel: EditorViewModel) {
             DirectSuggestionArea(
                 state = state.direct,
                 speech = viewModel.speech,
-                onFind = viewModel.direct.suggestions::find,
-                onCancel = viewModel.direct.suggestions::cancel,
-                onHide = viewModel.direct.suggestions::hide,
+                onRecommend = viewModel.direct::recommend,
+                onCancel = viewModel.direct::cancelRecommendation,
+                onHide = viewModel.direct::hideExamples,
                 onPick = viewModel.direct::pickSuggestion,
             )
         },

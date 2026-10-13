@@ -1,5 +1,259 @@
 # Result
 
+## 기기 설치·서버 운영 확인 (2026-10-13)
+
+- 현재 소스로 `./gradlew --offline --quiet :app:assembleDebug` 성공 후 ADB 15039의 SM-S948N에 업데이트 설치·실행 완료. 기존 앱 데이터 유지.
+- 로컬 서버 주소·인증 토큰과 Gemini 키를 기기 설정에 저장하고 값 일치를 확인했다. 인증값은 저장소에 추가하지 않았다.
+- SAM3·MonetGPT 기기 health 200 확인 후 실제 사용자 추출에서 SAM3 CUDA OOM 발생. 두 모델 동시 상주 시 메모리가 부족했으며, health 성공은 추론 성공을 보장하지 않았다.
+- MonetGPT 추론 프로세스를 중지하여 SAM3 메모리 확보. 공개 테스트 fixture `truck.jpg`로 실제 SAM3 이미지 업로드 201 → `truck` 추출 200(마스크 1개) → 세션 삭제 204 확인.
+- 현재 SAM3는 실행 중이고 자동 보정(MonetGPT)은 중지 상태. SAM3 외부 8090 → 내부 18091(기존 8091은 다른 프로세스가 사용)로 연결한다.
+- 실행은 임시 사용자 systemd 서비스 및 `/tmp` 설정을 사용했다. 재부팅 후 자동 복구를 구성한 것은 아니다. Gemini 실제 API 호출과 멀티샷 5장 전체 시나리오는 이번 설치 작업에서 검증하지 않았다.
+- 푸시 전 `scripts/check.sh` 재실행 exit 0, `git diff --cached --check` 통과. 최초 샌드박스 실행은 Gradle 캐시 쓰기 제한으로 차단되어 권한 승인 후 재실행했다. 스테이징 내용에 로컬 인증값이 포함되지 않았음을 확인했다.
+- 기존 보정 추천 리뷰 R1~R3는 미해결 상태로 유지한다.
+
+## 멀티샷 추가 5장·추출 대상 직접 입력 (2026-10-13, work/tasks.md)
+
+### Status
+
+PARTIAL — 추출 대상 입력(요구 5·6) 구현과 자동 검사 완료. 5장 경로는 현재 소스에서 정상이며 상한 변경 없음.
+실기기 검증(3장 제한 재현, picker 실제 반환, 실제 SAM3 `dog`/`car` 추출)은 기기 offline으로 **환경 차단**.
+
+### 3장 제한 조사 (요구 1)
+
+- 현재 소스: `MAX_SHOTS = 5`(`Operation.kt`) → `MultiShotState.MAX_ITEMS`, `canAddPhoto`, `requestPick`
+  (시간 순서: `5 − items.size`, 자유/교체: 1), `onPicked`(초과 전체 거절), route의
+  `PickMultipleVisualMedia(room)`/단일 picker 분기 모두 5장으로 일치. 현재 소스에서 3장 제한은 **재현되지 않음**.
+- 이력: `MAX_SHOTS`는 squash 커밋 70da3dc(2026-10-02) 하나에 들어왔고, 그 RESULT 기록에 개발 중 `MAX_SHOTS = 4` 단계와
+  컨트롤러 KDoc의 "one or two added photographs"(초기 2장) 흔적이 있다. 사용자가 관찰한 한도는 그 이전 빌드가 설치된
+  기기일 가능성이 있으나, 설치 APK 버전·기존 추가 장수(예: 2장 보유 시 남은 3자리)를 기기에서 확인하지 못해 **원인 미확정**.
+- 기기: `adb devices` → `127.0.0.1:15039 offline`, 재연결 실패. 설치 앱 식별·picker 허용/반환 수 기록 불가.
+  현재 소스 APK는 `app/build/outputs/apk/debug/app-debug.apk`(`:app:assembleDebug` 이번 세션 재빌드)로 재설치 후 재검증 필요.
+- 상수·상한은 바꾸지 않았다. 확인된 빈틈(3+2 경계, 만석 교체, 삭제 후 재추가, 자유 배치 누적 5장)만 controller 테스트로 보강.
+
+### Changed
+
+- **추출 대상**: `MultiShotState.target`(기본 `person`, 세션 소유, JSON/DB 미저장), `hasTarget`, `targetEditable`.
+  `MultiShotController.setTarget` — 실행 중·후보 대기 중(`run != null`)에는 무시. 입력만으로 업로드/질의 없음.
+- **질의**: `findPerson` → `findTarget(…, target)`. 자유 배치 `extract()`는 누를 때 `target.trim()` 고정, 시간 순서 배치는
+  `Run(target)` 객체에 고정해 주인공+미완료 추가 사진 전부와 후보 대기 후 재개에 같은 값 사용.
+- **공백**: `canExtract`, (추출이 남은) `canRun`이 공백 대상에서 false. 모두 추출된 상태의 배치 전용 실행은 허용.
+- **대상 변경 범위**: 저장된 피사체/주인공은 유지. 열린 SAM3 세션이 기억하는 `segTarget`이 실행 대상과 다르면 그 사진을 새로
+  업로드·질의(이전 후보 재사용 금지). 늦은 응답은 기존 request token으로 폐기.
+- **UI**: `TargetRows`(라벨 "추출 대상" + 기존 `PromptBar` + 힌트 "기본값은 person… (예: dog, car)"). 자유 배치는 피사체 추출 위,
+  시간 순서 배치는 실행 pill 행 아래(추출이 남았을 때). IME 완료 = 해당 실행. 공백 시 "추출할 대상을 입력해 주세요",
+  일부 완료 시 "바꾼 대상은 아직 추출하지 않은 사진에만 적용돼요…". 실행 중 대상 입력 비활성, 사진별 `추가할 대상`/점 선택은 유지.
+- **문구**: `multishot_not_found` → "대상을 찾지 못했어요. 사진을 탭하거나 추가할 대상을 입력해 직접 골라 주세요". 장수 문구는 그대로.
+- **문서**: `specs/multishot.md` §2(Extraction target 항목 추가, Extraction 문구), §2.1 run 질의; `work/decisions.md` D095(D090 확장).
+
+### Files
+
+- main: `feature/editor/.../tools/multishot/{MultiShotController,MultiShotState,MultiShotSheet}.kt`, `EditorRoute.kt`(`onTargetChange` 연결 1줄),
+  `res/values/strings.xml`(대상 문구 5개 추가, not_found 수정)
+- test: `MultiShotControllerTest`(fake `queued` 대상 추가 + 5장 경계 2개 + 대상 10개), `MultiShotSheetTest`(UI 4개), `MultiShotToolTest`(재진입 초기화 1개)
+- docs: `specs/multishot.md`, `work/decisions.md`, `work/RESULT.md`
+- goldens: 변경 없음(대상 행은 캡처된 상태에서 45% 시트의 보이는 영역 밖; `verifyRoborazziDebug` 통과)
+
+### Validation
+
+- `./gradlew --offline --quiet :feature:editor:testDebugUnitTest --tests '*MultiShot*'` — exit 0 (Controller 76, Sheet 21, Tool 8, Golden 4; 실패 0)
+- `./gradlew --offline --quiet :core:imaging:testDebugUnitTest --tests '*MultiShot*'` — exit 0
+- `./gradlew --offline --quiet :core:data:testDebugUnitTest --tests '*MultiShot*'` — exit 0
+- `./gradlew --offline --quiet :app:assembleDebug` — exit 0
+- `:feature:editor:verifyRoborazziDebug --tests '*MultiShotGoldenTest*'` — exit 0
+- `scripts/check.sh` — 1차 exit 1(detekt `LongMethod`: `RunRows` 61줄, 이번 변경 원인) → 대상 행 호출을 `TimelineContent`로 옮긴 뒤 **exit 0** (lint, detekt, 전체 testDebugUnitTest, verifyRoborazziDebug, dependencyGuard)
+- `git diff --check` — exit 0
+- 실기기: **미실행(환경 차단: adb device offline)**. 기본 `person`/`dog`·`car` 실제 SAM3 추출, 5장 선택→추출→적용→Undo/Redo→재열기→내보내기,
+  3+2/4+1, 만석 차단·교체·삭제 후 재추가, 키보드 접근성은 모두 미확인.
+
+### Review Notes
+
+- 실행 중 대상 잠금은 `run != null` 기준. 자유 배치 단일 추출 중(working)에는 입력이 열려 있으나 값은 누를 때 고정되어 진행 요청에 섞이지 않는다(테스트로 확인).
+- 후보 대기 중 실행을 취소하고 대상을 바꾸면, 열린 선택은 다음 실행에서 새 대상으로 재업로드된다. 자유 배치에서 열린 선택에
+  사용자가 직접 `추출 완료`를 누르는 것은 화면에 보이는 마스크에 대한 명시적 선택이므로 막지 않았다.
+- picker 연결(`EditorRoute.MultiShotToolSheet`의 `PickMultipleVisualMedia(room)`/단일 분기)은 코드 확인만 했고 자동 테스트나 기기로
+  시스템 picker 실제 허용 수를 검증하지 않았다. controller 테스트는 `requestPick.max`까지만 검증한다.
+- 시간 순서 배치에서 대상 입력은 실행 pill 아래에 둔다(기존 실행 버튼 위치·테스트 유지). 시트는 스크롤되므로 IME 완료 키로도 실행에 도달한다.
+
+### Known Issues
+
+- 3장 제한의 실제 원인 미확정(기기 offline). 현재 소스 APK 재설치 후 빈 시간 순서 배치에서 5장 선택을 확인해야 한다.
+- 실제 SAM3의 사용자 대상(`dog`, `car`, 한국어) 추출 품질은 미검증; fake 통과는 호출 인자만 보장한다.
+- 이전 미해결(보정 추천 REVIEW R1~R3, 12종 fixture 품질 평가, 디자인/Back 실기기 확인, IME·음성·TalkBack, SAM3 GPU 메모리 충돌,
+  서버 멀티샷 ASGI 취소/큰 정수 metadata, 12MP/PSS, Jev, D084 피부 지원 0개, 서버 평가)은 이번 작업으로 해소되지 않았다.
+
+## 보정 추천 워크플로우 (2026-10-13, work/tasks.md)
+
+### Status
+
+PARTIAL — 기능 슬라이스(provider → 상태 → 검토 UI → 기존 실행기) 구현과 자동 검사는 완료.
+실제 Gemini 이미지 품질 평가(요구 7의 3회 반복·사람 판정)와 실기기 확인은 미실행.
+
+### Changed
+
+- **core:ai 계약**: `PlanMode`(Recommend/Direct), `PlanRequest(text, mode, PlanContext)`, `PlanContext`(현재 조정값=최종 설정값,
+  선택·자르기 여부), `PlanProposal`(observations·intent·goals·colors·workflow·limitations·outcome·reason, `WorkflowStep`=PlanStep+goal+효과/주의).
+  `EditPlanProvider.plan(image, PlanRequest): Result<PlanProposal>`. Direct+빈 문장만 거부.
+- **Gemini**: 단일 `propose_edit` envelope(기존 8개 도구 = workflow `tool` enum, 인자 이름·범위·변환 재사용). 시스템 지침을
+  요구 3·4 평가 기준(관찰≠취향, 가독성/질감, 색 역할, WB, 질감, 구도, 최소 변경), `PlanPriority` 5/3/1, hard constraint, 최종값 의미,
+  동작 예시로 교체(무조건 contrast/saturation 예시·"relative" 문구 제거). 컨텍스트 텍스트(mode·현재 설정·선택·자르기)와 원문을 별도 part로 전송.
+- **원자적 검증**: `ProposalDecoder`(필수 필드·enum·유한 수치·240자·개수 상한·참조) + `ProposalCheck`(ready⇔실행 가능한 단계, 비-ready는 단계 없음+이유,
+  빈 요청의 user 목표 금지, Style/Crop/Erase/CutOut/Fill은 user 목표만, scope별 허용 단계, masked 단계는 같은 goal의 Select 뒤,
+  사용되지 않는 Select, subject_only/keep_background·keep_colors 위반, Style+전역 조정 중복, crop/style 2개). 위반 시 전체 거부 `unplannable:`.
+- **중복 제거**: `PromptSuggestionProvider`·`GeminiSuggestion{Catalog,Client,Provider}`·fake·테스트 삭제, DI/`EditorAi` 연결 제거. 일반 예시 3개는 `ExampleSentence`(feature)로 유지, 미사용 5종 문자열 삭제.
+- **feature 상태**: `DirectProposals`가 요청 1개를 소유 — 스냅샷(렌더된 문서·원문·mode·context·설정 세대)+seq, 최신 frame 전 Direct는 overlay로 대기, 추천은 비활성.
+  문서/입력/설정 변경·닫기·다른 도구·취소 시 결과·캐시·작업 무효화(실행 중 자체 커밋은 제외), 늦은 응답 폐기, 동일 스냅샷만 메모리 캐시, `다시 추천`은 1회 새 요청.
+  적용 시 스냅샷 재확인(불일치면 `direct_stale`), 검토한 plan을 재계획 없이 기존 `PlanRunner`로 실행, 중복 탭 차단.
+- **UI**: `보정 추천 받기`/`다시 추천`/`다시 시도` + 안내 문구(입력 중에도 사용 가능, inline 진행·취소). 검토: `관찰 근거`(확신·미확인), `보정 목표`([사용자 요청]/[추천 기본값]·대상·살릴 색),
+  `보존할 내용`(제약, 추정 표시, 지킬/배경 색), `실행 단계`(로컬 템플릿·최종값·예상/주의·예측 고지), `확인 사항`. no_change/확인 필요/미지원은 이유+재요청 안내, 적용 비활성.
+  모델 문장은 plain `Text`만. 검토 중 예시 문장은 숨김(45% 시트 안에 검토가 보이도록). DESIGN 토큰·EditSheet 스크롤/고정 버튼 유지.
+- **문서**: `specs/vibe_edit.md` §2·§3·§4·§5·§6·§7·§8·§12·§14, `specs/ai_provider.md`, `specs/prompt_input.md`, DESIGN State display 1항목, `work/decisions.md` D094.
+
+### Files
+
+- core:ai main: `EditPlanProvider.kt`, 신규 `PlanProposal.kt`, `gemini/{GeminiPlanCatalog,GeminiPlanClient,GeminiPlanProvider,GeminiDto}.kt`, 신규 `gemini/GeminiProposal.kt`, `AiModule.kt`;
+  삭제 `PromptSuggestionProvider.kt`, `gemini/GeminiSuggestion{Catalog,Client,Provider}.kt`
+- core:ai test: `testShared/FakePlanProvider.kt`(삭제 `FakePromptSuggestionProvider.kt`), `FakePlanProviderTest`, `gemini/{GeminiPlanClientTest,GeminiPlanProviderTest,GeminiPlanStyleTest}`,
+  신규 `gemini/{GeminiProposalRefusalTest,PlanScenarioTest}`; 삭제 `GeminiSuggestion{Client,Provider}Test`
+- feature:editor main: `EditorAi`, `EditorViewModel`, `EditorRoute`, `tools/direct/{DirectController,DirectSuggestions,DirectSheet,DirectSuggestionArea}.kt`, `res/values/strings.xml`
+- feature:editor test: `DirectToolTest`, `DirectSheetTest`, `DirectGoldenTest`, 신규 `DirectRecommendTest`, `DirectTestFixtures`, `PlanRunnerProposalTest`;
+  EditorAi 생성자 변경 반영 `EditorEntryTest`, `tools/{select/SelectionToolTest, fill/GenerativeFillToolTest, crop/CropPreviewTest, multishot/MultiShotToolTest, auto/AutoToolTest, expand/ExpandToolTest, erase/GenerativeEraseToolTest}`; app `navigation/EditorBackTest`
+- goldens: `direct_sheet_open`, `direct_plan_preview` 재기록, 신규 `direct_recommend_{loading,review,no_change}`, 삭제 `direct_suggest_{loading,tailored}` (지시 UI만, 육안 확인)
+- docs: `specs/{vibe_edit,ai_provider,prompt_input}.md`, `DESIGN.md`, `work/decisions.md`, `work/RESULT.md`
+
+### Validation
+
+- `./gradlew --offline --quiet :core:ai:testDebugUnitTest` — 통과
+- `./gradlew --offline --quiet :feature:editor:testDebugUnitTest :app:testDebugUnitTest --tests 'com.diffuse.navigation.*'` — 통과
+- `./gradlew --offline --quiet :feature:editor:recordRoborazziDebug --tests '*DirectGoldenTest*'` — 지시 골든만 기록 후 육안 확인
+- `scripts/check.sh`(lint, detekt, testDebugUnitTest, verifyRoborazziDebug, dependencyGuard) — 통과(exit 0)
+- `./gradlew --offline --quiet :app:assembleDebug` — 통과
+- `git diff --check` — 통과
+- **실제 Gemini 이미지 평가: 미실행.** API 호출·기기 접근을 하지 않았고, 요구 7 표의 사진 fixture(`backlit_portrait.jpg` 등 12종, 이름은
+  `PlanScenarioTest`에 고정)는 리포에 없다. 모델명 `gemini-2.5-flash`, 프롬프트 버전 = 이 커밋의 `PLAN_SYSTEM_INSTRUCTION`. 사례별 3회·0/1/2 판정·전후 비교는
+  0회이며 fake/mock 통과로 대체하지 않는다. mock 시나리오 검사(`PlanScenarioTest`)는 구조 검증만 한다(실루엣·재질 명도·야경 WB·임의 인물 선택은 기계 판정 불가로 명시).
+
+### Review Notes
+
+- `ProposalCheck`의 "masked 단계는 같은 goal의 Select 뒤" 규칙 때문에, 문서에 이미 있는 선택을 쓰는 "선택 영역만 밝게"는 거부된다(D094 결과). 요구의 "기존 선택 미사용"을 기계적으로 보장하기 위한 선택이다.
+- `subject_only/keep_background`에서 crop은 허용(톤 변경 아님). keep_colors는 temperature/tint/saturation/vibrance/HSL/style만 금지 — 노출·대비는 허용.
+- 기존 §5 "잘못된 call만 버림"·"0개 call = 빈 계획 힌트" 정책은 원자적 거부로 바뀌었다(명세·테스트 함께 변경). 거부는 스낵바 없이 `direct_not_understood` 힌트.
+- 추천 실패 문구는 `추천을 받지 못했어요`, 직접 지시 실패는 기존 `direct_failed`, Unauthorized는 두 경로 모두 `direct_needs_key`.
+- 실행 취소(overlay)는 커밋된 단계는 남기고(Undo 가능) 제안을 폐기, 입력은 유지.
+
+### Known Issues
+
+- 실제 Gemini 품질 평가 미실행(위 Validation). 특히 모델이 constraint kind·goal scope를 올바르게 채우는지는 미확인이며, 엄격한 검증 때문에 실제 응답의 거부율이 높을 수 있다.
+- 실기기 미확인: 추천 → 근거 검토 → 적용 → Undo/Redo, 객체 선택 실패, 취소, IME/큰 글자(Robolectric fontScale 2 검사만), TalkBack, Back.
+- 이전 인계 유지: 디자인 REVIEW R1/R2 수정 후 독립 재리뷰·실기기 확인 미완료, Back 수정 실기기 독립 확인, 15309 ADB 연결 거부, 멀티샷 서버 R1/R2,
+  Jev 미구현, 전체 사진 품질·offline·12MP/PSS, D084 피부 지원 0개·서버 평가 미완료. 교체된 옛 추천(사진 6종·8문장) 실기기 평가는 이번 기능에 적용되지 않으며 완료 처리하지 않는다.
+
+---
+
+## Autographer 디자인 전면 적용 (2026-10-13, work/tasks.md)
+
+### Status
+
+DONE (구현자 보고) — 3단계 모두 완료, 자동 검사·골든·APK·canonical 검사 통과, 실기기 부분 smoke 실행.
+2026-10-13 `work/REVIEW.md` R1/R2(시트 빈 공간 터치 누출) 수정 반영. Codex 재리뷰 전이며 수정 후 실기기 확인은 하지 않았다.
+
+### REVIEW R1/R2 수정
+
+- R1: `EditSheet`에 `pointerInput` hit target(소비 없음)을 추가해 패딩·취소/적용 사이 Spacer 등 시트 전체가 뒤 스트립으로
+  터치를 넘기지 않는다. 시트의 버튼·슬라이더·스크롤은 자식이므로 먼저 받는다. 모든 `EditSheet`(도구·내보내기) 공통.
+- 명세: `specs/editor_shell.md`에 시트 전체(패딩·버튼 사이 포함)가 차단 대상임을, 선택 도구 재탭 닫기는 노출된 도구에만
+  적용되고 시트가 덮은 동안은 취소/Back으로 닫음을 명시. D093의 "차단 불가" 항목을 이 결정으로 교체.
+- R2: `SheetCancelTest`에 실제 좌표 터치(`onRoot().performTouchInput`)로 취소/적용 사이·좌우 패딩 3점을 누르고
+  도구 callback 0건·시트 유지를 확인하는 검사 추가. 수정 전 코드에서 이 검사만 실패(5개 중 1개), 수정 후 통과 확인.
+- `ToolSheetHostTest`의 재탭 검사는 가려진 스트립을 누르던 것을 노출된 스트립(`EditorToolStrip` 단독)에서 선택 도구 재탭 → 닫힘으로 변경.
+
+### Changed
+
+- **토큰/테마(core:ui)**: DESIGN §2 색 32종, §3 시스템 sans-serif 타이포 10종(`mono`만 JetBrains Mono), `Shapes`(pill·card 16dp),
+  `Dimens`(48dp), `Elevation`(시트 10dp/edge 1dp/iconCircle 2dp). 4.5:1용 `linkText #1F57C7`·`errorText #B3261E`, scrim 위 문구용 `OverlayTextShadow` 추가.
+  두 모드 모두 light Material scheme(`primary=primaryFill`, inverse=editBackground/canvasOverlayInk) + Material typography 매핑. Edit은 캔버스 주변(`background`)만 다크.
+- **공용 컴포넌트**: Primary(primaryFill, pressed 16% 어둡게)/Tertiary(inkSecondary, `color` 인자: 링크·overlay)/신규 `SecondaryPill`·`OptionChip`
+  — 모두 50% pill, `heightIn(min=48dp)`. PromptBar 56dp 흰 pill + 1dp hairline, leading mic→stop·trailing send 유지.
+  EditSheet 28dp·유리 그라데이션·1dp edge·10dp shadow(clip 앞)·36×4 handle·12/16dp, 45% 상한·내부 스크롤·고정 [취소|적용] 유지.
+  슬라이더 블루 활성 구간(중립점 기준)·트랙 inkMuted 35%·thumb 그림자.
+- **화면 적용**: 아래 표. 선택 옵션은 전부 `OptionChip`(selectionFill+selectionBorder+selected semantics), 사진·swatch·썸네일 선택은 블루 링.
+  overlay(진행 문구/취소, crop·expand 가이드, multishot 가이드, selection 점)는 `canvasOverlayInk`/다크 rim으로 분리 — 검정 editInk 미사용.
+- **시스템 바**: `SystemBarStyle.light`로 상태·내비게이션 아이콘 항상 어둡게(OS 다크 무관), 툴 스트립 표면을 내비게이션 바 아래까지 연장,
+  `MainActivity`를 `AppTheme(Browse)`로 감싸 export snackbar/dialog도 앱 팔레트 사용. 시작 창 테마 `#FCFCFF` + light status bar.
+- **실기기에서 발견·수정**: 94% 유리만으로는 시트 아래 툴 스트립 아이콘·라벨이 [취소|적용] 뒤로 비쳤다 → DESIGN §6 대로 `canvasLight` 불투명 바탕 위에 그라데이션.
+- **문서**: specs 16개의 현재형 시각 규칙만 갱신(prompt_input 듣는 중 = leading mic→stop·send 유지로 정정, testing Pretendard 문구 → 시스템 폰트),
+  DESIGN §4 듣는 중 문장 1줄을 실제 동작에 맞춤(task 요구 5), `work/decisions.md` D093.
+
+| 영역 | 적용 근거 |
+| --- | --- |
+| Browse | `BrowseScreen/Tile`: canvasLight 상단바(headingLg), 16dp 타일, 48dp 타깃 iconCircle, 48dp CTA, import scrim 문구 overlay ink, 삭제 dialog(Material 슬롯). 골든 4종 |
+| 편집 shell | TopBar(min 56dp)·ToolStrip(블루 선택·AI 점)·snackbar(inverse 슬롯)·원본 비교. `editor_shell_default/ai_open` |
+| 일반 도구 | Light/Color/Mix/Detail(AdjustSheet+Switch Material 슬롯), Crop 프리셋 OptionChip·회전 버튼 surfaceSecondary 원형. 골든 6종 |
+| AI 도구 | Select(OptionChip/SecondaryPill), Fill/Expand, Style(SecondaryPill·블루 링 타일·variant chip), Auto(OptionChip), MultiShot 선택형 6곳 OptionChip·썸네일 블루 링. 골든 18종 |
+| 설정 | `Sam3SettingsSheet`: OutlinedTextField는 Material 슬롯(light, primaryFill focus, errorText), 오류 힌트 errorText. fontScale 2.0 회귀 테스트 |
+| 지시/음성 | PromptBar 상태(골든 3종), 추천 pill promptTint, 추천 찾기 링크색. `direct_*` 골든 4종 |
+| 캔버스 | 체크보드 #2C2C2E/#242426, crop/expand/selection/multishot 가이드. `canvas_*`, `crop_*`, `expand_overlay`, `select_mask_*` |
+| 내보내기 | ExportSheet OptionChip(가로 스크롤), 진행 overlay overlay ink + 그림자, snackbar/중단 dialog는 AppTheme. 골든 2종 |
+
+### Files
+
+- core:ui main: `theme/{Tokens,Theme}.kt`, `components/{PrimaryPill,TertiaryPill,EditSheet,PromptBar,AdjustSlider}.kt`, 신규 `components/{SecondaryPill,OptionChip}.kt`
+- app: `MainActivity.kt`, `res/values/themes.xml`
+- feature main: browse `BrowseScreen`, `BrowseTile`; editor `EditorScreen`, `EditorTopBar`, `EditorToolStrip`, `EditorRoute`(주석), `SelectionProgressOverlay`,
+  `tools/{auto/AutoSheet, crop/CropSheet, crop/CropOverlay, direct/DirectSheet, direct/DirectSuggestionArea, expand/ExpandSheet, expand/ExpandOverlay,
+  fill/FillSheet, mix/MixSheet, multishot/MultiShotSheet, multishot/MultiShotOverlay, select/SelectSheet, select/SelectionOverlay, select/Sam3SettingsSheet,
+  style/StyleSheet}.kt`; export `ExportSheet`, `ExportProgressOverlay`
+- tests: core:ui `TokensTest`, `ThemeSwatches`, `EditSheetTest`; editor `EditorShellTest`, `SheetCancelTest`, `ToolSheetHostTest`, `MixSheetTest`, `SelectSheetTest`,
+  `DirectSheetTest`, `Sam3SettingsSheetTest`
+- goldens: 허용 목록 48개 전부 재기록(목록 밖 추가/변경 없음, 렌더/사진 골든 없음)
+- docs: `DESIGN.md`(§4 1줄), `specs/{adjust_hsl,auto_enhance,browse,crop,editor_shell,export,generative_erase,generative_fill,multishot,outpaint,
+  prompt_input,selection_tool,style_match,testing,tool_groups,vibe_edit}.md`, `work/decisions.md`, `work/RESULT.md`
+
+### Validation
+
+| 명령 | 결과 |
+| --- | --- |
+| 변경 전 기준: `:core:ui :feature:browse :feature:editor :feature:export testDebugUnitTest` | 통과 |
+| REVIEW 수정: `:feature:editor:testDebugUnitTest --tests '*SheetCancelTest' --tests '*ToolSheetHostTest' --tests '*EditorBackTest'` | 통과 |
+| REVIEW 수정: 차단 줄만 임시 제거 후 `*SheetCancelTest` | 5개 중 1개(새 빈 공간 검사) 실패 확인 후 원복 |
+| REVIEW 수정 후 `scripts/check.sh` | **exit 0** |
+| REVIEW 수정 후 `git diff --check` | 통과 |
+| `./gradlew --offline --quiet :core:ui:testDebugUnitTest` | 통과 |
+| 같은 3개 feature 모듈 + `:app:testDebugUnitTest --tests 'com.diffuse.navigation.*'`(EditorBackTest 포함) | 통과 |
+| `recordRoborazziDebug` ×4 모듈 → 육안 확인 후 `verifyRoborazziDebug`(check.sh 안에서) | 통과, 허용 목록 48개만 변경 |
+| `./gradlew --offline --quiet detekt` | 통과 |
+| `./gradlew --offline --quiet :app:assembleDebug` | 통과 |
+| `scripts/check.sh` (lint, detekt, testDebugUnitTest, verifyRoborazziDebug, dependencyGuard) | **exit 0**(시트 불투명 바탕 수정 후 재실행) |
+| `git diff --check` | 통과 |
+
+- 골든 환경: Robolectric `Pixel6a`, `GraphicsMode.NATIVE`, android-all 16 pin, fontScale 1.0, 시스템 폰트(테스트 전용 폰트 없음). threshold 변경 없음.
+- 육안 확인한 골든: `editor_shell_default`, `select_sheet_open`(+이전 버전 비교), `crop_overlay`, `export_progress_overlay`,
+  `browse_tile_actions`, `direct_suggest_tailored`, `multishot_sheet_timeline`. 나머지는 diff 존재만 확인.
+- 실기기(SM-S948U, adb 15039) smoke: APK 설치 → Browse 빈 화면(어두운 상태/내비 아이콘) → Photo Picker로 공개 샘플 사진 1장 열기 →
+  라이트 시트 노출 +75 → 적용 → Undo/Redo → 내보내기 시트 → Back(시트 닫힘) → AI 메뉴 → Back(Root) → Back(Browse) → 재열기(편집 유지) → 원본 비교 hold.
+  모두 기대대로. 유리 시트 비침 문제를 여기서 찾아 수정 후 재확인.
+
+### Review Notes
+
+- 시트 터치 차단(REVIEW R1): 이전의 "재탭 테스트 때문에 차단 불가" 판단은 철회. 재탭 계약은 노출된 도구에만 적용한다(명세 갱신).
+  `EditSheet` 공통 변경이라 내보내기 시트에도 동일하게 적용된다.
+- 작은 화면(Robolectric 기본 320×470dp)에서는 48dp 컨트롤 때문에 45% 시트 안 행이 fold 아래로 내려간다. `MixSheetTest`, `SelectSheetTest`,
+  `DirectSheetTest`는 기존 CutOut 테스트처럼 `performScrollTo()`만 추가했다. assertion 변경 없음.
+  `EditorShellTest`의 내보내기 pill 폭 비교는 float 오차(82.285706 vs 82.28571) 때문에 정수 px 폭 비교로 바꿨다. 판정 기준은 같다.
+- 수용된 DESIGN 이탈: Browse 앱 표시를 headingMd(13sp) 대신 headingLg로 했다. PromptBar에 1dp hairline 테두리를 넣었다(흰 pill과 유리 시트 구분).
+  시트 바탕은 불투명이다(위 기기 수정). slider thumb에 약한 그림자를 넣었다.
+- multishot의 일반 액션(사진 추가·배치·실행 등)은 기존대로 TertiaryPill(투명, inkSecondary)이다. 선택형만 OptionChip으로 바꿨다.
+- 기기 smoke에서 Browse 썸네일이 편집 전 이미지로 보였다(재열기 시 편집 연산은 유지됨). 스타일 변경 범위 밖이라 조사하지 않았다.
+
+### Known Issues
+
+- 실기기 미실행: 실제 export 저장(갤러리 기록 회피), 키보드 표시/숨김, 큰 글자(시스템 설정) 확인, AI 도구·음성 경로, 밝은/어두운/투명 사진별 가이드 확인.
+  가이드 대비는 골든·토큰 테스트로만 확인했다. 기기에 smoke용 프로젝트 1개가 남아 있다.
+- 이전 인계 유지: REVIEW R1/R2 수정 후 실기기 독립 재확인 미완료(이번 smoke의 Back 경로는 기대대로 동작). 지시 추천 사진 6종·8문장,
+  TalkBack·음성·오류 실기기 평가, 멀티샷 서버 R1(ASGI 취소 후 후속 추출)/R2(큰 정수 metadata 500), Jev 미구현,
+  전체 사진 품질·offline·12MP/PSS 평가, D084 피부 보정 지원 종류 0개·서버 품질/lifecycle 평가는 미완료 그대로.
+
+---
+
 ## REVIEW 수정 패스 — R1 시스템 Back / R2 통합 회귀 검사 (2026-10-12)
 
 ### Status

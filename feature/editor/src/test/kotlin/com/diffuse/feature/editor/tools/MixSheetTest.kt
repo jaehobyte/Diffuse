@@ -11,6 +11,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeRight
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -148,7 +149,9 @@ class MixSheetTest {
         )
 
         compose.onNodeWithTag(MaskedOnlyToggleTestTag).assertExists()
+        // The sheet caps at 45% of the screen, so this row can start below the fold.
         compose.onNodeWithTag(adjustSliderTag(AdjustKind.HslRedSaturation))
+            .performScrollTo()
             .performTouchInput { swipeRight() }
         compose.waitForIdle()
 

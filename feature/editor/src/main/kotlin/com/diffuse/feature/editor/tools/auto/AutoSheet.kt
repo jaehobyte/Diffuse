@@ -1,29 +1,22 @@
 package com.diffuse.feature.editor.tools.auto
 
 import androidx.annotation.StringRes
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.diffuse.core.ai.AutoStyle
 import com.diffuse.core.ui.components.AdjustSlider
 import com.diffuse.core.ui.components.EditSheet
+import com.diffuse.core.ui.components.OptionChip
 import com.diffuse.core.ui.theme.LocalAppColors
 import com.diffuse.core.ui.theme.Typography
 import com.diffuse.feature.editor.R
@@ -119,32 +112,9 @@ fun AutoSheet(
     }
 }
 
+/** DESIGN.md §4: a light-blue option chip; the filled primary stays 적용's. */
 @Composable
 private fun StyleChip(style: AutoStyle, selected: Boolean, onClick: () -> Unit) {
-    val colors = LocalAppColors.current
     val label = stringResource(styleLabelRes(style))
-    val shape = RoundedCornerShape(CHIP_RADIUS)
-    Text(
-        text = label,
-        style = Typography.label,
-        color = if (selected) colors.ink else colors.inkSecondary,
-        modifier = Modifier
-            .testTag(label)
-            .height(CHIP_HEIGHT)
-            .background(color = colors.surfaceRaised, shape = shape)
-            // specs/adjust_hsl.md §7's ruling, reused: the ring is `editInk`, never the accent —
-            // the sheet's one accent belongs to 적용 (DESIGN.md §1). Transparent when unselected,
-            // so nothing reflows.
-            .border(
-                width = CHIP_RING,
-                color = if (selected) colors.ink else Color.Transparent,
-                shape = shape,
-            )
-            .clickable(role = Role.RadioButton, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-    )
+    OptionChip(text = label, selected = selected, onClick = onClick, modifier = Modifier.testTag(label))
 }
-
-private val CHIP_HEIGHT = 32.dp
-private val CHIP_RADIUS = 16.dp
-private val CHIP_RING = 2.dp

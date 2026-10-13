@@ -75,7 +75,7 @@ internal data class Schema(
     @SerialName("enum") val enumValues: List<String>? = null,
     val properties: Map<String, Schema>? = null,
     val required: List<String>? = null,
-    /** An `ARRAY`'s element schema; specs/vibe_edit.md §14's id list is the one user. */
+    /** An `ARRAY`'s element schema: the lists inside specs/vibe_edit.md §14's envelope. */
     val items: Schema? = null,
 )
 

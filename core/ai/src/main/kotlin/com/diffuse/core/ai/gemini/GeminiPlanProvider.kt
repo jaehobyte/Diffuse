@@ -2,8 +2,10 @@ package com.diffuse.core.ai.gemini
 
 import android.graphics.Bitmap
 import com.diffuse.core.ai.Availability
-import com.diffuse.core.ai.EditPlan
 import com.diffuse.core.ai.EditPlanProvider
+import com.diffuse.core.ai.PlanMode
+import com.diffuse.core.ai.PlanProposal
+import com.diffuse.core.ai.PlanRequest
 import com.diffuse.core.common.AppError
 import com.diffuse.core.common.DispatcherProvider
 import com.diffuse.core.common.Result
@@ -20,8 +22,8 @@ import javax.inject.Singleton
 import kotlin.coroutines.coroutineContext
 
 /**
- * specs/vibe_edit.md §8. The distance between `EditPlanProvider` and the wire: encode the
- * preview with the encoder the eraser already uses, send it with the sentence, return the steps.
+ * specs/vibe_edit.md §8, §14. The distance between `EditPlanProvider` and the wire: encode the
+ * preview with the encoder the eraser already uses, send it with the request, return the proposal.
  */
 @Singleton
 class GeminiPlanProvider @Inject internal constructor(
@@ -40,9 +42,10 @@ class GeminiPlanProvider @Inject internal constructor(
         .map(::availabilityFor)
         .stateIn(scope, SharingStarted.Eagerly, availabilityFor(settings.config.value))
 
-    override suspend fun plan(image: Bitmap, request: String): Result<EditPlan> =
+    /** §14: only a sent 지시 needs words; 보정 추천 may ask about the photo alone. */
+    override suspend fun plan(image: Bitmap, request: PlanRequest): Result<PlanProposal> =
         withContext(dispatchers.io) {
-            if (request.isBlank()) {
+            if (request.mode == PlanMode.Direct && request.text.isBlank()) {
                 return@withContext Result.Failure(AppError.Invalid("empty request"))
             }
             val jpeg = encode(image) ?: return@withContext Result.Failure(AppError.TooLarge)

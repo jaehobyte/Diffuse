@@ -106,7 +106,7 @@ Sheet, per DESIGN.md §4:
 [사진에서 가져오기]                              secondary pill (§5)
 [ 원본 ][ 클린 브라이트 ][ 웜 필름 ][ … ]         scrolling row of preview tiles
 강도  ────●────────  70                          slider, mono value
-                                    [취소 | 적용]  Apply is the sheet's one accent
+                                    [취소 | 적용]  Apply is the sheet's one filled primary
 ```
 
 - The tiles are the **user's own photo** at 96dp, rendered through each preset at preview

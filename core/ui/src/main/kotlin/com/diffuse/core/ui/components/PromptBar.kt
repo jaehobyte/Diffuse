@@ -1,13 +1,13 @@
 package com.diffuse.core.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -30,15 +30,18 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.diffuse.core.ui.R
+import com.diffuse.core.ui.theme.Dimens
 import com.diffuse.core.ui.theme.LocalAppColors
+import com.diffuse.core.ui.theme.Shapes
 import com.diffuse.core.ui.theme.Tokens
 import com.diffuse.core.ui.theme.Typography
 
-/** DESIGN.md §4 (Prompt bar). */
-private val BarHeight = 48.dp
-private val BarRadius = 16.dp
+/** DESIGN.md §4 (Prompt bar): a white 56dp pill; the height is a minimum so large text fits. */
+private val BarHeight = 56.dp
+/** On the near-white glass sheet a hairline is what keeps the white pill visible. */
+private val BarBorder = 1.dp
 private val IconSize = 24.dp
-private val TouchTarget = 48.dp
+private val TouchTarget = Dimens.touchTarget
 private val HorizontalPadding = 12.dp
 private val IconGap = 8.dp
 
@@ -51,9 +54,9 @@ const val PromptMicTestTag = "PromptMic"
  * specs/prompt_input.md §2. One text field that carries a short noun phrase to whichever tool
  * is open, with the device's speech recogniser behind the mic.
  *
- * Neither icon is `accent`: DESIGN.md §1 allows one accent per surface at rest, and in a sheet
- * that is the Apply pill. Send reads as actionable through its enabled state and the IME's
- * Done key instead. The mic turns accent *while listening* only, as §1's transient exception.
+ * Both icons are neutral at rest (DESIGN.md §4): send reads as actionable through its enabled
+ * state and the IME's Done key. The mic turns accent *while listening* only, and shows stop in
+ * its own place; send keeps the trailing slot (specs/prompt_input.md §3).
  */
 @Composable
 fun PromptBar(
@@ -76,9 +79,7 @@ fun PromptBar(
         modifier = modifier
             .testTag(PromptBarTestTag)
             .fillMaxWidth()
-            .height(BarHeight)
-            .clip(RoundedCornerShape(BarRadius))
-            .background(colors.surfaceRaised)
+            .barSurface(edge = colors.hairline)
             .padding(horizontal = HorizontalPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -128,6 +129,13 @@ fun PromptBar(
         )
     }
 }
+
+/** DESIGN.md §4: the white pill, at least 56dp tall. */
+private fun Modifier.barSurface(edge: Color): Modifier = this
+    .heightIn(min = BarHeight)
+    .clip(Shapes.pill)
+    .background(Tokens.canvasLight)
+    .border(BarBorder, edge, Shapes.pill)
 
 /** DESIGN.md §5: even a 24dp icon gets a 48dp hit area. */
 @Composable

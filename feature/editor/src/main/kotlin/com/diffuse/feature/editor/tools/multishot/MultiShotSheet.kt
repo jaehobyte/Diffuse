@@ -36,6 +36,7 @@ import com.diffuse.core.imaging.model.TIMELINE_DISTANCE_RANGE
 import com.diffuse.core.imaging.model.TimelineArrangement
 import com.diffuse.core.ui.components.AdjustSlider
 import com.diffuse.core.ui.components.EditSheet
+import com.diffuse.core.ui.components.OptionChip
 import com.diffuse.core.ui.components.PromptBar
 import com.diffuse.core.ui.components.TertiaryPill
 import com.diffuse.core.ui.theme.LocalAppColors
@@ -77,6 +78,7 @@ const val MultiShotEarlierTestTag = "MultiShotEarlier"
 const val MultiShotLaterTestTag = "MultiShotLater"
 const val MultiShotAnchorTestTag = "MultiShotAnchor"
 const val MultiShotClippedTestTag = "MultiShotClipped"
+const val MultiShotTargetTestTag = "MultiShotTarget"
 
 fun multiShotThumbTag(index: Int): String = "MultiShotThumb:$index"
 
@@ -137,6 +139,8 @@ class MultiShotActions(
     val onStrengthChange: (Float) -> Unit = {},
     val onAnchorEditingChange: (Boolean) -> Unit = {},
     val onReselectHero: () -> Unit = {},
+    // §2: the first extraction's target.
+    val onTargetChange: (String) -> Unit = {},
 )
 
 /**
@@ -223,11 +227,12 @@ private fun ModeRow(state: MultiShotState, actions: MultiShotActions) {
             Triple(MultiShotMode.Free, R.string.multishot_mode_free, MultiShotFreeModeTestTag),
         ).forEach { (mode, label, tag) ->
             val chosen = state.mode == mode
-            TertiaryPill(
+            OptionChip(
                 text = choiceText(stringResource(label), chosen),
                 onClick = { actions.onModeChange(mode) },
                 enabled = !state.busy,
-                modifier = Modifier.testTag(tag).semantics { this.selected = chosen },
+                selected = chosen,
+                modifier = Modifier.testTag(tag),
             )
         }
     }
@@ -250,6 +255,8 @@ private fun TimelineContent(state: MultiShotState, actions: MultiShotActions) {
     TimelineRow(state, actions)
     if (state.items.isNotEmpty()) {
         RunRows(state, actions)
+        // Under the main action, so it stays where it was; the field's keyboard action is the same press.
+        if (state.pending) TargetRows(state, actions, onSubmit = actions.onRun)
         PanelRow(state, actions)
     }
     if (state.clipped) {
@@ -286,11 +293,12 @@ private fun PanelRow(state: MultiShotState, actions: MultiShotActions) {
             Triple(TimelinePanel.Layout, R.string.multishot_panel_layout, MultiShotLayoutPanelTestTag),
         ).forEach { (panel, label, tag) ->
             val chosen = state.panel == panel
-            TertiaryPill(
+            OptionChip(
                 text = choiceText(stringResource(label), chosen),
                 onClick = { actions.onPanelChange(panel) },
                 enabled = !state.busy,
-                modifier = Modifier.testTag(tag).semantics { this.selected = chosen },
+                selected = chosen,
+                modifier = Modifier.testTag(tag),
             )
         }
     }
@@ -544,11 +552,12 @@ private fun ArrangementRow(state: MultiShotState, actions: MultiShotActions) {
             Triple(TimelineArrangement.Path, R.string.multishot_arrangement_path, MultiShotPathTestTag),
         ).forEach { (arrangement, label, tag) ->
             val chosen = state.layout.arrangement == arrangement
-            TertiaryPill(
+            OptionChip(
                 text = choiceText(stringResource(label), chosen),
                 onClick = { actions.onArrangementChange(arrangement) },
                 enabled = !state.working,
-                modifier = Modifier.testTag(tag).semantics { this.selected = chosen },
+                selected = chosen,
+                modifier = Modifier.testTag(tag),
             )
         }
     }
@@ -603,11 +612,12 @@ private fun DirectionRow(state: MultiShotState, actions: MultiShotActions) {
     ) {
         DIRECTIONS.forEach { (degrees, label) ->
             val chosen = state.layout.directionDeg == degrees
-            TertiaryPill(
+            OptionChip(
                 text = choiceText(stringResource(label), chosen),
                 onClick = { actions.onDirectionChange(degrees) },
                 enabled = !state.working,
-                modifier = Modifier.testTag(multiShotDirectionTag(degrees)).semantics { this.selected = chosen },
+                selected = chosen,
+                modifier = Modifier.testTag(multiShotDirectionTag(degrees)),
             )
         }
     }
@@ -629,11 +639,12 @@ private fun StepColumn(content: @Composable () -> Unit) {
 /** §4.2 requirement 14: while on, a drag corrects the anchor and the subject stays put. */
 @Composable
 private fun AnchorPill(state: MultiShotState, actions: MultiShotActions) {
-    TertiaryPill(
+    OptionChip(
         text = choiceText(stringResource(R.string.multishot_anchor), state.anchorEditing),
         onClick = { actions.onAnchorEditingChange(!state.anchorEditing) },
         enabled = !state.working,
-        modifier = Modifier.testTag(MultiShotAnchorTestTag).semantics { this.selected = state.anchorEditing },
+        selected = state.anchorEditing,
+        modifier = Modifier.testTag(MultiShotAnchorTestTag),
     )
 }
 
@@ -691,7 +702,8 @@ private fun Thumb(
         .size(THUMB_SIZE)
         .clip(shape)
         .background(colors.surfaceRaised)
-        .border(THUMB_RING, if (selected) colors.ink else Color.Transparent, shape)
+        // DESIGN.md §1: selection is blue; the photo fills the thumb, so a ring rather than a fill.
+        .border(THUMB_RING, if (selected) colors.accent else Color.Transparent, shape)
         .semantics { this.selected = selected }
         .clickable(enabled = !state.busy, role = Role.RadioButton, onClickLabel = label) {
             actions.onSelect(item.key)
@@ -757,15 +769,47 @@ private fun ExtractionRows(state: MultiShotState, selected: ShotItem, actions: M
     )
     ServerRow(state, actions)
     when (selected.status) {
-        ShotStatus.Picked, ShotStatus.Extracting, ShotStatus.Importing -> TertiaryPill(
-            text = stringResource(R.string.multishot_extract),
-            onClick = actions.onExtract,
-            enabled = state.canExtract,
-            modifier = Modifier.testTag(MultiShotExtractTestTag),
-        )
+        ShotStatus.Picked, ShotStatus.Extracting, ShotStatus.Importing -> {
+            TargetRows(state, actions, onSubmit = actions.onExtract)
+            TertiaryPill(
+                text = stringResource(R.string.multishot_extract),
+                onClick = actions.onExtract,
+                enabled = state.canExtract,
+                modifier = Modifier.testTag(MultiShotExtractTestTag),
+            )
+        }
         ShotStatus.Selecting, ShotStatus.Saving -> SelectingRows(state, actions)
         ShotStatus.Ready, ShotStatus.Unreadable -> Unit
     }
+}
+
+/**
+ * §2: what the first query asks for — `person` until changed, sent as typed less its outer blanks.
+ * Its keyboard action is the same press as the button below it ([onSubmit]); a run, also one waiting
+ * for a choice, locks it. Saved subjects keep the target they were extracted with.
+ */
+@Composable
+private fun TargetRows(state: MultiShotState, actions: MultiShotActions, onSubmit: () -> Unit) {
+    val colors = LocalAppColors.current
+    Column(
+        modifier = Modifier.testTag(MultiShotTargetTestTag),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(text = stringResource(R.string.multishot_target_label), style = Typography.bodyMd, color = colors.ink)
+        PromptBar(
+            value = state.target,
+            onValueChange = actions.onTargetChange,
+            onSubmit = { onSubmit() },
+            placeholder = stringResource(R.string.multishot_target_placeholder),
+            enabled = state.targetEditable,
+        )
+        Hint(R.string.multishot_target_hint)
+    }
+    if (!state.hasTarget) {
+        Text(text = stringResource(R.string.multishot_target_needed), style = Typography.bodyMd, color = colors.ink)
+    }
+    val someDone = state.hero?.status == ShotStatus.Ready || state.items.any { it.status == ShotStatus.Ready }
+    if (someDone) Hint(R.string.multishot_target_scope)
 }
 
 @Composable
@@ -804,14 +848,15 @@ private fun SelectingRows(state: MultiShotState, actions: MultiShotActions) {
         ) {
             repeat(state.candidateCount) { index ->
                 val chosen = state.chosenCandidate == index
-                TertiaryPill(
+                OptionChip(
                     text = stringResource(
                         if (chosen) R.string.multishot_candidate_chosen else R.string.multishot_candidate,
                         index + 1,
                     ),
                     onClick = { actions.onChooseCandidate(index) },
                     enabled = !state.working,
-                    modifier = Modifier.testTag(multiShotCandidateTag(index)).semantics { this.selected = chosen },
+                    selected = chosen,
+                    modifier = Modifier.testTag(multiShotCandidateTag(index)),
                 )
             }
         }

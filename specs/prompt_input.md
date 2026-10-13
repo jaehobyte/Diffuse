@@ -38,24 +38,24 @@ Styling comes only from `Tokens.kt`:
 
 | Property | Value |
 |---|---|
-| Height | 48dp |
-| Corner radius | 16dp (the pill radius; DESIGN.md §4 "every button is a pill" extends to this) |
-| Fill | `editSurfaceRaised` (the bar only ever appears in Edit mode) |
-| Text | `bodyMd` in `editInk`; placeholder in `editInkSecondary` |
+| Height | 56dp minimum (grows with the font scale rather than clipping) |
+| Corner radius | 50% — a full pill (DESIGN.md §4) |
+| Fill | `canvasLight` (white), with a 1dp `hairline` edge so it reads on the glass sheet; no underline |
+| Text | `bodyMd` in `ink`; placeholder in `inkSecondary` |
 | Horizontal padding | 12dp; 8dp gap between the icons and the text |
-| Mic icon | 24dp, leading, 48dp hit area, `editInk` at rest |
-| Send icon | 24dp, trailing, 48dp hit area, `editInk` — **never `accent`**, see below |
+| Mic icon | 24dp, leading, 48dp hit area, neutral `ink` at rest |
+| Send icon | 24dp, trailing, 48dp hit area, neutral `ink` — **never `accent`**, see below |
 | Disabled | 38% alpha, color unchanged (DESIGN.md §4) |
 
 Behavior:
 - Send is enabled only when `value.trim()` is non-blank. The IME action is `Done` and submits.
 - `onSubmit` receives the trimmed value. The bar does not clear itself; the host decides.
-- The send icon is **not** accent. DESIGN.md §1 allows one accent per surface at rest, and in every
-  sheet that is the Apply pill; letting a prompt bar take it would make one sheet commit differently
+- The send icon is **not** accent. DESIGN.md §4 keeps both bar icons neutral at rest, and every
+  sheet's filled primary is its Apply pill; a blue send would make one sheet commit differently
   from all the others. Send reads as actionable through its enabled state and the IME Done key.
-- `listening = true` tints the mic `accent` — the transient exception in DESIGN.md §1. **A fill
-  change only**: no glow, no pulse, no animation (§7 forbids glow). While listening, the send icon is
-  replaced by a stop icon in the same slot.
+- `listening = true` tints the mic `accent`. **A fill change only**: no glow, no pulse, no animation
+  (§7 forbids glow). While listening, the **leading mic is replaced by a stop icon in the same
+  leading slot**; the trailing send stays where it is, enabled by the same rule as always.
 - Every string is Korean and lives in `strings.xml`: `prompt_placeholder`
   `"무엇을 선택할까요? 예: 사람, 하늘"` in `core:ui`, and content descriptions for the mic, stop, and
   send icons.
@@ -102,9 +102,9 @@ Permission:
 
 `FakeSpeechInput` drives every test: `emit(Listening("사"))`, `emit(Final("사람"))`, `emit(Failed(...))`.
 
-The final-result auto-submit is unchanged by the 지시 tool's sentence suggestions
-(vibe_edit.md §14): **only a picked suggestion** fills the bar without sending, and the suggestion
-list hides while listening. The 선택 tool's noun-phrase input and 채우기's prompt keep their meaning.
+The final-result auto-submit is unchanged by the 지시 tool's example sentences and 보정 추천
+(vibe_edit.md §14): **only a picked example** fills the bar without sending, a final result is one
+`Direct` planning call like a typed send, and the area under the bar hides while listening. The 선택 tool's noun-phrase input and 채우기's prompt keep their meaning.
 
 ## 4. Flow: prompt or speech → mask (T36)
 This is the end-to-end behavior the feature exists for.
@@ -127,7 +127,7 @@ speak ─▶ Final ─┘                                                       
 
 ## 5. Tests
 - `PromptBar`: send disabled on blank and on whitespace-only; IME Done submits the trimmed value;
-  `listening` swaps send for stop; `onMicClick = null` renders no mic. Plus the three goldens.
+  `listening` swaps the mic for stop (send stays); `onMicClick = null` renders no mic. Plus the three goldens.
 - Voice with `FakeSpeechInput`: partial updates the text; `Final` auto-submits; `Failed` shows a
   snackbar and leaves the text; stop while listening returns to `Idle` without submitting.
 - Permission: granted → `start` called; denied → snackbar and the mic still present; permanently

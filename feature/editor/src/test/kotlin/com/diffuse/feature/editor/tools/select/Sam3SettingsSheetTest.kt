@@ -1,21 +1,27 @@
 package com.diffuse.feature.editor.tools.select
 
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.semantics.SemanticsProperties
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.diffuse.core.ai.monet.MonetConfig
 import com.diffuse.core.ai.sam3.Sam3Config
 import com.diffuse.core.ui.theme.AppTheme
 import com.diffuse.core.ui.theme.ThemeMode
+import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /** specs/generative_erase.md §8 and auto_enhance.md §4: one 서버 설정 sheet, five fields. */
@@ -121,6 +127,27 @@ class Sam3SettingsSheetTest {
             "•".repeat("AIza-old".length),
             node.config[SemanticsProperties.EditableText].text,
         )
+    }
+
+    /**
+     * DESIGN.md §4: the longest sheet at large type. The 45% cap stays, the fields scroll inside
+     * it, and the pinned 저장 is still on screen — nothing is clipped away to make room.
+     */
+    @Test
+    @Config(qualifiers = RobolectricDeviceQualifiers.Pixel6a, fontScale = 2.0f)
+    fun `at twice the font size the last field scrolls into reach and 저장 stays on screen`() {
+        showSheet()
+
+        compose.onNodeWithTag(MonetTokenFieldTestTag).performScrollTo().performTextReplacement("m-big")
+        compose.onNodeWithText("저장").assertIsDisplayed().performClick()
+
+        assertEquals(
+            listOf(Saved("http://host:8080", "tok", "AIza-old", "http://monet:9090", "m-big")),
+            saved,
+        )
+        val screen = ApplicationProvider.getApplicationContext<Context>().resources.displayMetrics.heightPixels
+        val sheet = compose.onNodeWithTag(Sam3SettingsSheetTestTag).fetchSemanticsNode().size.height
+        assertTrue("sheet took $sheet of $screen", sheet <= screen * 0.45f + 1f)
     }
 
     private fun showSheet(sam3: Sam3Config = Sam3Config(baseUrl = "http://host:8080", token = "tok")) {

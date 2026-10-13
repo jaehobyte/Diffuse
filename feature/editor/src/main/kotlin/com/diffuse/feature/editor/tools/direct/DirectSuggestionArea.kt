@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -25,114 +24,122 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import com.diffuse.core.ai.PromptSuggestionId
+import com.diffuse.core.ai.PlanMode
 import com.diffuse.core.ai.speech.SpeechInput
 import com.diffuse.core.ai.speech.SpeechState
 import com.diffuse.core.ui.components.TertiaryPill
+import com.diffuse.core.ui.theme.Dimens
 import com.diffuse.core.ui.theme.LocalAppColors
+import com.diffuse.core.ui.theme.Shapes
+import com.diffuse.core.ui.theme.Tokens
 import com.diffuse.core.ui.theme.Typography
 import com.diffuse.feature.editor.R
 
 const val DirectSuggestionsTestTag = "DirectSuggestions"
-const val DirectSuggestionFindTestTag = "DirectSuggestionFind"
-const val DirectSuggestionCancelTestTag = "DirectSuggestionCancel"
+const val DirectRecommendTestTag = "DirectRecommend"
+const val DirectRecommendCancelTestTag = "DirectRecommendCancel"
 const val DirectSuggestionHideTestTag = "DirectSuggestionHide"
 
 /**
- * specs/vibe_edit.md §14. The area under the 지시 prompt bar: the general examples, the explicit
- * request for tailored ones, and the pills. A pill hands its catalog sentence to [onPick] and does
- * nothing else; nothing here sends, plans or edits.
+ * specs/vibe_edit.md §14. The area under the 지시 prompt bar: the example sentences — an input aid
+ * whose pills hand their sentence to [onPick] and do nothing else — and the separate 보정 추천 받기
+ * entry, which asks for a reviewed workflow. Nothing here edits; a recommendation only ever lands
+ * in the review above 적용.
  */
 @Composable
 fun DirectSuggestionArea(
     state: DirectState,
     speech: SpeechInput,
-    onFind: () -> Unit,
+    onRecommend: (again: Boolean) -> Unit,
     onCancel: () -> Unit,
     onHide: () -> Unit,
     onPick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalAppColors.current
-    // §14: listening is about to write into the bar, so the list steps aside while it does.
+    // §14: listening is about to write into the bar, so the area steps aside while it does.
     val speechState by speech.state.collectAsState()
     if (speechState is SpeechState.Listening) return
-    val suggestions = state.suggestions
-    val tailored = suggestions.phase == SuggestionPhase.Tailored
     Column(
         modifier = modifier.testTag(DirectSuggestionsTestTag),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = stringResource(
-                    if (tailored) R.string.direct_suggest_tailored_title else R.string.direct_suggest_examples_title,
-                ),
-                style = Typography.bodySm,
-                color = colors.inkSecondary,
-                modifier = Modifier.weight(1f),
-            )
-            TertiaryPill(
-                text = stringResource(R.string.direct_suggest_hide),
-                onClick = onHide,
-                modifier = Modifier.testTag(DirectSuggestionHideTestTag),
-            )
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            (if (tailored) suggestions.ids else GeneralSuggestions).forEach { id ->
-                SuggestionPill(id = id, enabled = !state.running, onPick = onPick)
+        if (state.showExamples) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = stringResource(R.string.direct_suggest_examples_title),
+                    style = Typography.bodySm,
+                    color = colors.inkSecondary,
+                    modifier = Modifier.weight(1f),
+                )
+                TertiaryPill(
+                    text = stringResource(R.string.direct_suggest_hide),
+                    onClick = onHide,
+                    modifier = Modifier.testTag(DirectSuggestionHideTestTag),
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                ExampleSentence.entries.forEach { example ->
+                    SuggestionPill(example = example, enabled = !state.running, onPick = onPick)
+                }
+            }
+            if (state.requestSource == RequestSource.Suggestion && state.request.isNotEmpty()) {
+                Helper(stringResource(R.string.direct_suggest_editable))
             }
         }
-        StatusLine(state, onFind, onCancel)
+        RecommendLine(state, onRecommend, onCancel)
     }
 }
 
-/** §14: the one line below the pills — which of the six states the area is in. */
+/** §14: the 보정 추천 entry, in whichever of its states the request is. */
 @Composable
-private fun StatusLine(state: DirectState, onFind: () -> Unit, onCancel: () -> Unit) {
-    val colors = LocalAppColors.current
-    val suggestions = state.suggestions
-    when {
-        // A pick during loading must not hide the request still running or its 취소.
-        suggestions.phase == SuggestionPhase.Loading -> Row(verticalAlignment = Alignment.CenterVertically) {
-            Helper(stringResource(R.string.direct_suggest_working), Modifier.weight(1f))
-            val description = stringResource(R.string.direct_suggest_cancel_description)
+private fun RecommendLine(state: DirectState, onRecommend: (Boolean) -> Unit, onCancel: () -> Unit) {
+    if (state.recommending) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Helper(stringResource(R.string.direct_recommend_working), Modifier.weight(1f))
+            val description = stringResource(R.string.direct_recommend_cancel_description)
             TertiaryPill(
-                text = stringResource(R.string.direct_suggest_cancel),
+                text = stringResource(R.string.direct_recommend_cancel),
                 onClick = onCancel,
                 modifier = Modifier
-                    .testTag(DirectSuggestionCancelTestTag)
+                    .testTag(DirectRecommendCancelTestTag)
                     .semantics { contentDescription = description },
             )
         }
-        state.requestSource == RequestSource.Suggestion && state.request.isNotEmpty() -> Helper(
-            stringResource(R.string.direct_suggest_editable),
-        )
-        suggestions.phase == SuggestionPhase.Tailored -> Unit
-        else -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            if (suggestions.phase == SuggestionPhase.Empty) {
-                Text(
-                    text = stringResource(R.string.direct_suggest_empty),
-                    style = Typography.bodySm,
-                    color = colors.ink,
-                )
-            }
-            val retry = suggestions.phase == SuggestionPhase.Failed || suggestions.phase == SuggestionPhase.Empty
-            TertiaryPill(
-                text = stringResource(if (retry) R.string.direct_suggest_retry else R.string.direct_suggest_find),
-                onClick = onFind,
-                enabled = suggestions.frameReady && !state.working,
-                modifier = Modifier.testTag(DirectSuggestionFindTestTag),
-            )
-            Helper(
-                stringResource(
-                    if (suggestions.frameReady) R.string.direct_suggest_notice else R.string.direct_suggest_preparing,
-                ),
+        return
+    }
+    // A recommendation was answered: asking again is one explicit new request.
+    val recommendMode = state.proposals.mode == PlanMode.Recommend
+    val answered = recommendMode && state.proposal != null
+    val failed = recommendMode && state.phase == ProposalPhase.Failed
+    val label = when {
+        failed -> R.string.direct_recommend_retry
+        answered -> R.string.direct_recommend_again
+        else -> R.string.direct_recommend
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (state.phase == ProposalPhase.Cancelled) Helper(stringResource(R.string.direct_recommend_cancelled))
+        if (failed) {
+            Text(
+                text = stringResource(R.string.direct_recommend_failed),
+                style = Typography.bodySm,
+                color = LocalAppColors.current.ink,
             )
         }
+        TertiaryPill(
+            text = stringResource(label),
+            onClick = { onRecommend(answered) },
+            enabled = state.canRecommend,
+            // DESIGN.md §4 `tertiary`: a link action, in the blue that keeps 4.5:1.
+            color = LocalAppColors.current.link,
+            modifier = Modifier.testTag(DirectRecommendTestTag),
+        )
+        val notice =
+            if (state.proposals.frameReady) R.string.direct_recommend_notice else R.string.direct_recommend_preparing
+        Helper(stringResource(notice))
     }
 }
 
@@ -147,20 +154,21 @@ private fun Helper(text: String, modifier: Modifier = Modifier) {
 }
 
 /**
- * DESIGN.md §4: a pill on `editSurfaceRaised`, 40dp tall inside a 48dp touch target, ink text — the
- * sheet's one accent stays on 적용. TalkBack hears the label, the condition and what a tap does.
+ * DESIGN.md §2, §4: a suggested sentence is a `promptTint` pill, 40dp tall inside a 48dp touch
+ * target, ink text — light blue marks it as a suggestion, not as a selection or the sheet's
+ * primary. TalkBack hears the label, the condition and what a tap does.
  */
 @Composable
-private fun SuggestionPill(id: PromptSuggestionId, enabled: Boolean, onPick: (String) -> Unit) {
+private fun SuggestionPill(example: ExampleSentence, enabled: Boolean, onPick: (String) -> Unit) {
     val colors = LocalAppColors.current
-    val label = stringResource(id.labelRes())
-    val request = stringResource(id.requestRes())
-    val description = stringResource(R.string.direct_suggest_pill_description, label, stringResource(id.hintRes()))
+    val label = stringResource(example.labelRes())
+    val request = stringResource(example.requestRes())
+    val description = stringResource(R.string.direct_suggest_pill_description, label, stringResource(example.hintRes()))
     Box(
         modifier = Modifier
-            .testTag(id.wire)
-            .heightIn(min = 48.dp)
-            .clip(RoundedCornerShape(16.dp))
+            .testTag(example.tag)
+            .heightIn(min = Dimens.touchTarget)
+            .clip(Shapes.pill)
             .clickable(enabled = enabled, role = Role.Button) { onPick(request) }
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
@@ -171,7 +179,7 @@ private fun SuggestionPill(id: PromptSuggestionId, enabled: Boolean, onPick: (St
             color = colors.ink.copy(alpha = if (enabled) 1f else DISABLED_ALPHA),
             modifier = Modifier
                 .heightIn(min = 40.dp)
-                .background(colors.surfaceRaised, RoundedCornerShape(16.dp))
+                .background(Tokens.promptTint, Shapes.pill)
                 .padding(horizontal = 16.dp, vertical = 8.dp),
         )
     }

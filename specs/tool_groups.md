@@ -30,19 +30,19 @@ portrait profile and skin_retouch.md §2's menu table are superseded.
 
 - **The strip's height, item size and scrolling are unchanged.** DESIGN.md §4's 72dp / 64dp / 24dp
   icon + `label` all still hold; what changes is which list is bound to it.
-- **One surface, so still one accent.** DESIGN.md §1 counts the strip as one surface and allows it
-  one accent at rest: the selected tool's indicator. A second row would have been a second surface
-  and a second accent, which is the rule this design exists to keep.
+- **One surface.** DESIGN.md §1 counts the strip as one surface; its blue marks the selected tool's
+  icon, label and indicator. A second row would have been a second surface competing for the same
+  canvas space.
 - The AI parent carries the 6dp accent dot (§4's AI marker). **Its children stop carrying it** —
   inside the AI level every tool is an AI tool, so the dot marks nothing. The dot moves up a level
   rather than being repeated six times.
-- The ← item is `editInk`, not accent, and is a tool-shaped item so the row stays one rhythm.
+- The ← item is black `editInk`, not accent, and is a tool-shaped item so the row stays one rhythm.
 
 ### The two designs this rejects
 **A second row that expands above the strip.** It is the obvious answer and it is what most editors
 do. It costs 72dp of canvas the moment it opens — DESIGN.md §5 gives the canvas "all remaining
 space" and §4 caps sheets at 45% precisely so the photo stays visible — and it puts a second
-accent-bearing surface on screen. Rejected on both.
+selection-bearing surface on screen. Rejected on both.
 
 **A bottom sheet of AI tools.** Sheets are for committing an edit (DESIGN.md §4: title → controls →
 [취소 | 적용]); a menu has nothing to apply. It would also cover the canvas to show a list of

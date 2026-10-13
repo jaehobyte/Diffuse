@@ -127,7 +127,7 @@ it does have is an **after**: the result arrives as a preview with a three-chip 
 [ 균형 ][ 선명 ][ 레트로 ]                        chips; changing one re-runs
 강도  ────●────────  100                         slider, mono value
 지시  노출을 올리고 그림자를 열었어요               bodySm, the model's own reason
-                                    [취소 | 적용]  Apply is the sheet's one accent
+                                    [취소 | 적용]  Apply is the sheet's one filled primary
 ```
 
 - The plan applies **live** while the sheet is open, so 강도 is a slider on a result the user is

@@ -73,8 +73,8 @@ Drawn above the bitmap, inside the image rect, respecting zoom and pan:
   against the accumulated mask)
 - **outline**: `accent`, `1.dp / scale` so it stays 1dp on screen at any zoom; traced from the mask
   alpha and cached per mask instance
-- **points**: 8dp circles, `accent` for foreground and `#FFFFFF` for background, 1dp `editHairline`
-  stroke, fixed screen size
+- **points**: 8dp circles, `accent` for foreground and `#FFFFFF` for background, 1dp `editBackground`
+  (dark) stroke so a white point still reads over a bright photo, fixed screen size
 - while `busy`, the previous mask stays visible — no spinner on the canvas
 
 ## 6. Apply and cancel

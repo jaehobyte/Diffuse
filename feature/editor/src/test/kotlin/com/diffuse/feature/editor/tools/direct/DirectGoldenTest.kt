@@ -8,11 +8,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.diffuse.core.ai.EditPlan
-import com.diffuse.core.ai.PlanStep
-import com.diffuse.core.ai.PromptSuggestionId
+import com.diffuse.core.ai.Availability
+import com.diffuse.core.ai.FakePlanProvider
+import com.diffuse.core.ai.GoalSource
+import com.diffuse.core.ai.PlanMode
+import com.diffuse.core.ai.PlanOutcome
+import com.diffuse.core.ai.PlanProposal
 import com.diffuse.core.ai.speech.FakeSpeechInput
-import com.diffuse.core.imaging.model.AdjustKind
 import com.diffuse.core.ui.ScreenshotOptions
 import com.diffuse.core.ui.components.PromptBar
 import com.diffuse.core.ui.theme.AppTheme
@@ -27,7 +29,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * specs/vibe_edit.md §12: the sheet goldens, plus §14's suggestion states. No render golden — this
+ * specs/vibe_edit.md §12: the sheet goldens, plus §14's recommendation and review states. No render golden — this
  * feature adds no renderer path.
  */
 @RunWith(AndroidJUnit4::class)
@@ -38,38 +40,54 @@ class DirectGoldenTest {
     @get:Rule
     val compose = createComposeRule()
 
-    /** §14: the sheet as it opens — the general examples and the explicit request. */
+    /** §14: the sheet as it opens — the examples and the 보정 추천 entry. */
     @Test
     fun directSheetOpen() {
-        show(DirectState(suggestions = SuggestionState(frameReady = true)))
+        show(DirectState(proposals = ProposalState(frameReady = true)))
 
         capture("direct_sheet_open")
     }
 
     @Test
-    fun directSuggestLoading() {
-        show(DirectState(suggestions = SuggestionState(phase = SuggestionPhase.Loading, frameReady = true)))
+    fun directRecommendLoading() {
+        show(DirectState(proposals = ProposalState(ProposalPhase.Loading, PlanMode.Recommend, frameReady = true)))
 
-        capture("direct_suggest_loading")
+        capture("direct_recommend_loading")
     }
 
+    /** §14: a recommendation under review — observation, goal, what to keep, steps, checks. */
     @Test
-    fun directSuggestTailored() {
+    fun directRecommendReview() {
         show(
             DirectState(
-                suggestions = SuggestionState(
-                    phase = SuggestionPhase.Tailored,
-                    ids = listOf(
-                        PromptSuggestionId.LiftShadows,
-                        PromptSuggestionId.Warm,
-                        PromptSuggestionId.VividColor,
+                proposals = ProposalState(
+                    ProposalPhase.Ready,
+                    PlanMode.Recommend,
+                    FakePlanProvider.DEFAULT_PROPOSAL.copy(
+                        goals = FakePlanProvider.DEFAULT_PROPOSAL.goals.map { it.copy(source = GoalSource.Default) },
                     ),
                     frameReady = true,
                 ),
             ),
         )
 
-        capture("direct_suggest_tailored")
+        capture("direct_recommend_review")
+    }
+
+    @Test
+    fun directRecommendNoChange() {
+        show(
+            DirectState(
+                proposals = ProposalState(
+                    ProposalPhase.NoChange,
+                    PlanMode.Recommend,
+                    PlanProposal(PlanOutcome.NoChange, reason = "밝기와 색의 균형이 이미 좋아요"),
+                    frameReady = true,
+                ),
+            ),
+        )
+
+        capture("direct_recommend_no_change")
     }
 
     @Test
@@ -77,11 +95,11 @@ class DirectGoldenTest {
         show(
             DirectState(
                 request = REQUEST,
-                plan = EditPlan(
-                    listOf(
-                        PlanStep.Select("나무"),
-                        PlanStep.Adjust(AdjustKind.Saturation, 0.3f, masked = true),
-                    ),
+                proposals = ProposalState(
+                    ProposalPhase.Ready,
+                    PlanMode.Direct,
+                    FakePlanProvider.DEFAULT_PROPOSAL,
+                    frameReady = true,
                 ),
             ),
         )
@@ -89,7 +107,9 @@ class DirectGoldenTest {
         capture("direct_plan_preview")
     }
 
-    private fun show(state: DirectState) {
+    private fun show(given: DirectState) {
+        // The tool only opens with a key, so every golden is the enabled sheet.
+        val state = given.copy(availability = Availability.Ready)
         compose.setContent {
             AppTheme(ThemeMode.Edit) {
                 Box(modifier = Modifier.fillMaxSize().background(Tokens.editBackground)) {
@@ -111,7 +131,7 @@ class DirectGoldenTest {
                                 DirectSuggestionArea(
                                     state = state,
                                     speech = FakeSpeechInput(),
-                                    onFind = {},
+                                    onRecommend = {},
                                     onCancel = {},
                                     onHide = {},
                                     onPick = {},

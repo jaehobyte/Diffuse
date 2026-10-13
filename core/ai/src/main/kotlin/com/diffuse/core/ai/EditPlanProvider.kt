@@ -83,17 +83,52 @@ enum class StyleId(val id: String) {
  */
 enum class CropRatio { Square, Portrait3x4, Portrait4x5, Story9x16, Landscape4x3, Landscape16x9 }
 
-/** [steps] in execution order. Empty means the model declined to act — not a failure. */
+/** [steps] in execution order. */
 data class EditPlan(val steps: List<PlanStep>)
 
 /**
- * specs/vibe_edit.md §7. Decides which of the editor's tools to run for a request. It chooses a
- * workflow and never returns pixels; executing the steps is `feature:editor`'s job (§9).
+ * specs/vibe_edit.md §14. [Recommend] is 보정 추천 받기 — the text may be empty and the plan is a
+ * proposal for the photo; [Direct] is a sent 지시, whose text may not be empty. Both are one call
+ * to the same planner under the same evaluation rules.
+ */
+enum class PlanMode { Recommend, Direct }
+
+/**
+ * One adjustment the document already carries, as the **final setting** `withAdjust` would
+ * replace. [masked] says it lives on a selection rather than the whole photo.
+ */
+data class CurrentAdjust(val kind: AdjustKind, val value: Float, val masked: Boolean)
+
+/**
+ * specs/vibe_edit.md §14. A pure summary of the document the photo was rendered from, built in
+ * `feature:editor` so `core:ai` never reads an `EditDocument`. It is what lets the model plan
+ * "더 밝게" on a photo whose exposure is already raised.
+ */
+data class PlanContext(
+    val adjustments: List<CurrentAdjust> = emptyList(),
+    /** The document has an applied selection. */
+    val hasSelection: Boolean = false,
+    val cropped: Boolean = false,
+)
+
+/** What the planner is asked: the user's text verbatim, why it is asked, and the document state. */
+data class PlanRequest(
+    val text: String,
+    val mode: PlanMode,
+    val context: PlanContext = PlanContext(),
+)
+
+/**
+ * specs/vibe_edit.md §7. Evaluates the photo and a request and proposes a workflow made of the
+ * editor's own tools. It never returns pixels; executing the steps is `feature:editor`'s job (§9).
  */
 interface EditPlanProvider {
 
     val availability: StateFlow<Availability>
 
-    /** One call, no session, no state. */
-    suspend fun plan(image: Bitmap, request: String): Result<EditPlan>
+    /**
+     * One call, no session, no state. A response that fails the proposal checks is
+     * `Invalid("unplannable:…")` — the whole proposal is refused, never partly kept.
+     */
+    suspend fun plan(image: Bitmap, request: PlanRequest): Result<PlanProposal>
 }

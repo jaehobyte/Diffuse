@@ -5,7 +5,7 @@ Module: `core/imaging/ops` (Crop op), `feature/editor/tools/crop` (overlay + she
 Depends on: canvas.md (overlay slot, `LocalCanvasTransform`), edit_model.md (`Crop` op), render.md
 
 ## What the user sees
-- Tool strip "자르기" → canvas refits to show the **full un-cropped source**, and a crop overlay appears: dimmed area outside the rect (`#000000` 50%), rect border 1dp `editInk`, corner handles 24dp L-shapes, rule-of-thirds grid inside while dragging.
+- Tool strip "자르기" → canvas refits to show the **full un-cropped source**, and a crop overlay appears: dimmed area outside the rect (`#000000` 50%), rect border 1dp `canvasOverlayInk` and corner handles 24dp L-shapes, each on a thin dark rim, rule-of-thirds grid inside while dragging.
 - Sheet (max 45%): preset chips row [자유, 1:1, 4:5, 9:16, 16:9], a zero-centered straighten slider −45…45° (shown as degrees, 1 decimal), and two icon buttons: 90° left, 90° right. Cancel / Apply.
 
 ## Interaction

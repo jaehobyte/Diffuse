@@ -1,33 +1,32 @@
 package com.diffuse.core.ai.gemini
 
 import android.util.Base64
-import com.diffuse.core.ai.EditPlan
+import com.diffuse.core.ai.PlanMode
+import com.diffuse.core.ai.PlanProposal
+import com.diffuse.core.ai.PlanRequest
 import com.diffuse.core.ai.PlanStep
 import com.diffuse.core.common.AppError
 import com.diffuse.core.common.DispatcherProvider
 import com.diffuse.core.common.Logger
 import com.diffuse.core.common.Result
-import com.diffuse.core.imaging.model.HslChannel
+import com.diffuse.core.imaging.model.AdjustKind
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.floatOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.coroutineContext
 
 /**
- * specs/vibe_edit.md §5, §6. One planning call: the photo, the sentence and the four functions
- * this editor has, answered with the calls to run.
+ * specs/vibe_edit.md §5, §6, §14. One planning call: the photo, its current settings, the mode
+ * and the request, answered with one `propose_edit` envelope that carries the evaluation and the
+ * workflow. 보정 추천 and a sent 지시 are this one call with a different mode.
  *
  * The model is `gemini-2.5-flash` and **not** `-image`: this call produces a decision, not pixels.
  * The key travels in the `x-goog-api-key` header for the reason generative_erase.md §5 gives.
@@ -53,9 +52,9 @@ internal class GeminiPlanClient(
 
     /**
      * @param jpeg the preview, already downscaled and compressed by the caller.
-     * @param request the user's sentence, sent verbatim.
+     * @param request the user's text is sent verbatim, in its own part, when it is not blank.
      */
-    suspend fun plan(jpeg: ByteArray, request: String): Result<EditPlan> =
+    suspend fun plan(jpeg: ByteArray, request: PlanRequest): Result<PlanProposal> =
         withContext(dispatchers.io) {
             val config = configSource.current()
             if (!config.isConfigured) {
@@ -68,13 +67,14 @@ internal class GeminiPlanClient(
                 contents = listOf(
                     Content(
                         role = "user",
-                        parts = listOf(
+                        parts = listOfNotNull(
                             Part(inlineData = InlineData(JPEG_MEDIA_TYPE, base64(jpeg))),
-                            Part(text = request),
+                            Part(text = contextText(request)),
+                            request.text.takeIf { it.isNotBlank() }?.let { Part(text = it) },
                         ),
                     ),
                 ),
-                tools = listOf(Tool(functionDeclarations = PLAN_FUNCTIONS)),
+                tools = listOf(Tool(functionDeclarations = listOf(PROPOSE_FUNCTION))),
                 toolConfig = ToolConfig(FunctionCallingConfig(mode = ANY_MODE)),
             )
             val httpRequest = Request.Builder()
@@ -89,7 +89,7 @@ internal class GeminiPlanClient(
             try {
                 http.newCall(httpRequest).await().use { response ->
                     val body = response.body?.string().orEmpty()
-                    if (response.isSuccessful) read(body) else statusFailure(response.code, body)
+                    if (response.isSuccessful) read(body, request) else statusFailure(response.code, body)
                 }
             } catch (e: IOException) {
                 logger?.warn(TAG, "POST $PATH unreachable", e)
@@ -98,136 +98,86 @@ internal class GeminiPlanClient(
         }
 
     /**
-     * §5: `candidates[0].content.parts` in order, every `functionCall` kept and every text part
-     * skipped. Zero function calls is an empty plan, not an error (§6).
+     * §14: exactly one function call, and it is `propose_edit`; text parts are skipped. Anything
+     * else — no call, two envelopes, another name, or an envelope [ProposalDecoder] or
+     * [ProposalCheck] refuses — is `Invalid("unplannable:…")`, and nothing of it is kept.
      */
-    private fun read(body: String): Result<EditPlan> {
+    // Undecodable, blocked and refused are three different answers, so three returns.
+    @Suppress("ReturnCount")
+    private fun read(body: String, request: PlanRequest): Result<PlanProposal> {
         val response = try {
             json.decodeFromString(GenerateContentResponse.serializer(), body)
         } catch (e: SerializationException) {
             return Result.Failure(AppError.Io(e))
         }
         val blocked = blockReason(response)
-        return if (blocked != null) {
+        if (blocked != null) {
             logger?.warn(TAG, "planning blocked: $blocked")
-            Result.Failure(AppError.Invalid("$GEMINI_BLOCKED_PREFIX$blocked"))
-        } else {
-            val steps = response.candidates.firstOrNull()?.content?.parts.orEmpty()
-                .mapNotNull { it.functionCall }
-                .flatMap(::steps)
-            // A plan that is accepted logs nothing otherwise, so "the tool only selected the
-            // thing" cannot be told apart from "the run stopped at step 0" after the fact. The
-            // failure T52 fought is invisible without this line. It logs the plan **after** §5's
-            // reordering, because that is the order the run will actually take.
-            val plan = cropLast(steps)
-            logger?.debug(TAG, "plan (${plan.size}): ${plan.joinToString(" -> ")}")
-            Result.Success(EditPlan(plan))
+            return Result.Failure(AppError.Invalid("$GEMINI_BLOCKED_PREFIX$blocked"))
+        }
+        val calls = response.candidates.firstOrNull()?.content?.parts.orEmpty().mapNotNull { it.functionCall }
+        val call = calls.singleOrNull()?.takeIf { it.name == FN_PROPOSE_EDIT }
+        return try {
+            val decoded = ProposalDecoder.decode(call?.args ?: throw Unplannable("${calls.size} function calls"))
+            ProposalCheck.violation(decoded, request.text)?.let { throw Unplannable(it) }
+            val proposal = cropLast(decoded)
+            // §14: the outcome and the step kinds only. Observations, goals and the user's words
+            // stay out of the log.
+            logger?.debug(
+                TAG,
+                "proposal ${proposal.outcome} (${proposal.workflow.size}): " +
+                    proposal.workflow.joinToString(" -> ") { it.step::class.simpleName.orEmpty() },
+            )
+            Result.Success(proposal)
+        } catch (e: Unplannable) {
+            logger?.warn(TAG, "proposal refused: ${e.message}")
+            Result.Failure(AppError.Invalid("$UNPLANNABLE_PREFIX${e.message}"))
         }
     }
 
     /**
-     * §5: an unknown name, a missing required argument or a non-finite value drops **that** step
-     * and keeps the rest — the rule `EditDocumentJson` uses for an unknown operation.
+     * specs/vibe_edit.md §5, §4.1: a crop wherever the model put it moves to the **end**, so the
+     * 자르기 tool can open on it. `ProposalCheck` refuses a second one. No other step is
+     * reordered — the model's order is the plan everywhere else.
      */
-    private fun steps(call: FunctionCall): List<PlanStep> {
-        val steps = when (call.name) {
-            FN_SELECT_REGION -> listOfNotNull(
-                call.args.string(ARG_PHRASE)
-                    ?.takeIf { it.isNotBlank() }
-                    ?.let(PlanStep::Select),
-            )
-            FN_ADJUST -> listOfNotNull(adjust(call.args))
-            FN_ADJUST_COLOR_RANGE -> colorRange(call.args)
-            FN_ERASE_SELECTION -> listOf(PlanStep.Erase)
-            FN_CUT_OUT_SELECTION -> listOf(PlanStep.CutOut)
-            FN_FILL_SELECTION -> listOfNotNull(
-                call.args.string(ARG_PROMPT)
-                    ?.takeIf { it.isNotBlank() }
-                    ?.let(PlanStep::Fill),
-            )
-            FN_CROP_RATIO -> listOfNotNull(
-                call.args.string(ARG_RATIO)?.let(::cropRatioOf)?.let(PlanStep::Crop),
-            )
-            // specs/style_match.md §6: an unknown id drops the step and later steps survive, §5's
-            // rule. `intensity` is optional — a look named with no strength means all of it.
-            FN_APPLY_STYLE -> listOfNotNull(
-                call.args.string(ARG_STYLE)?.let(::styleIdOf)?.let { style ->
-                    PlanStep.Style(style, styleIntensity(call.args))
-                },
-            )
-            else -> emptyList()
-        }
-        if (steps.isEmpty()) logger?.warn(TAG, "dropped function call '${call.name}' ${call.args}")
-        return steps
+    private fun cropLast(proposal: PlanProposal): PlanProposal {
+        val crop = proposal.workflow.lastOrNull { it.step is PlanStep.Crop } ?: return proposal
+        return proposal.copy(workflow = proposal.workflow.filterNot { it.step is PlanStep.Crop } + crop)
     }
 
     /**
-     * specs/vibe_edit.md §5, §4.1: however many crops the model emitted and wherever it put them,
-     * keep the **last** and move it to the **end**. Two crops in one plan is the model restating
-     * itself rather than asking to crop twice, and `Operation.Crop` is at-most-one anyway
-     * (edit_model.md). No other step is reordered — the model's order is the plan everywhere else.
+     * §14: the mode and the document's current settings, as the final values a new `adjust`
+     * would replace. A pure summary; no file path, project id or EXIF is sent.
      */
-    private fun cropLast(steps: List<PlanStep>): List<PlanStep> {
-        val crop = steps.lastOrNull { it is PlanStep.Crop } ?: return steps
-        return steps.filterNot { it is PlanStep.Crop } + crop
-    }
-
-    /** §6: 0…100, clamped. A model that answers 250 meant "a lot", not "two and a half times". */
-    private fun styleIntensity(args: JsonObject): Int {
-        val given = args.float(ARG_INTENSITY)?.takeIf { it.isFinite() } ?: return FULL_STYLE_INTENSITY
-        return given.toInt().coerceIn(0, FULL_STYLE_INTENSITY)
-    }
-
-    private fun adjust(args: JsonObject): PlanStep.Adjust? {
-        val kind = args.string(ARG_KIND)?.let(::adjustKindOf)
-        val value = args.float(ARG_VALUE)?.takeIf { it.isFinite() }
-        return if (kind == null || value == null) {
-            null
-        } else {
-            PlanStep.Adjust(kind, kind.coerce(value), args.boolean(ARG_MASKED) ?: true)
+    private fun contextText(request: PlanRequest): String = buildString {
+        val context = request.context
+        append("Mode: ").append(if (request.mode == PlanMode.Recommend) "recommend" else "direct").append('\n')
+        append("Request: ").append(if (request.text.isBlank()) "(none)" else "the next part, verbatim").append('\n')
+        append("Current settings (final values; an adjust replaces the value for the same kind and scope):")
+        if (context.adjustments.isEmpty()) append(" none")
+        context.adjustments.forEach { adjust ->
+            append("\n- ").append(adjust.kind.settingName).append(" = ")
+                .append(String.format(Locale.ROOT, "%.2f", adjust.value))
+                .append(if (adjust.masked) " (on an existing selection)" else " (whole photo)")
         }
+        append("\nExisting selection: ").append(if (context.hasSelection) "yes" else "none")
+        append("\nCropped: ").append(if (context.cropped) "yes" else "no")
     }
 
-    /**
-     * specs/adjust_hsl.md §8: one call becomes up to three ordinary `Adjust` steps, in the fixed
-     * order hue → saturation → luminance. The runner already knows how to apply an `Adjust`, so
-     * 혼합 costs the plan model nothing.
-     *
-     * `masked` defaults to **false** here, unlike `adjust`: a colour range is chosen by colour
-     * rather than by region, and a masked adjust with no selection is a plan `PlanRunner.validate`
-     * rejects outright (specs/vibe_edit.md §9.1).
-     */
-    private fun colorRange(args: JsonObject): List<PlanStep> {
-        val band = hslBandOf(args.string(ARG_COLOR).orEmpty()) ?: return emptyList()
-        val masked = args.boolean(ARG_MASKED) ?: false
-        return HslChannel.entries.mapNotNull { channel ->
-            val value = args.float(channel.wireName)
-                ?.takeIf { it.isFinite() && it != 0f }
-                ?: return@mapNotNull null
-            val kind = hslKindOf(band, channel)
-            PlanStep.Adjust(kind, kind.coerce(value), masked)
-        }
-    }
+    /** A 혼합 kind reads as `adjust_color_range`'s own words, so the model can repeat it back. */
+    private val AdjustKind.settingName: String
+        get() = hsl?.let { "${it.band.wireName} ${it.channel.wireName}" } ?: wireName
 
     /** A refused prompt and a cut-short candidate are the same thing to the caller (§6). */
     private fun blockReason(response: GenerateContentResponse): String? =
         response.promptFeedback?.blockReason
             ?: response.candidates.firstOrNull()?.finishReason?.takeIf { it in BLOCKING_REASONS }
 
-    private fun statusFailure(code: Int, body: String): Result<EditPlan> {
+    private fun statusFailure(code: Int, body: String): Result<PlanProposal> {
         val error = geminiErrorOf(json, body)
         logger?.warn(TAG, "POST $PATH -> $code ${error.status}: ${error.message}")
         return Result.Failure(geminiStatusError(code, error))
     }
-
-    private fun JsonObject.primitive(key: String): JsonPrimitive? =
-        (this[key] as? JsonPrimitive)?.takeIf { it !is JsonNull }
-
-    private fun JsonObject.string(key: String): String? = primitive(key)?.content
-
-    private fun JsonObject.float(key: String): Float? = primitive(key)?.floatOrNull
-
-    private fun JsonObject.boolean(key: String): Boolean? = primitive(key)?.booleanOrNull
 
     private fun base64(bytes: ByteArray): String = Base64.encodeToString(bytes, Base64.NO_WRAP)
 
@@ -237,6 +187,12 @@ internal class GeminiPlanClient(
 
         private const val TAG = "GeminiPlanClient"
         private const val JPEG_MEDIA_TYPE = "image/jpeg"
+
+        /**
+         * §14: a refusal of the envelope. `feature:editor` matches it the way it matches
+         * `blocked:` — the same event to the user as a plan it cannot run.
+         */
+        const val UNPLANNABLE_PREFIX = "unplannable:"
 
         /** Forces function calls over prose: narration is nothing the app can run (§5). */
         private const val ANY_MODE = "ANY"

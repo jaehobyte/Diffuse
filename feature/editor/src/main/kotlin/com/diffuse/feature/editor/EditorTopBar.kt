@@ -4,7 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -60,7 +60,8 @@ fun EditorTopBar(
             .fillMaxWidth()
             .background(colors.surface)
             .statusBarsPadding()
-            .height(TopBarHeight)
+            // A minimum, so the 48dp export pill can grow with a large font instead of clipping.
+            .heightIn(min = TopBarHeight)
             .padding(horizontal = TopBarPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {

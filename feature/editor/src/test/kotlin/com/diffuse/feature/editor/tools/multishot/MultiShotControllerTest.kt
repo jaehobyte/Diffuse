@@ -42,6 +42,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -1529,6 +1530,303 @@ class MultiShotControllerTest {
         assertFalse(controller.state.value.working)
     }
 
+    // ---- 추가 5장 경계 (tasks.md 2026-10-13) ----------------------------------------------------
+
+    @Test
+    fun `three photos leave two places, a full timeline none, and a delete frees exactly one`() = runTest {
+        val controller = controller()
+        newTimeline(controller)
+        pick(controller, uris(3))
+        assertEquals("two more fit", 2, controller.requestPick(null)!!.max)
+
+        pick(controller, uris(2, from = 4))
+
+        val full = controller.state.value
+        assertEquals(5, full.items.size)
+        assertEquals("the picked order is kept", uris(5), host.loads)
+        assertFalse(full.canAddPhoto)
+        assertNull(controller.requestPick(null))
+        assertEquals("a replacement still works when full", 1, controller.requestPick(full.items[4].key)!!.max)
+
+        controller.remove(full.timeOrder[3])
+
+        assertTrue(controller.state.value.canAddPhoto)
+        assertEquals(1, controller.requestPick(null)!!.max)
+        assertEquals(0, segmentation.opens)
+    }
+
+    @Test
+    fun `the free layout adds five one at a time, then only replaces`() = runTest {
+        val controller = controller()
+        controller.start()
+        repeat(MultiShotState.MAX_ITEMS) { index ->
+            assertEquals(1, controller.requestPick(null)!!.max)
+            pick(controller, uris(1, from = index + 1))
+        }
+
+        assertEquals(5, controller.state.value.items.size)
+        assertNull(controller.requestPick(null))
+        val last = controller.state.value.items.last().key
+        val replace = controller.requestPick(last)!!
+        controller.onPicked(replace.id, uris(1, from = 9))
+        assertEquals(5, controller.state.value.items.size)
+        assertEquals(last, controller.state.value.items.last().key)
+        assertEquals(uri(9), host.loads.last())
+    }
+
+    // ---- 추출 대상 직접 입력 (tasks.md 2026-10-13) ----------------------------------------------
+
+    @Test
+    fun `a session starts from person, and typing sends nothing`() = runTest {
+        val controller = controller()
+        newTimeline(controller)
+        assertEquals(PERSON, controller.state.value.target)
+        pick(controller, uris(2))
+
+        controller.setTarget("do")
+        controller.setTarget(" dog ")
+
+        assertEquals(" dog ", controller.state.value.target)
+        assertEquals(0, segmentation.opens)
+        assertTrue(segmentation.texts.isEmpty())
+    }
+
+    @Test
+    fun `the run asks the hero and all five photos for the trimmed target`() = runTest {
+        val controller = controller()
+        newTimeline(controller)
+        pick(controller, uris(5))
+        controller.setTarget(" dog ")
+        segmentation.queued = DOG
+        answer(
+            listOf(middle()), listOf(leftHalf()), listOf(middle()),
+            listOf(rightHalf()), listOf(middle()), listOf(leftHalf()),
+        )
+
+        controller.runAll()
+
+        val state = controller.state.value
+        assertEquals(List(6) { DOG }, segmentation.texts)
+        assertEquals(6, segmentation.opens)
+        assertTrue(state.items.all { it.status == ShotStatus.Ready })
+        assertTrue(state.positionsCurrent)
+        controller.apply()
+        val composite = host.committed.single().multiShot()!!
+        assertEquals(5, composite.shots.size)
+        assertEquals(state.timeOrder, composite.timeline!!.order)
+    }
+
+    @Test
+    fun `the free layout asks for the target typed before its press`() = runTest {
+        val controller = controller()
+        controller.start()
+        pick(controller, uris(1))
+        controller.setTarget("  car")
+        segmentation.answers[CAR] = listOf(leftHalf())
+
+        controller.extract()
+
+        assertEquals(listOf(CAR), segmentation.texts)
+        assertEquals(ShotStatus.Selecting, controller.state.value.selected?.status)
+        assertNotNull(controller.state.value.mask)
+    }
+
+    @Test
+    fun `a blank target blocks new extraction but not a layout of what is extracted`() = runTest {
+        val controller = controller()
+        controller.start()
+        pick(controller, uris(1))
+        controller.setTarget("   ")
+        assertFalse(controller.state.value.canExtract)
+        controller.extract()
+        assertEquals(0, segmentation.opens)
+        controller.close()
+
+        newTimeline(controller)
+        pick(controller, uris(2))
+        controller.setTarget("")
+        assertFalse(controller.state.value.canRun)
+        controller.runAll()
+        assertEquals(0, segmentation.opens)
+        assertEquals(0, host.saves.size)
+        controller.close()
+
+        timeline(controller, shots = 2)
+        val opens = segmentation.opens
+        controller.setTarget(" ")
+        assertTrue("nothing left to extract", controller.state.value.canRun)
+        controller.runAll()
+        assertEquals("laid out locally", opens, segmentation.opens)
+        assertTrue(controller.state.value.positionsCurrent)
+    }
+
+    @Test
+    fun `the target is fixed at the press, while the upload is on the wire`() = runTest {
+        val controller = controller()
+        controller.start()
+        pick(controller, uris(1))
+        controller.setTarget(DOG)
+        segmentation.answers[DOG] = listOf(leftHalf())
+        val gate = CompletableDeferred<Unit>().also { segmentation.openGate = it }
+        controller.extract()
+
+        controller.setTarget(CAR)
+        gate.complete(Unit)
+
+        assertEquals(listOf(DOG), segmentation.texts)
+        assertEquals(CAR, controller.state.value.target)
+    }
+
+    @Test
+    fun `a run locks the target, also while it waits for a choice, and resumes with the same one`() = runTest {
+        val controller = controller()
+        newTimeline(controller)
+        pick(controller, uris(2))
+        controller.setTarget(DOG)
+        segmentation.queued = DOG
+        answer(listOf(leftHalf()), listOf(leftHalf(), rightHalf()), listOf(middle()))
+        val gate = CompletableDeferred<Unit>().also { segmentation.openGates[1] = it }
+        controller.runAll()
+
+        controller.setTarget(CAR)
+        assertEquals("locked while running", DOG, controller.state.value.target)
+        gate.complete(Unit)
+
+        val paused = controller.state.value
+        assertEquals(RunPhase.Choosing, paused.run?.phase)
+        controller.setTarget(CAR)
+        assertEquals("locked while waiting", DOG, controller.state.value.target)
+        // The photo's own refinement stays open while the common target is locked.
+        controller.addPoint(0.75f, 0.5f, include = true)
+        assertEquals(1, segmentation.points)
+        controller.chooseCandidate(1)
+        controller.finishExtraction()
+
+        assertNull(controller.state.value.run)
+        assertEquals(List(3) { DOG }, segmentation.texts)
+        assertTrue(controller.state.value.canApply)
+    }
+
+    @Test
+    fun `after a cancel the target can change, the late answer is dropped and saved subjects stay`() = runTest {
+        val controller = controller()
+        newTimeline(controller)
+        pick(controller, uris(2))
+        segmentation.answers[PERSON] = listOf(leftHalf())
+        val gate = CompletableDeferred<Unit>().also { segmentation.openGates[2] = it }
+        controller.runAll()
+        controller.cancelRun()
+
+        controller.setTarget(DOG)
+        gate.complete(Unit)
+
+        val cancelled = controller.state.value
+        assertEquals(DOG, cancelled.target)
+        assertEquals("the late session was asked nothing", listOf(PERSON), segmentation.texts)
+        assertEquals(ShotStatus.Ready, cancelled.hero?.status)
+        val heroSave = host.saves.single().first
+
+        segmentation.answers[DOG] = listOf(rightHalf())
+        controller.runAll()
+
+        assertEquals("the hero is not asked again", listOf(PERSON, DOG, DOG), segmentation.texts)
+        assertEquals(3, host.saves.size)
+        assertEquals(heroSave, host.saves.first().first)
+        assertTrue(controller.state.value.canApply)
+        controller.apply()
+        val hero = host.committed.single().multiShot()!!.timeline!!.hero!!
+        assertEquals(ImageRef("/p/shot_$heroSave.png"), hero.ref)
+    }
+
+    @Test
+    fun `a selection left open for the old target is asked again for the new one`() = runTest {
+        val controller = controller()
+        newTimeline(controller)
+        pick(controller, uris(1))
+        val a = controller.state.value.timeOrder.single()
+        answer(listOf(leftHalf()), listOf(leftHalf(), rightHalf()))
+        controller.runAll()
+        assertEquals(2, controller.state.value.candidateCount)
+        controller.cancelRun()
+        assertEquals("the old selection is still open", a, controller.state.value.selectedKey)
+
+        controller.setTarget(DOG)
+        segmentation.answers[DOG] = listOf(middle())
+        controller.runAll()
+
+        val state = controller.state.value
+        assertEquals(listOf(PERSON, PERSON, DOG), segmentation.texts)
+        assertEquals("a new upload for the new target", 3, segmentation.opens)
+        assertNull(state.run)
+        assertEquals(ShotStatus.Ready, state.items.single().status)
+        assertEquals(2, host.saves.size)
+        // The saved subject is the dog's answer, not one of the person candidates.
+        val subject = host.saves.last().second
+        assertEquals(0, Color.alpha(subject.getPixel(2, 2)))
+        assertTrue(Color.alpha(subject.getPixel(20, 10)) > 0)
+    }
+
+    @Test
+    fun `nothing found for the target is said neutrally and keeps the manual choice`() = runTest {
+        val controller = controller()
+        controller.start()
+        pick(controller, uris(1))
+        controller.setTarget(CAR)
+        segmentation.answers[PERSON] = listOf(leftHalf())
+
+        controller.extract()
+
+        val state = controller.state.value
+        assertEquals(listOf(CAR), segmentation.texts)
+        assertEquals(R.string.multishot_not_found, state.selected?.problem)
+        assertEquals(ShotStatus.Selecting, state.selected?.status)
+        assertNull("never a person or the whole photo instead", state.mask)
+        assertFalse(state.canFinishExtraction)
+        controller.addPoint(0.25f, 0.5f, include = true)
+        assertTrue(controller.state.value.canFinishExtraction)
+    }
+
+    @Test
+    fun `the extra phrase and the target are separate`() = runTest {
+        val controller = controller()
+        controller.start()
+        pick(controller, uris(1))
+        controller.setTarget(DOG)
+        segmentation.answers[DOG] = listOf(leftHalf())
+        controller.extract()
+        segmentation.answers[CLUB] = listOf(bottomRightCorner())
+
+        controller.setPhrase(CLUB)
+        assertEquals(DOG, controller.state.value.target)
+        controller.submitPhrase()
+
+        val state = controller.state.value
+        assertEquals(listOf(DOG, CLUB), segmentation.texts)
+        assertEquals("", state.phrase)
+        assertEquals(DOG, state.target)
+        assertEquals("the phrase's answer is added", 255, MaskBitmaps.alphaAt(state.mask!!, PHOTO_W - 2, PHOTO_H - 2))
+        assertEquals(255, MaskBitmaps.alphaAt(state.mask!!, 2, 2))
+    }
+
+    @Test
+    fun `the target stays through the session and a new session starts from person`() = runTest {
+        val controller = controller()
+        newTimeline(controller)
+        controller.setTarget(DOG)
+        pick(controller, uris(2))
+        controller.select(controller.state.value.timeOrder[1])
+        controller.remove(controller.state.value.timeOrder[0])
+        controller.setMode(MultiShotMode.Free)
+        controller.setMode(MultiShotMode.Timeline)
+        assertEquals(DOG, controller.state.value.target)
+
+        controller.close()
+        newTimeline(controller)
+
+        assertEquals(PERSON, controller.state.value.target)
+        assertEquals(0, segmentation.opens)
+    }
+
     // ---- fixtures ------------------------------------------------------------------------------
 
     /** The time layout with [shots] placed photos and, unless [hero] is false, a selected hero. */
@@ -1601,8 +1899,11 @@ class MultiShotControllerTest {
         var openGate: CompletableDeferred<Unit>? = null
         var failOpen: AppError? = null
 
-        /** "person" answers, one per query in turn, before [answers] is used. */
+        /** Answers for [queued], one per query in turn, before [answers] is used. */
         val queue = ArrayDeque<List<Bitmap>>()
+
+        /** The extraction target whose queries take [queue]'s answers; any other phrase only [answers]. */
+        var queued = PERSON
 
         /** The nth upload (1-based) waits for its gate, or fails. */
         val openGates = mutableMapOf<Int, CompletableDeferred<Unit>>()
@@ -1628,7 +1929,7 @@ class MultiShotControllerTest {
 
         override suspend fun byText(session: SegSession, phrase: String): Result<List<SegMask>> {
             texts += phrase
-            val answer = if (phrase == PERSON && queue.isNotEmpty()) queue.removeFirst() else answers[phrase].orEmpty()
+            val answer = if (phrase == queued && queue.isNotEmpty()) queue.removeFirst() else answers[phrase].orEmpty()
             return Result.Success(answer.map { SegMask(it, 0.9f) })
         }
 
@@ -1707,6 +2008,8 @@ class MultiShotControllerTest {
         const val CANVAS_H = 30
         const val PERSON = "person"
         const val CLUB = "골프채"
+        const val DOG = "dog"
+        const val CAR = "car"
         val URI: Uri = Uri.parse("content://media/picker/1")
         val STORED_A = Shot("a", ImageRef("/p/shot_a.png"), 40, 30, ShotPlacement(offsetX = 0.1f))
         val STORED_B = Shot("b", ImageRef("/p/shot_b.png"), 40, 30, ShotPlacement(scale = 2f, opacity = 0.3f))

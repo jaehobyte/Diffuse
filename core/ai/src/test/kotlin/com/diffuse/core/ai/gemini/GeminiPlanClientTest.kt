@@ -1,8 +1,24 @@
 package com.diffuse.core.ai.gemini
 
-import com.diffuse.core.ai.EditPlan
+import com.diffuse.core.ai.ColorNote
+import com.diffuse.core.ai.ColorRole
+import com.diffuse.core.ai.Confidence
+import com.diffuse.core.ai.Constraint
+import com.diffuse.core.ai.ConstraintKind
 import com.diffuse.core.ai.CropRatio
+import com.diffuse.core.ai.CurrentAdjust
+import com.diffuse.core.ai.GoalScope
+import com.diffuse.core.ai.GoalSource
+import com.diffuse.core.ai.IntentItem
+import com.diffuse.core.ai.Observation
+import com.diffuse.core.ai.PlanContext
+import com.diffuse.core.ai.PlanGoal
+import com.diffuse.core.ai.PlanMode
+import com.diffuse.core.ai.PlanOutcome
+import com.diffuse.core.ai.PlanProposal
+import com.diffuse.core.ai.PlanRequest
 import com.diffuse.core.ai.PlanStep
+import com.diffuse.core.ai.StyleId
 import com.diffuse.core.common.AppError
 import com.diffuse.core.common.DispatcherProvider
 import com.diffuse.core.common.Result
@@ -13,6 +29,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -30,7 +48,11 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/** specs/vibe_edit.md §4, §5, §6, §12. MockWebServer binds localhost only. */
+/**
+ * specs/vibe_edit.md §5, §6, §12, §14. MockWebServer binds localhost only. These tests check the
+ * request, the envelope's decoding and the all-or-nothing refusal — **structure**, not whether a
+ * real model understands a photo, which only the image evaluation can say.
+ */
 @RunWith(RobolectricTestRunner::class)
 class GeminiPlanClientTest {
 
@@ -58,23 +80,20 @@ class GeminiPlanClientTest {
 
     @Test
     fun `it posts to the text model, not the image one`() = runTest {
-        server.enqueue(calls(SELECT_CALL))
+        server.enqueue(calls(READY))
 
-        client.plan(JPEG, REQUEST)
+        client.plan(JPEG, DIRECT)
 
         val recorded = server.takeRequest()
         assertEquals("POST", recorded.method)
-        assertEquals(
-            "/v1beta/models/gemini-2.5-flash:generateContent",
-            recorded.requestUrl?.encodedPath,
-        )
+        assertEquals("/v1beta/models/gemini-2.5-flash:generateContent", recorded.requestUrl?.encodedPath)
     }
 
     @Test
     fun `the key travels in the header and never in the URL`() = runTest {
-        server.enqueue(calls(SELECT_CALL))
+        server.enqueue(calls(READY))
 
-        client.plan(JPEG, REQUEST)
+        client.plan(JPEG, DIRECT)
 
         val recorded = server.takeRequest()
         assertEquals(API_KEY, recorded.getHeader("x-goog-api-key"))
@@ -83,562 +102,403 @@ class GeminiPlanClientTest {
     }
 
     @Test
-    fun `the body carries the system instruction, the image and the sentence verbatim`() = runTest {
-        server.enqueue(calls(SELECT_CALL))
-
-        client.plan(JPEG, REQUEST)
-
-        val body = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject
-        val system = body["systemInstruction"]!!.jsonObject["parts"]!!.jsonArray
-        assertEquals(
-            PLAN_SYSTEM_INSTRUCTION,
-            system[0].jsonObject["text"]!!.jsonPrimitive.content,
+    fun `the body carries the instruction, the image, the mode, the settings and the text verbatim`() = runTest {
+        server.enqueue(calls(READY))
+        val context = PlanContext(
+            adjustments = listOf(
+                CurrentAdjust(AdjustKind.Exposure, 0.4f, masked = false),
+                CurrentAdjust(AdjustKind.HslGreenSaturation, -0.2f, masked = true),
+            ),
+            hasSelection = true,
         )
-        val parts = body["contents"]!!.jsonArray[0].jsonObject["parts"]!!.jsonArray
-        assertEquals(
-            "image/jpeg",
-            parts[0].jsonObject["inlineData"]!!.jsonObject["mimeType"]!!.jsonPrimitive.content,
-        )
-        assertEquals(REQUEST, parts[1].jsonObject["text"]!!.jsonPrimitive.content)
+
+        client.plan(JPEG, PlanRequest(REQUEST, PlanMode.Direct, context))
+
+        val body = sentBody()
+        assertEquals(PLAN_SYSTEM_INSTRUCTION, systemText(body))
+        val parts = parts(body)
+        assertEquals("image/jpeg", parts[0].jsonObject["inlineData"]!!.jsonObject["mimeType"]!!.jsonPrimitive.content)
+        val settings = parts[1].jsonObject["text"]!!.jsonPrimitive.content
+        assertTrue(settings, settings.contains("Mode: direct"))
+        assertTrue(settings, settings.contains("exposure = 0.40 (whole photo)"))
+        assertTrue(settings, settings.contains("green saturation = -0.20 (on an existing selection)"))
+        assertTrue(settings, settings.contains("Existing selection: yes"))
+        assertEquals(REQUEST, parts[2].jsonObject["text"]!!.jsonPrimitive.content)
     }
 
     @Test
-    fun `the body declares the eight functions and forces a call`() = runTest {
-        server.enqueue(calls(SELECT_CALL))
+    fun `a recommendation with no text sends the photo and its context only`() = runTest {
+        server.enqueue(calls(READY_DEFAULT))
 
-        client.plan(JPEG, REQUEST)
+        client.plan(JPEG, PlanRequest("", PlanMode.Recommend))
 
-        val body = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject
-        val declarations = body["tools"]!!.jsonArray[0]
-            .jsonObject["functionDeclarations"]!!.jsonArray
-        assertEquals(
-            listOf(
-                "select_region",
-                "adjust",
-                "adjust_color_range",
-                "erase_selection",
-                "cut_out_selection",
-                "fill_selection",
-                "crop_ratio",
-                "apply_style",
-            ),
-            declarations.map { it.jsonObject["name"]!!.jsonPrimitive.content },
+        val parts = parts(sentBody())
+        assertEquals(2, parts.size)
+        val context = parts[1].jsonObject["text"]!!.jsonPrimitive.content
+        assertTrue(context.contains("Mode: recommend"))
+        assertTrue(context.contains("Request: (none)"))
+        assertTrue(
+            context.contains("settings (final values; an adjust replaces the value for the same kind and scope): none"),
         )
+    }
+
+    @Test
+    fun `a recommendation with text sends that text verbatim too`() = runTest {
+        server.enqueue(calls(READY))
+
+        client.plan(JPEG, PlanRequest("버스만 강조해줘", PlanMode.Recommend))
+
+        val parts = parts(sentBody())
+        assertTrue(parts[1].jsonObject["text"]!!.jsonPrimitive.content.contains("Mode: recommend"))
+        assertEquals("버스만 강조해줘", parts[2].jsonObject["text"]!!.jsonPrimitive.content)
+    }
+
+    /** §14: the two modes are one evaluation policy — the same instruction and the same envelope. */
+    @Test
+    fun `both modes send the same instruction, the same priorities and the same one function`() = runTest {
+        server.enqueue(calls(READY_DEFAULT))
+        server.enqueue(calls(READY))
+
+        client.plan(JPEG, PlanRequest("", PlanMode.Recommend))
+        val recommend = sentBody()
+        client.plan(JPEG, DIRECT)
+        val direct = sentBody()
+
+        assertEquals(systemText(recommend), systemText(direct))
+        assertEquals(recommend["tools"], direct["tools"])
+        assertTrue(systemText(direct).contains("explicit goal in the request weighs ${PlanPriority.EXPLICIT_GOAL}"))
+        assertTrue(systemText(direct).contains("names weighs ${PlanPriority.EXPLICIT_OBJECT}"))
+        assertTrue(systemText(direct).contains("improvement weighs ${PlanPriority.GENERAL_IMPROVEMENT}"))
+        assertEquals(
+            listOf(5, 3, 1),
+            listOf(PlanPriority.EXPLICIT_GOAL, PlanPriority.EXPLICIT_OBJECT, PlanPriority.GENERAL_IMPROVEMENT),
+        )
+        val declarations = direct["tools"]!!.jsonArray[0].jsonObject["functionDeclarations"]!!.jsonArray
+        assertEquals(listOf("propose_edit"), declarations.map { it.jsonObject["name"]!!.jsonPrimitive.content })
         assertEquals(
             "ANY",
-            body["toolConfig"]!!.jsonObject["functionCallingConfig"]!!
-                .jsonObject["mode"]!!.jsonPrimitive.content,
+            direct["toolConfig"]!!.jsonObject["functionCallingConfig"]!!.jsonObject["mode"]!!.jsonPrimitive.content,
         )
     }
 
     @Test
-    fun `the adjust declaration enumerates the ten kinds`() = runTest {
-        server.enqueue(calls(SELECT_CALL))
+    fun `the workflow item names the eight existing tools and nothing else`() = runTest {
+        server.enqueue(calls(READY))
 
-        client.plan(JPEG, REQUEST)
+        client.plan(JPEG, DIRECT)
 
-        val body = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject
-        val adjust = body["tools"]!!.jsonArray[0].jsonObject["functionDeclarations"]!!
-            .jsonArray[1].jsonObject
-        val kinds = adjust["parameters"]!!.jsonObject["properties"]!!
-            .jsonObject["kind"]!!.jsonObject["enum"]!!.jsonArray
-        // specs/adjust_hsl.md §8: the 24 혼합 kinds have their own function, and putting them
-        // here too would be 34 values on the argument the model already gets wrong most often.
-        // T71 added five more non-HSL kinds for a preset and the auto boost to set, and kept them
-        // off this enum for the same reason — so the list is spelled out rather than derived.
+        val item = workflowItemSchema(sentBody())
         assertEquals(
             listOf(
-                "exposure", "contrast", "highlights", "shadows",
-                "temperature", "tint", "saturation", "vibrance",
-                "sharpen", "vignette",
+                "select_region", "adjust", "adjust_color_range", "erase_selection",
+                "cut_out_selection", "fill_selection", "crop_ratio", "apply_style",
             ),
-            kinds.map { it.jsonPrimitive.content },
+            item["properties"]!!.jsonObject["tool"]!!.jsonObject["enum"]!!.jsonArray.map { it.jsonPrimitive.content },
         )
-        assertTrue(
-            "no HSL kind may reach the adjust enum",
-            kinds.none { it.jsonPrimitive.content.startsWith("hsl") },
+        val args = item["properties"]!!.jsonObject["args"]!!.jsonObject["properties"]!!.jsonObject
+        assertEquals(
+            listOf(
+                "exposure", "contrast", "highlights", "shadows", "temperature",
+                "tint", "saturation", "vibrance", "sharpen", "vignette",
+            ),
+            args["kind"]!!.jsonObject["enum"]!!.jsonArray.map { it.jsonPrimitive.content },
         )
-    }
-
-    @Test
-    fun `the colour range declaration enumerates the eight bands`() = runTest {
-        server.enqueue(calls(SELECT_CALL))
-
-        client.plan(JPEG, REQUEST)
-
-        val body = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject
-        val declaration = body["tools"]!!.jsonArray[0].jsonObject["functionDeclarations"]!!
-            .jsonArray[2].jsonObject
-        val colours = declaration["parameters"]!!.jsonObject["properties"]!!
-            .jsonObject["color"]!!.jsonObject["enum"]!!.jsonArray
-
         assertEquals(
             HslBand.entries.map { it.name.lowercase() },
-            colours.map { it.jsonPrimitive.content },
+            args["color"]!!.jsonObject["enum"]!!.jsonArray.map { it.jsonPrimitive.content },
         )
+        assertEquals(
+            StyleId.entries.map { it.id },
+            args["style"]!!.jsonObject["enum"]!!.jsonArray.map { it.jsonPrimitive.content },
+        )
+        assertEquals(
+            listOf("square", "portrait_3_4", "portrait_4_5", "story_9_16", "landscape_4_3", "landscape_16_9"),
+            args["ratio"]!!.jsonObject["enum"]!!.jsonArray.map { it.jsonPrimitive.content },
+        )
+        assertFalse("free is never a ratio", "free" in args["ratio"].toString())
     }
 
-    /** specs/adjust_hsl.md §8: a colour is not a thing to select. */
+    /**
+     * §14: the old instruction's "relative strengths" and its unconditional contrast + saturation
+     * example are gone; values are final settings and the evaluation rules are in the instruction.
+     */
     @Test
-    fun `the instruction sends colour requests to the colour range function`() {
-        assertTrue(
-            "a colour range needs no selection",
-            PLAN_SYSTEM_INSTRUCTION.contains("adjust_color_range"),
-        )
-        assertTrue(
-            "the worked example the report asks for",
-            PLAN_SYSTEM_INSTRUCTION.contains("adjust_color_range(color=\"blue\""),
-        )
-    }
-
-    /** T52: the three rules the first device run showed the model getting wrong. */
-    @Test
-    fun `the instruction demands English phrases, whole plans and unmasked adjusts after a removal`() {
-        assertTrue(
-            "the phrase must be English — SAM 3 is English concept segmentation",
-            PLAN_SYSTEM_INSTRUCTION.contains("It must always be English"),
-        )
-        assertTrue(
-            "the model was stopping after select_region",
-            PLAN_SYSTEM_INSTRUCTION.contains("Never stop after selecting"),
-        )
-        assertTrue(
-            "a masked adjust after a removal lands inside the hole",
-            PLAN_SYSTEM_INSTRUCTION.contains("must pass masked=false"),
-        )
-    }
-
-    @Test
-    fun `the instruction shows a removal that is two calls, not one`() {
-        assertTrue(
+    fun `the instruction keeps observation apart from taste and values final`() {
+        assertFalse(PLAN_SYSTEM_INSTRUCTION.contains("relative strength", ignoreCase = true))
+        assertFalse(
             PLAN_SYSTEM_INSTRUCTION.contains(
-                """- "버스를 지워줘" -> select_region(phrase="bus"), erase_selection()""",
+                "adjust(kind=\"contrast\", value=0.2, masked=false), adjust(kind=\"saturation\"",
             ),
         )
-    }
-
-    @Test
-    fun `the select declaration says English too`() = runTest {
-        server.enqueue(calls(SELECT_CALL))
-
-        client.plan(JPEG, REQUEST)
-
-        val body = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject
-        val select = body["tools"]!!.jsonArray[0].jsonObject["functionDeclarations"]!!
-            .jsonArray[0].jsonObject
-        val phrase = select["parameters"]!!.jsonObject["properties"]!!
-            .jsonObject["phrase"]!!.jsonObject["description"]!!.jsonPrimitive.content
-        assertTrue(phrase.contains("Always English"))
-    }
-
-    @Test
-    fun `an English phrase decodes unchanged`() = runTest {
-        server.enqueue(
-            calls("""{"functionCall":{"name":"select_region","args":{"phrase":"bus"}}}"""),
-        )
-
-        assertEquals(
-            listOf(PlanStep.Select("bus")),
-            client.plan(JPEG, "버스를 지워줘").valueOrFail().steps,
-        )
+        listOf(
+            "An observation alone never decides taste",
+            "Silhouettes",
+            "no_change",
+            "white dress",
+            "balloon",
+            "green bus",
+            "sunset",
+            "halos",
+            "never enforce thirds",
+            "Values are FINAL settings",
+            "no sum of them overrides a hard",
+            "needs_clarification",
+            "never invent coordinates",
+        ).forEach { assertTrue(it, PLAN_SYSTEM_INSTRUCTION.contains(it)) }
     }
 
     @Test
     fun `a blank key never reaches the wire`() = runTest {
-        config = GeminiConfig("", server.url("/").toString().trimEnd('/'))
+        config = GeminiConfig("", config.baseUrl)
 
-        assertEquals(Result.Failure(AppError.Invalid("no api key")), client.plan(JPEG, REQUEST))
+        assertEquals(Result.Failure(AppError.Invalid("no api key")), client.plan(JPEG, DIRECT))
         assertEquals(0, server.requestCount)
     }
 
-    // ---- the response ----------------------------------------------------
+    // ---- decoding the envelope -------------------------------------------
 
     @Test
-    fun `two function calls decode in order`() = runTest {
-        server.enqueue(calls(SELECT_CALL, ADJUST_CALL))
+    fun `a full envelope decodes every field apart`() = runTest {
+        server.enqueue(calls(READY))
 
-        val plan = client.plan(JPEG, REQUEST).valueOrFail()
+        val proposal = client.plan(JPEG, DIRECT).valueOrFail()
+
+        assertEquals(
+            PlanProposal(
+                outcome = PlanOutcome.Ready,
+                observations = listOf(
+                    Observation("o1", "나무", "잎이 흐릿한 초록이에요", Confidence.Medium, "실제 색인지 조명인지"),
+                ),
+                intent = com.diffuse.core.ai.RequestIntent(
+                    targets = listOf(IntentItem("나무", explicit = true)),
+                    wants = listOf(IntentItem("더 푸르게", explicit = true)),
+                    constraints = listOf(Constraint("나무만", ConstraintKind.SubjectOnly, explicit = false)),
+                ),
+                goals = listOf(PlanGoal("g1", "나무를 더 푸르게", GoalSource.User, GoalScope.Subject, "나무", listOf("o1"))),
+                colors = listOf(ColorNote(ColorRole.Emphasize, "초록", "나무")),
+                workflow = listOf(
+                    com.diffuse.core.ai.WorkflowStep(PlanStep.Select("tree"), "g1"),
+                    com.diffuse.core.ai.WorkflowStep(
+                        PlanStep.Adjust(AdjustKind.Saturation, 0.3f, masked = true),
+                        "g1",
+                        effect = "잎이 더 푸르게",
+                        caution = "과하면 인공적",
+                    ),
+                ),
+                limitations = listOf("축소본이라 잎 질감은 확인하기 어려워요"),
+            ),
+            proposal,
+        )
+    }
+
+    @Test
+    fun `a text part beside the envelope is skipped`() = runTest {
+        server.enqueue(calls("""{"text":"<b>네</b> 해드릴게요"}""", READY))
+
+        assertEquals(2, client.plan(JPEG, DIRECT).valueOrFail().workflow.size)
+    }
+
+    @Test
+    fun `masked left out follows the goal's scope`() = runTest {
+        server.enqueue(
+            calls(
+                envelope(
+                    goals = listOf(goal("g1", scope = "subject"), goal("g2")),
+                    workflow = listOf(
+                        step("select_region", """{"phrase":"face"}"""),
+                        step("adjust", """{"kind":"exposure","value":0.2}"""),
+                        step("adjust", """{"kind":"contrast","value":0.1}""", goal = "g2"),
+                    ),
+                ),
+            ),
+        )
+
+        val steps = client.plan(JPEG, DIRECT).valueOrFail().plan.steps
+
+        assertEquals(PlanStep.Adjust(AdjustKind.Exposure, 0.2f, masked = true), steps[1])
+        assertEquals(PlanStep.Adjust(AdjustKind.Contrast, 0.1f, masked = false), steps[2])
+    }
+
+    @Test
+    fun `an out-of-range finite value is clamped and the shown value is the clamped one`() = runTest {
+        server.enqueue(
+            calls(
+                envelope(
+                    workflow = listOf(
+                        step("adjust", """{"kind":"sharpen","value":-0.5}"""),
+                        step("adjust", """{"kind":"exposure","value":3}"""),
+                    ),
+                ),
+            ),
+        )
+
+        val steps = client.plan(JPEG, DIRECT).valueOrFail().plan.steps
+
+        assertEquals(PlanStep.Adjust(AdjustKind.Sharpen, 0f, masked = false), steps[0])
+        assertEquals(PlanStep.Adjust(AdjustKind.Exposure, 1f, masked = false), steps[1])
+    }
+
+    @Test
+    fun `a colour range expands into one Adjust per channel, all for its goal`() = runTest {
+        server.enqueue(
+            calls(
+                envelope(
+                    goals = listOf(goal(scope = "color_range")),
+                    workflow = listOf(
+                        step("adjust_color_range", """{"color":"blue","hue":0.1,"saturation":0,"luminance":-0.2}"""),
+                    ),
+                ),
+            ),
+        )
+
+        val workflow = client.plan(JPEG, DIRECT).valueOrFail().workflow
 
         assertEquals(
             listOf(
-                PlanStep.Select("나무"),
-                PlanStep.Adjust(AdjustKind.Saturation, 0.3f, masked = true),
-            ),
-            plan.steps,
-        )
-    }
-
-    @Test
-    fun `a text part between two calls is skipped`() = runTest {
-        server.enqueue(
-            json(
-                """
-                {"candidates":[{"content":{"parts":[
-                  $SELECT_CALL,
-                  {"text":"네, 나무를 푸르게 해드릴게요."},
-                  $ADJUST_CALL
-                ]}}]}
-                """.trimIndent(),
-            ),
-        )
-
-        val plan = client.plan(JPEG, REQUEST).valueOrFail()
-
-        assertEquals(2, plan.steps.size)
-        assertEquals(PlanStep.Select("나무"), plan.steps[0])
-    }
-
-    @Test
-    fun `the argument-less calls decode`() = runTest {
-        server.enqueue(
-            calls(
-                SELECT_CALL,
-                """{"functionCall":{"name":"erase_selection","args":{}}}""",
-                """{"functionCall":{"name":"cut_out_selection","args":{}}}""",
-            ),
-        )
-
-        val plan = client.plan(JPEG, REQUEST).valueOrFail()
-
-        assertEquals(listOf(PlanStep.Select("나무"), PlanStep.Erase, PlanStep.CutOut), plan.steps)
-    }
-
-    // ---- T62, specs/generative_fill.md §8 --------------------------------
-
-    @Test
-    fun `a fill_selection call decodes to one Fill step`() = runTest {
-        server.enqueue(
-            calls(
-                """{"functionCall":{"name":"select_region","args":{"phrase":"chair"}}}""",
-                FILL_CALL,
-            ),
-        )
-
-        assertEquals(
-            listOf(PlanStep.Select("chair"), PlanStep.Fill("a red umbrella")),
-            client.plan(JPEG, "의자를 빨간 우산으로 바꿔줘").valueOrFail().steps,
-        )
-    }
-
-    @Test
-    fun `a blank or absent prompt drops the fill and the rest survive`() = runTest {
-        server.enqueue(
-            calls(
-                """{"functionCall":{"name":"fill_selection","args":{}}}""",
-                """{"functionCall":{"name":"fill_selection","args":{"prompt":"   "}}}""",
-                ADJUST_CALL,
-            ),
-        )
-
-        assertEquals(
-            listOf(PlanStep.Adjust(AdjustKind.Saturation, 0.3f, masked = true)),
-            client.plan(JPEG, REQUEST).valueOrFail().steps,
-        )
-    }
-
-    @Test
-    fun `the fill declaration asks for an English prompt`() = runTest {
-        server.enqueue(calls(SELECT_CALL))
-
-        client.plan(JPEG, REQUEST)
-
-        val body = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject
-        val fill = body["tools"]!!.jsonArray[0].jsonObject["functionDeclarations"]!!
-            .jsonArray.single { it.jsonObject["name"]!!.jsonPrimitive.content == "fill_selection" }
-            .jsonObject
-        val prompt = fill["parameters"]!!.jsonObject["properties"]!!
-            .jsonObject["prompt"]!!.jsonObject["description"]!!.jsonPrimitive.content
-        assertTrue(prompt.contains("Always English"))
-    }
-
-    /** §8: the one rule the instruction gains — the two generative tools are opposites. */
-    @Test
-    fun `the instruction says which of fill and erase to call`() {
-        assertTrue(
-            PLAN_SYSTEM_INSTRUCTION.contains(
-                "fill_selection replaces, erase_selection removes",
-            ),
-        )
-        assertTrue(
-            PLAN_SYSTEM_INSTRUCTION.contains(
-                """fill_selection(prompt="a red umbrella")""",
-            ),
-        )
-    }
-
-    @Test
-    fun `an unknown function name is dropped and the rest survive`() = runTest {
-        server.enqueue(
-            calls(
-                """{"functionCall":{"name":"apply_filter","args":{"name":"vintage"}}}""",
-                ADJUST_CALL,
-            ),
-        )
-
-        val plan = client.plan(JPEG, REQUEST).valueOrFail()
-
-        assertEquals(
-            listOf(PlanStep.Adjust(AdjustKind.Saturation, 0.3f, masked = true)),
-            plan.steps,
-        )
-    }
-
-    @Test
-    fun `a missing required argument drops that step`() = runTest {
-        server.enqueue(
-            calls(
-                """{"functionCall":{"name":"select_region","args":{}}}""",
-                """{"functionCall":{"name":"adjust","args":{"kind":"saturation"}}}""",
-                """{"functionCall":{"name":"adjust","args":{"value":0.4}}}""",
-                ADJUST_CALL,
-            ),
-        )
-
-        assertEquals(1, client.plan(JPEG, REQUEST).valueOrFail().steps.size)
-    }
-
-    @Test
-    fun `an unknown adjust kind drops that step`() = runTest {
-        server.enqueue(
-            calls("""{"functionCall":{"name":"adjust","args":{"kind":"clarity","value":0.4}}}"""),
-        )
-
-        assertEquals(emptyList<PlanStep>(), client.plan(JPEG, REQUEST).valueOrFail().steps)
-    }
-
-    @Test
-    fun `an out-of-range value is clamped to the kind's range`() = runTest {
-        server.enqueue(
-            calls(
-                """{"functionCall":{"name":"adjust","args":{"kind":"exposure","value":4}}}""",
-                """{"functionCall":{"name":"adjust","args":{"kind":"vignette","value":-0.5}}}""",
-            ),
-        )
-
-        assertEquals(
-            listOf(
-                PlanStep.Adjust(AdjustKind.Exposure, 1f, masked = true),
-                PlanStep.Adjust(AdjustKind.Vignette, 0f, masked = true),
-            ),
-            client.plan(JPEG, REQUEST).valueOrFail().steps,
-        )
-    }
-
-    @Test
-    fun `a non-finite value drops the step`() = runTest {
-        server.enqueue(
-            calls(
-                """{"functionCall":{"name":"adjust","args":{"kind":"exposure","value":"NaN"}}}""",
-                """{"functionCall":{"name":"adjust","args":{"kind":"contrast","value":"x"}}}""",
-            ),
-        )
-
-        assertEquals(emptyList<PlanStep>(), client.plan(JPEG, REQUEST).valueOrFail().steps)
-    }
-
-    @Test
-    fun `masked defaults to true and is honoured when given`() = runTest {
-        server.enqueue(
-            calls(
-                """{"functionCall":{"name":"adjust","args":{"kind":"tint","value":0.2,"masked":false}}}""",
-            ),
-        )
-
-        assertEquals(
-            listOf(PlanStep.Adjust(AdjustKind.Tint, 0.2f, masked = false)),
-            client.plan(JPEG, REQUEST).valueOrFail().steps,
-        )
-    }
-
-    // ---- specs/adjust_hsl.md §8: the fifth function ----------------------
-
-    @Test
-    fun `a colour range expands into one Adjust per channel, in order`() = runTest {
-        server.enqueue(
-            calls(
-                """{"functionCall":{"name":"adjust_color_range",""" +
-                    """"args":{"color":"blue","luminance":-0.2,"saturation":0.4}}}""",
-            ),
-        )
-
-        assertEquals(
-            listOf(
-                PlanStep.Adjust(AdjustKind.HslBlueSaturation, 0.4f, masked = false),
+                PlanStep.Adjust(AdjustKind.HslBlueHue, 0.1f, masked = false),
                 PlanStep.Adjust(AdjustKind.HslBlueLuminance, -0.2f, masked = false),
             ),
-            client.plan(JPEG, REQUEST).valueOrFail().steps,
+            workflow.map { it.step },
         )
+        assertTrue(workflow.all { it.goalId == "g1" })
     }
 
     @Test
-    fun `a colour range edits the whole photo unless it is told otherwise`() = runTest {
+    fun `a crop wherever it arrived runs last`() = runTest {
         server.enqueue(
             calls(
-                """{"functionCall":{"name":"adjust_color_range",""" +
-                    """"args":{"color":"red","hue":0.3,"masked":true}}}""",
+                envelope(
+                    workflow = listOf(
+                        step("crop_ratio", """{"ratio":"portrait_3_4"}"""),
+                        step("adjust", """{"kind":"exposure","value":0.2}"""),
+                    ),
+                ),
             ),
         )
 
         assertEquals(
-            listOf(PlanStep.Adjust(AdjustKind.HslRedHue, 0.3f, masked = true)),
-            client.plan(JPEG, REQUEST).valueOrFail().steps,
+            listOf(PlanStep.Adjust(AdjustKind.Exposure, 0.2f, masked = false), PlanStep.Crop(CropRatio.Portrait3x4)),
+            client.plan(JPEG, DIRECT).valueOrFail().plan.steps,
         )
     }
 
     @Test
-    fun `an unknown colour drops the whole call and the rest of the plan survives`() = runTest {
+    fun `a style with no intensity is all of it, and one past the range clamps`() = runTest {
+        server.enqueue(calls(envelope(workflow = listOf(step("apply_style", """{"style":"moody-dark"}""")))))
         server.enqueue(
-            calls(
-                """{"functionCall":{"name":"adjust_color_range","args":{"color":"teal","hue":0.3}}}""",
-                ADJUST_CALL,
-            ),
+            calls(envelope(workflow = listOf(step("apply_style", """{"style":"vibrant-pop","intensity":250}""")))),
         )
 
-        assertEquals(1, client.plan(JPEG, REQUEST).valueOrFail().steps.size)
+        assertEquals(listOf(PlanStep.Style(StyleId.MoodyDark, 100)), client.plan(JPEG, DIRECT).valueOrFail().plan.steps)
+        assertEquals(
+            listOf(PlanStep.Style(StyleId.VibrantPop, 100)),
+            client.plan(JPEG, DIRECT).valueOrFail().plan.steps,
+        )
     }
 
     @Test
-    fun `a colour range with no channel, or only zeros, contributes no steps`() = runTest {
+    fun `the argument-less tools and a fill decode`() = runTest {
         server.enqueue(
             calls(
-                """{"functionCall":{"name":"adjust_color_range","args":{"color":"green"}}}""",
-                """{"functionCall":{"name":"adjust_color_range","args":{"color":"aqua","hue":0}}}""",
-            ),
-        )
-
-        // specs/vibe_edit.md §7: an empty plan is a valid answer, not a failure.
-        assertEquals(Result.Success(EditPlan(emptyList())), client.plan(JPEG, REQUEST))
-    }
-
-    @Test
-    fun `a colour range drops the non-finite channel and keeps the others`() = runTest {
-        server.enqueue(
-            calls(
-                """{"functionCall":{"name":"adjust_color_range",""" +
-                    """"args":{"color":"purple","hue":"NaN","saturation":4}}}""",
+                envelope(
+                    goals = listOf(goal(scope = "subject")),
+                    workflow = listOf(
+                        step("select_region", """{"phrase":"chair"}"""),
+                        step("fill_selection", """{"prompt":"a red umbrella"}"""),
+                        step("select_region", """{"phrase":"bus"}"""),
+                        step("erase_selection"),
+                        step("select_region", """{"phrase":"the main subject"}"""),
+                        step("cut_out_selection"),
+                    ),
+                ),
             ),
         )
 
         assertEquals(
-            listOf(PlanStep.Adjust(AdjustKind.HslPurpleSaturation, 1f, masked = false)),
-            client.plan(JPEG, REQUEST).valueOrFail().steps,
+            listOf(
+                PlanStep.Select("chair"), PlanStep.Fill("a red umbrella"),
+                PlanStep.Select("bus"), PlanStep.Erase,
+                PlanStep.Select("the main subject"), PlanStep.CutOut,
+            ),
+            client.plan(JPEG, DIRECT).valueOrFail().plan.steps,
         )
     }
 
+    /** §14: no_change is a judgement, not a failure: a success with nothing to run. */
     @Test
-    fun `no function call at all is an empty plan, not a failure`() = runTest {
-        server.enqueue(json("""{"candidates":[{"content":{"parts":[{"text":"I cannot."}]}}]}"""))
+    fun `no_change with a reason is a successful empty proposal`() = runTest {
+        server.enqueue(
+            calls(envelope(outcome = "no_change", goals = emptyList(), workflow = emptyList(), extra = REASON)),
+        )
 
-        assertEquals(Result.Success(EditPlan(emptyList())), client.plan(JPEG, REQUEST))
+        val proposal = client.plan(JPEG, PlanRequest("", PlanMode.Recommend)).valueOrFail()
+
+        assertEquals(PlanOutcome.NoChange, proposal.outcome)
+        assertEquals("지금도 균형이 좋아요", proposal.reason)
+        assertTrue(proposal.plan.steps.isEmpty())
     }
 
     @Test
-    fun `a blocked prompt is Invalid with the blocked prefix`() = runTest {
+    fun `needs_clarification and unsupported carry their reasons`() = runTest {
+        server.enqueue(
+            calls(
+                envelope(outcome = "needs_clarification", goals = emptyList(), workflow = emptyList(), extra = REASON),
+            ),
+        )
+        server.enqueue(
+            calls(envelope(outcome = "unsupported", goals = emptyList(), workflow = emptyList(), extra = REASON)),
+        )
+
+        assertEquals(PlanOutcome.NeedsClarification, client.plan(JPEG, DIRECT).valueOrFail().outcome)
+        assertEquals(PlanOutcome.Unsupported, client.plan(JPEG, DIRECT).valueOrFail().outcome)
+    }
+
+    // ---- §6, row by row --------------------------------------------------
+
+    @Test
+    fun `a blocked prompt or a prohibited candidate is Invalid with the blocked prefix`() = runTest {
         server.enqueue(json("""{"promptFeedback":{"blockReason":"SAFETY"}}"""))
-
-        assertEquals(
-            Result.Failure(AppError.Invalid("blocked:SAFETY")),
-            client.plan(JPEG, REQUEST),
-        )
-    }
-
-    @Test
-    fun `a candidate cut short for prohibited content is blocked too`() = runTest {
         server.enqueue(json("""{"candidates":[{"finishReason":"PROHIBITED_CONTENT"}]}"""))
 
-        assertEquals(
-            Result.Failure(AppError.Invalid("blocked:PROHIBITED_CONTENT")),
-            client.plan(JPEG, REQUEST),
-        )
+        assertEquals(Result.Failure(AppError.Invalid("blocked:SAFETY")), client.plan(JPEG, DIRECT))
+        assertEquals(Result.Failure(AppError.Invalid("blocked:PROHIBITED_CONTENT")), client.plan(JPEG, DIRECT))
     }
 
     @Test
-    fun `an ordinary finishReason is not a block`() = runTest {
-        server.enqueue(
-            json("""{"candidates":[{"finishReason":"STOP","content":{"parts":[$SELECT_CALL]}}]}"""),
-        )
-
-        assertEquals(
-            listOf(PlanStep.Select("나무")),
-            client.plan(JPEG, REQUEST).valueOrFail().steps,
-        )
-    }
-
-    // ---- generative_erase.md §6, row by row ------------------------------
-
-    @Test
-    fun `400 INVALID_ARGUMENT is Invalid carrying the message`() = runTest {
+    fun `status codes map as the eraser's do`() = runTest {
         server.enqueue(error(400, "INVALID_ARGUMENT", "bad image"))
-
-        assertEquals(Result.Failure(AppError.Invalid("bad image")), client.plan(JPEG, REQUEST))
-    }
-
-    @Test
-    fun `400 FAILED_PRECONDITION is Unavailable`() = runTest {
-        server.enqueue(error(400, "FAILED_PRECONDITION", "billing not enabled"))
-
-        assertEquals(Result.Failure(AppError.Unavailable), client.plan(JPEG, REQUEST))
-    }
-
-    @Test
-    fun `401 and 403 are Unauthorized`() = runTest {
+        server.enqueue(error(400, "FAILED_PRECONDITION", "billing"))
         server.enqueue(error(401, "UNAUTHENTICATED", "no key"))
         server.enqueue(error(403, "PERMISSION_DENIED", "denied"))
-
-        assertEquals(Result.Failure(AppError.Unauthorized), client.plan(JPEG, REQUEST))
-        assertEquals(Result.Failure(AppError.Unauthorized), client.plan(JPEG, REQUEST))
-    }
-
-    @Test
-    fun `404 is Unsupported`() = runTest {
-        server.enqueue(error(404, "NOT_FOUND", "model retired"))
-
-        assertEquals(Result.Failure(AppError.Unsupported), client.plan(JPEG, REQUEST))
-    }
-
-    @Test
-    fun `413 is TooLarge`() = runTest {
+        server.enqueue(error(404, "NOT_FOUND", "retired"))
         server.enqueue(error(413, "", "too big"))
+        listOf(429, 500, 503, 504).forEach { server.enqueue(error(it, "", "busy")) }
+        server.enqueue(error(418, "TEAPOT", "short"))
 
-        assertEquals(Result.Failure(AppError.TooLarge), client.plan(JPEG, REQUEST))
+        assertEquals(Result.Failure(AppError.Invalid("bad image")), client.plan(JPEG, DIRECT))
+        assertEquals(Result.Failure(AppError.Unavailable), client.plan(JPEG, DIRECT))
+        assertEquals(Result.Failure(AppError.Unauthorized), client.plan(JPEG, DIRECT))
+        assertEquals(Result.Failure(AppError.Unauthorized), client.plan(JPEG, DIRECT))
+        assertEquals(Result.Failure(AppError.Unsupported), client.plan(JPEG, DIRECT))
+        assertEquals(Result.Failure(AppError.TooLarge), client.plan(JPEG, DIRECT))
+        repeat(4) { assertEquals(Result.Failure(AppError.Unavailable), client.plan(JPEG, DIRECT)) }
+        assertTrue((client.plan(JPEG, DIRECT) as Result.Failure).error is AppError.Io)
     }
 
     @Test
-    fun `429, 500, 503 and 504 are Unavailable`() = runTest {
-        listOf(429, 500, 503, 504).forEach { code ->
-            server.enqueue(error(code, "", "busy"))
-            assertEquals(Result.Failure(AppError.Unavailable), client.plan(JPEG, REQUEST))
-        }
-    }
-
-    @Test
-    fun `an unmapped status is Io`() = runTest {
-        server.enqueue(error(418, "TEAPOT", "short and stout"))
-
-        assertTrue((client.plan(JPEG, REQUEST) as Result.Failure).error is AppError.Io)
-    }
-
-    @Test
-    fun `a transport failure is Io`() = runTest {
+    fun `a transport failure and an undecodable body are Io`() = runTest {
         server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START))
-
-        assertTrue((client.plan(JPEG, REQUEST) as Result.Failure).error is AppError.Io)
-    }
-
-    @Test
-    fun `an undecodable body is Io`() = runTest {
         server.enqueue(json("not json at all"))
 
-        assertTrue((client.plan(JPEG, REQUEST) as Result.Failure).error is AppError.Io)
+        assertTrue((client.plan(JPEG, DIRECT) as Result.Failure).error is AppError.Io)
+        assertTrue((client.plan(JPEG, DIRECT) as Result.Failure).error is AppError.Io)
     }
-
-    // ---- cancellation ----------------------------------------------------
 
     @Test
     fun `cancelling mid-flight closes the call`() = runTest {
         server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
 
-        val job = async(Dispatchers.IO) { client.plan(JPEG, REQUEST) }
+        val job = async(Dispatchers.IO) { client.plan(JPEG, DIRECT) }
         server.takeRequest()
         job.cancel()
 
@@ -647,127 +507,20 @@ class GeminiPlanClientTest {
 
     // ---- fixtures --------------------------------------------------------
 
-    // ---- crop_ratio (T58, specs/vibe_edit.md §4.1, §5) -------------------
+    private fun sentBody(): JsonObject = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject
 
-    @Test
-    fun `a crop ratio decodes to a Crop step`() = runTest {
-        server.enqueue(calls(CROP_CALL))
+    private fun systemText(body: JsonObject) =
+        body["systemInstruction"]!!.jsonObject["parts"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
 
-        val plan = client.plan(JPEG, REQUEST).valueOrFail()
+    private fun parts(body: JsonObject): JsonArray = body["contents"]!!.jsonArray[0].jsonObject["parts"]!!.jsonArray
 
-        assertEquals(EditPlan(listOf(PlanStep.Crop(CropRatio.Story9x16))), plan)
-    }
-
-    /** One at a time, because §5 keeps only the last crop of a plan. */
-    @Test
-    fun `every ratio the catalog offers decodes to its own value`() = runTest {
-        val expected = mapOf(
-            "square" to CropRatio.Square,
-            "portrait_3_4" to CropRatio.Portrait3x4,
-            "portrait_4_5" to CropRatio.Portrait4x5,
-            "story_9_16" to CropRatio.Story9x16,
-            "landscape_4_3" to CropRatio.Landscape4x3,
-            "landscape_16_9" to CropRatio.Landscape16x9,
-        )
-
-        expected.forEach { (wire, ratio) ->
-            server.enqueue(calls(cropCall(wire)))
-            val plan = client.plan(JPEG, REQUEST).valueOrFail()
-            assertEquals(wire, listOf(PlanStep.Crop(ratio)), plan.steps)
-        }
-    }
-
-    /** T68: the two the device run asked for are on the wire, so the model can pick them. */
-    @Test
-    fun `the declared ratios include the two feed shapes`() = runTest {
-        server.enqueue(calls(CROP_CALL))
-
-        client.plan(JPEG, REQUEST)
-
-        val ratio = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject
-            .let { it["tools"]!!.jsonArray[0].jsonObject["functionDeclarations"]!!.jsonArray }
-            .single { it.jsonObject["name"]!!.jsonPrimitive.content == "crop_ratio" }
-            .jsonObject["parameters"]!!.jsonObject["properties"]!!
-            .jsonObject["ratio"]!!.jsonObject["enum"]!!.jsonArray
-            .map { it.jsonPrimitive.content }
-
-        assertEquals(CropRatio.entries.size, ratio.size)
-        assertTrue("portrait_3_4" in ratio)
-        assertTrue("landscape_4_3" in ratio)
-    }
-
-    /** §4: a bare platform name is a feed post, and a feed post is not a square. */
-    @Test
-    fun `the instruction says a bare platform name is a feed post`() {
-        assertTrue(
-            PLAN_SYSTEM_INSTRUCTION.contains("means an ordinary feed post, which is portrait_3_4"),
-        )
-        assertTrue(
-            PLAN_SYSTEM_INSTRUCTION.contains("crop_ratio(ratio=\"portrait_3_4\")"),
-        )
-        // A story is still a story: T58's example is untouched.
-        assertTrue(
-            PLAN_SYSTEM_INSTRUCTION.contains("crop_ratio(ratio=\"story_9_16\")"),
-        )
-    }
-
-    @Test
-    fun `a crop that arrived first still runs last`() = runTest {
-        server.enqueue(calls(CROP_CALL, SELECT_CALL, ADJUST_CALL))
-
-        val plan = client.plan(JPEG, REQUEST).valueOrFail()
-
-        assertEquals(
-            listOf(
-                PlanStep.Select("나무"),
-                PlanStep.Adjust(AdjustKind.Saturation, 0.3f, masked = true),
-                PlanStep.Crop(CropRatio.Story9x16),
-            ),
-            plan.steps,
-        )
-    }
-
-    @Test
-    fun `two crop calls become the last one only`() = runTest {
-        server.enqueue(calls(cropCall("square"), ADJUST_CALL, cropCall("landscape_16_9")))
-
-        val plan = client.plan(JPEG, REQUEST).valueOrFail()
-
-        assertEquals(
-            listOf(
-                PlanStep.Adjust(AdjustKind.Saturation, 0.3f, masked = true),
-                PlanStep.Crop(CropRatio.Landscape16x9),
-            ),
-            plan.steps,
-        )
-    }
-
-    @Test
-    fun `an unknown ratio drops the step and the rest of the plan survives`() = runTest {
-        server.enqueue(calls(ADJUST_CALL, cropCall("panorama")))
-
-        val plan = client.plan(JPEG, REQUEST).valueOrFail()
-
-        assertEquals(
-            listOf(PlanStep.Adjust(AdjustKind.Saturation, 0.3f, masked = true)),
-            plan.steps,
-        )
-    }
-
-    @Test
-    fun `free is not a ratio the model may choose`() = runTest {
-        server.enqueue(calls(cropCall("free")))
-
-        val plan = client.plan(JPEG, REQUEST).valueOrFail()
-
-        assertEquals(emptyList<PlanStep>(), plan.steps)
-    }
-
-    private fun cropCall(ratio: String) =
-        """{"functionCall":{"name":"crop_ratio","args":{"ratio":"$ratio"}}}"""
+    private fun workflowItemSchema(body: JsonObject): JsonObject =
+        body["tools"]!!.jsonArray[0].jsonObject["functionDeclarations"]!!.jsonArray[0]
+            .jsonObject["parameters"]!!.jsonObject["properties"]!!.jsonObject["workflow"]!!
+            .jsonObject["items"]!!.jsonObject
 
     private fun calls(vararg parts: String) =
-        json("""{"candidates":[{"content":{"parts":[${parts.joinToString(",")}]}}]}""")
+        json("""{"candidates":[{"content":{"parts":[${parts.joinToString(",")}]},"finishReason":"STOP"}]}""")
 
     private fun json(body: String) = MockResponse()
         .setResponseCode(200)
@@ -784,19 +537,51 @@ class GeminiPlanClientTest {
         is Result.Failure -> throw AssertionError("expected success, got $error")
     }
 
-    private companion object {
-        const val FILL_CALL =
-            """{"functionCall":{"name":"fill_selection","args":{"prompt":"a red umbrella"}}}"""
-
+    companion object {
         const val API_KEY = "AIza-test-key"
         const val REQUEST = "나무를 좀 더 푸르게 해줘"
         val JPEG = byteArrayOf(1, 2, 3, 4)
+        val DIRECT = PlanRequest(REQUEST, PlanMode.Direct)
 
-        const val SELECT_CALL =
-            """{"functionCall":{"name":"select_region","args":{"phrase":"나무"}}}"""
-        const val ADJUST_CALL =
-            """{"functionCall":{"name":"adjust","args":{"kind":"saturation","value":0.3}}}"""
-        const val CROP_CALL =
-            """{"functionCall":{"name":"crop_ratio","args":{"ratio":"story_9_16"}}}"""
+        const val REASON = ""","reason":"지금도 균형이 좋아요""""
+
+        fun goal(id: String = "g1", source: String = "user", scope: String = "global", observations: String = "") =
+            """{"id":"$id","text":"목표","source":"$source","scope":"$scope","observation_ids":[$observations]}"""
+
+        fun step(tool: String, args: String = "{}", goal: String = "g1") =
+            """{"tool":"$tool","goal_id":"$goal","args":$args}"""
+
+        fun constraint(kind: String) =
+            ""","intent":{"constraints":[{"text":"조건","kind":"$kind","explicit":true}]}"""
+
+        val ADJUST = step("adjust", """{"kind":"exposure","value":0.2}""")
+
+        /** One `propose_edit` call; [extra] is raw JSON appended inside `args`. */
+        fun envelope(
+            outcome: String = "ready",
+            goals: List<String> = listOf(goal()),
+            workflow: List<String> = listOf(ADJUST),
+            extra: String = "",
+        ) = """{"functionCall":{"name":"propose_edit","args":{"outcome":"$outcome",""" +
+            """"goals":[${goals.joinToString(",")}],"workflow":[${workflow.joinToString(",")}]$extra}}}"""
+
+        val READY = """
+            {"functionCall":{"name":"propose_edit","args":{
+              "outcome":"ready",
+              "observations":[{"id":"o1","subject":"나무","note":"잎이 흐릿한 초록이에요","confidence":"medium","unknown":"실제 색인지 조명인지"}],
+              "intent":{"targets":[{"text":"나무","explicit":true}],"wants":[{"text":"더 푸르게","explicit":true}],
+                "constraints":[{"text":"나무만","kind":"subject_only","explicit":false}]},
+              "goals":[{"id":"g1","text":"나무를 더 푸르게","source":"user","scope":"subject","target":"나무","observation_ids":["o1"]}],
+              "color_roles":[{"role":"emphasize","color":"초록","target":"나무"}],
+              "workflow":[
+                {"tool":"select_region","goal_id":"g1","args":{"phrase":"tree"}},
+                {"tool":"adjust","goal_id":"g1","args":{"kind":"saturation","value":0.3,"masked":true},
+                 "effect":"잎이 더 푸르게","caution":"과하면 인공적"}
+              ],
+              "limitations":["축소본이라 잎 질감은 확인하기 어려워요"]
+            }}}
+        """.trimIndent()
+
+        val READY_DEFAULT = envelope(goals = listOf(goal(source = "default")))
     }
 }

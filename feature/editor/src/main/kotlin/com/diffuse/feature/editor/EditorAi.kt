@@ -6,7 +6,6 @@ import com.diffuse.core.ai.EraseProvider
 import com.diffuse.core.ai.FillProvider
 import com.diffuse.core.ai.MatchStyleProvider
 import com.diffuse.core.ai.OutpaintProvider
-import com.diffuse.core.ai.PromptSuggestionProvider
 import com.diffuse.core.ai.SegmentationProvider
 import com.diffuse.core.ai.gemini.GeminiSettings
 import com.diffuse.core.ai.monet.MonetSettings
@@ -36,6 +35,4 @@ class EditorAi @Inject constructor(
     val monetSettings: MonetSettings,
     val autoEnhance: AutoEnhanceProvider,
     val matchStyle: MatchStyleProvider,
-    /** specs/vibe_edit.md §14: 지시's read-only sentence suggestions. */
-    val promptSuggestion: PromptSuggestionProvider,
 )

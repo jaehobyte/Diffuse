@@ -17,7 +17,7 @@ const val ExpandRatioTestTag = "ExpandRatio"
 
 /**
  * specs/outpaint.md §6. Title, the ratio readout, and the pinned [취소 | 적용] row `EditSheet`
- * owns — 적용 is the sheet's one accent.
+ * owns — 적용 is the sheet's one filled primary.
  *
  * **No prompt bar.** 확대 continues a scene the model can already see; there is nothing for a
  * person to name. That is 채우기's job (generative_fill.md §10).

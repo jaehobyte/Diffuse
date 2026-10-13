@@ -3,16 +3,14 @@ package com.diffuse.feature.editor.tools.style
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -28,7 +26,10 @@ import androidx.compose.ui.unit.dp
 import com.diffuse.core.imaging.style.StylePreset
 import com.diffuse.core.ui.components.AdjustSlider
 import com.diffuse.core.ui.components.EditSheet
+import com.diffuse.core.ui.components.OptionChip
+import com.diffuse.core.ui.components.SecondaryPill
 import com.diffuse.core.ui.theme.LocalAppColors
+import com.diffuse.core.ui.theme.Shapes
 import com.diffuse.core.ui.theme.Typography
 import com.diffuse.feature.editor.R
 import java.util.Locale
@@ -67,7 +68,7 @@ fun StyleSheet(
     ) {
         // §5: the pill sits above the tiles, and the reference it produces becomes one of them.
         SecondaryPill(
-            label = stringResource(R.string.style_from_photo),
+            text = stringResource(R.string.style_from_photo),
             enabled = !state.matching,
             onClick = onPickReference,
             modifier = Modifier.testTag(StyleFromPhotoTestTag),
@@ -116,26 +117,6 @@ private fun TileRow(state: StyleState, onSelect: (String?) -> Unit) {
             )
         }
     }
-}
-
-/** DESIGN.md §4: a `secondary` pill — `editSurfaceRaised` fill, ink text, 40dp, radius 16dp. */
-@Composable
-private fun SecondaryPill(
-    label: String,
-    enabled: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val colors = LocalAppColors.current
-    Text(
-        text = label,
-        style = Typography.bodyStrong,
-        color = colors.ink.copy(alpha = if (enabled) 1f else DISABLED_ALPHA),
-        modifier = modifier
-            .background(color = colors.surfaceRaised, shape = RoundedCornerShape(CHIP_RADIUS))
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-    )
 }
 
 @Composable
@@ -193,8 +174,8 @@ private fun IntensityRow(intensity: Int, onChange: (Int) -> Unit) {
 
 /**
  * DESIGN.md §4 (Image tile): 16dp corners, no text over the tile — the name goes below it — and a
- * flat fill while loading with **no** skeleton shimmer. Edit mode has no `surfaceCard`; its step in
- * the surface scale is `editSurfaceRaised`, which is what `colors.surfaceRaised` is here.
+ * flat `editSurfaceRaised` fill while loading with **no** skeleton shimmer. Selection is a blue
+ * ring (§1) with the selected semantics; a light-blue fill would sit under the photo unseen.
  */
 @Composable
 private fun StyleTile(
@@ -205,11 +186,11 @@ private fun StyleTile(
     onClick: () -> Unit,
 ) {
     val colors = LocalAppColors.current
-    val shape = RoundedCornerShape(TILE_RADIUS)
+    val shape = Shapes.card
     Column(
         modifier = Modifier
             .testTag(styleTileTag(id))
-            .clickable(role = Role.RadioButton, onClick = onClick),
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
@@ -218,11 +199,9 @@ private fun StyleTile(
                 .size(TILE_SIZE)
                 .clip(shape)
                 .background(colors.surfaceRaised)
-                // specs/adjust_hsl.md §7's ruling, reused by T77: the ring is `editInk`, never the
-                // accent — the sheet's one accent belongs to 적용 (DESIGN.md §1).
                 .border(
                     width = TILE_RING,
-                    color = if (selected) colors.ink else Color.Transparent,
+                    color = if (selected) colors.accent else Color.Transparent,
                     shape = shape,
                 ),
         ) {
@@ -245,28 +224,8 @@ private fun StyleTile(
 
 @Composable
 private fun VariantChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    val colors = LocalAppColors.current
-    val shape = RoundedCornerShape(CHIP_RADIUS)
-    Text(
-        text = label,
-        style = Typography.label,
-        color = if (selected) colors.ink else colors.inkSecondary,
-        modifier = Modifier
-            .background(color = colors.surfaceRaised, shape = shape)
-            .border(
-                width = TILE_RING,
-                color = if (selected) colors.ink else Color.Transparent,
-                shape = shape,
-            )
-            .clickable(role = Role.RadioButton, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-    )
+    OptionChip(text = label, selected = selected, onClick = onClick)
 }
 
 private val TILE_SIZE = 96.dp
-private val TILE_RADIUS = 16.dp
 private val TILE_RING = 2.dp
-private val CHIP_RADIUS = 16.dp
-
-/** DESIGN.md §4: disabled is 38% alpha, and the colour does not change. */
-private const val DISABLED_ALPHA = 0.38f

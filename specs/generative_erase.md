@@ -242,8 +242,8 @@ adding the field re-records nothing.
 Carried over from T38 and already built. Only the copy changes.
 
 - Tool strip "지우기", with the 6dp accent AI dot (DESIGN.md §4).
-- No sheet. Tapping runs it: the progress overlay shows `erase_working` ("지우는 중") in `accent`
-  with a cancel button (DESIGN.md §4 State display, §7).
+- No sheet. Tapping runs it: the progress overlay shows a blue `accent` spinner and
+  `erase_working` ("지우는 중") in `canvasOverlayInk` with a cancel button (DESIGN.md §4 State display, §7).
 - Cancelling leaves the document byte-for-byte untouched.
 - Disabled with a snackbar reason on tap. The reason is now specific:
 

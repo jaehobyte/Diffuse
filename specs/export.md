@@ -21,7 +21,7 @@ Settings persist in DataStore (last used format/size).
 5. Emit success effect → snackbar "저장했어요" with action "열기" (ACTION_VIEW on the URI).
 
 ## Progress UI
-While exporting: sheet closes, the editor shows the progress overlay (40% scrim, `accent` circular progress bound to `onProgress`, text "저장하는 중", tertiary "취소"). Cancel deletes the pending MediaStore entry.
+While exporting: sheet closes, the editor shows the progress overlay (40% scrim, `accent` circular progress bound to `onProgress`, text "저장하는 중" and tertiary "취소" in `canvasOverlayInk`). Cancel deletes the pending MediaStore entry.
 
 ## Errors
 - `Io` (disk full, MediaStore failure) → snackbar `error_io`.

@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
@@ -86,6 +87,26 @@ class EditSheetTest {
             "sheet took $sheetHeight of $screenHeight",
             sheetHeight <= screenHeight * 0.45f + 1f,
         )
+    }
+
+    /** DESIGN.md §4: large type grows the pills, not past the cap, and never clips 취소 | 적용. */
+    @Test
+    @Config(qualifiers = RobolectricDeviceQualifiers.Pixel6a, fontScale = 2.0f)
+    fun `at twice the font size the cap holds and both actions stay reachable`() {
+        showSheet(contentHeight = 2000)
+
+        compose.onNodeWithText("취소").assertIsDisplayed().performClick()
+        compose.onNodeWithText("적용").assertIsDisplayed().performClick()
+        compose.waitForIdle()
+        assertEquals(1, cancels)
+        assertEquals(1, applies)
+
+        val screenHeight = compose.onRoot().fetchSemanticsNode().size.height
+        val sheetHeight = compose.onNodeWithTag(EditSheetTestTag).fetchSemanticsNode().size.height
+        assertTrue("sheet took $sheetHeight of $screenHeight", sheetHeight <= screenHeight * 0.45f + 1f)
+        // DESIGN.md §4: the 48dp pill is a minimum, so the doubled label is not cut to it.
+        val apply = compose.onNodeWithText("적용").fetchSemanticsNode().size.height
+        assertTrue("적용 is ${apply}px", apply >= with(compose.density) { 48.dp.roundToPx() })
     }
 
     @Test

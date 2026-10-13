@@ -1,23 +1,17 @@
 package com.diffuse.feature.editor.tools.select
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.diffuse.core.ui.components.EditSheet
+import com.diffuse.core.ui.components.OptionChip
+import com.diffuse.core.ui.components.SecondaryPill
 import com.diffuse.core.ui.theme.LocalAppColors
-import com.diffuse.core.ui.theme.Tokens
 import com.diffuse.core.ui.theme.Typography
 import com.diffuse.feature.editor.R
 
@@ -27,10 +21,6 @@ const val SelectInvertTestTag = "SelectInvert"
 const val SelectClearTestTag = "SelectClear"
 const val SelectCutOutTestTag = "SelectCutOut"
 const val SelectHintTestTag = "SelectHint"
-
-/** DESIGN.md §4: pills, so the secondary actions match every other button in the app. */
-private val ActionHeight = 40.dp
-private val ActionRadius = 16.dp
 
 /**
  * specs/selection_tool.md §1. Title, the two selection actions, a hint line, and the pinned
@@ -83,9 +73,9 @@ fun SelectSheet(
                 onClick = onClear,
             )
         }
-        // specs/selection_tool.md §8.2 calls this a primary pill, but DESIGN.md §1 allows the
-        // sheet one accent at rest and that is its Apply. A second accent pill would also make
-        // two different commits look equally primary. Secondary keeps the hierarchy honest.
+        // specs/selection_tool.md §8.2 calls this a primary pill, but DESIGN.md §1 allows a
+        // surface one filled primary and that is the sheet's Apply. A second filled pill would
+        // make two different commits look equally primary. Secondary keeps the hierarchy honest.
         if (state.hasMask) {
             SecondaryAction(
                 testTag = SelectCutOutTestTag,
@@ -112,25 +102,11 @@ private fun hintFor(state: SelectionState) = when {
     else -> R.string.select_hint
 }
 
-/** DESIGN.md §4: the selected mode is the accent-filled chip, matching the crop presets. */
+/** DESIGN.md §4: the selected mode is a light-blue option chip, matching the crop presets. */
 @Composable
 private fun ModeChip(mode: MergeMode, selected: Boolean, onClick: () -> Unit) {
-    val colors = LocalAppColors.current
     val label = stringResource(mode.labelRes)
-    Text(
-        text = label,
-        style = Typography.label,
-        color = if (selected) Tokens.onAccent else colors.ink,
-        modifier = Modifier
-            .testTag(label)
-            .height(32.dp)
-            .background(
-                color = if (selected) Tokens.accent else colors.surfaceRaised,
-                shape = RoundedCornerShape(ActionRadius),
-            )
-            .clickable(role = Role.RadioButton, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-    )
+    OptionChip(text = label, selected = selected, onClick = onClick, modifier = Modifier.testTag(label))
 }
 
 @Composable
@@ -140,19 +116,5 @@ private fun SecondaryAction(
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
-    val colors = LocalAppColors.current
-    Text(
-        text = label,
-        style = Typography.bodyStrong,
-        color = colors.ink.copy(alpha = if (enabled) 1f else DISABLED_ALPHA),
-        modifier = Modifier
-            .testTag(testTag)
-            .height(ActionHeight)
-            .border(1.dp, colors.hairline, RoundedCornerShape(ActionRadius))
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-    )
+    SecondaryPill(text = label, onClick = onClick, enabled = enabled, modifier = Modifier.testTag(testTag))
 }
-
-/** DESIGN.md §4: disabled is 38% alpha with the colour unchanged. */
-private const val DISABLED_ALPHA = 0.38f

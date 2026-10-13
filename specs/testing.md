@@ -52,7 +52,7 @@ Rule set:
 - Roborazzi with `RobolectricDeviceQualifiers.Pixel6a`, `@GraphicsMode(NATIVE)`, portrait, font scale 1.0, both `AppTheme` modes where the component supports both.
 - Compare with `changeThreshold = 0.01` (1% of pixels). Set once in `build.gradle.kts`; not overridable per test.
 - Record only via `recordRoborazziDebug`, and only for goldens named in the current task. `verifyRoborazziDebug` is what `check` runs; a missing golden is a failure, not an auto-record.
-- Text in screenshots uses the bundled Pretendard font so results are deterministic across machines.
+- Text in screenshots uses the same system sans-serif the app uses (DESIGN.md §3) — not a test-only font — rendered in the fixed Robolectric environment above (Pixel6a qualifier, NATIVE graphics, the pinned `robolectricAndroidAll` 16 image, font scale 1.0), which is what keeps results deterministic. The threshold is unchanged.
 - Naming: `<screen_or_component>_<state>.png` exactly as listed in tasks.md.
 
 ## 6. UI behavior tests

@@ -28,10 +28,19 @@ private val BorderStroke = 1.dp
 private const val DIM_ALPHA = 0.5f
 private const val THIRDS = 3
 
+/**
+ * DESIGN.md §2: guides are `canvasOverlayInk`, not the controls' black `editInk`. Inside the crop
+ * nothing is dimmed, so each solid guide sits on a slightly wider dark line that keeps it visible
+ * where the photo itself is white.
+ */
+private val GuideInk = Tokens.canvasOverlayInk
+private val GuideShade = Color.Black.copy(alpha = 0.45f)
+private val ShadeExtra = 1.dp
+
 const val CropOverlayTestTag = "CropOverlay"
 
 /**
- * specs/crop.md: dim outside the rect, 1dp `editInk` border, 24dp corner L-shapes and a
+ * specs/crop.md: dim outside the rect, 1dp `canvasOverlayInk` border, 24dp corner L-shapes and a
  * rule-of-thirds grid while dragging. Dragging inside moves the rect, a corner resizes it;
  * a drag that starts outside is left unconsumed so the canvas pans (canvas.md).
  */
@@ -105,7 +114,13 @@ private fun DrawScope.drawCropOverlay(rect: RectF, imageRect: Rect) {
     )
 
     drawRect(
-        color = Tokens.editInk,
+        color = GuideShade,
+        topLeft = cropRect.topLeft,
+        size = cropRect.size,
+        style = Stroke(width = BorderStroke.toPx() + 2 * ShadeExtra.toPx()),
+    )
+    drawRect(
+        color = GuideInk,
         topLeft = cropRect.topLeft,
         size = cropRect.size,
         style = Stroke(width = BorderStroke.toPx()),
@@ -120,13 +135,13 @@ private fun DrawScope.drawThirds(cropRect: Rect) {
         val x = cropRect.left + cropRect.width * step / THIRDS
         val y = cropRect.top + cropRect.height * step / THIRDS
         drawLine(
-            Tokens.editInk.copy(alpha = 0.4f),
+            GuideInk.copy(alpha = 0.4f),
             Offset(x, cropRect.top),
             Offset(x, cropRect.bottom),
             thin.width,
         )
         drawLine(
-            Tokens.editInk.copy(alpha = 0.4f),
+            GuideInk.copy(alpha = 0.4f),
             Offset(cropRect.left, y),
             Offset(cropRect.right, y),
             thin.width,
@@ -145,7 +160,10 @@ private fun DrawScope.drawCornerHandles(cropRect: Rect) {
     )
     corners.forEach { (x, y, direction) ->
         val (dx, dy) = direction
-        drawLine(Tokens.editInk, Offset(x, y), Offset(x + dx * length, y), width)
-        drawLine(Tokens.editInk, Offset(x, y), Offset(x, y + dy * length), width)
+        val shade = width + 2 * ShadeExtra.toPx()
+        drawLine(GuideShade, Offset(x, y), Offset(x + dx * length, y), shade)
+        drawLine(GuideShade, Offset(x, y), Offset(x, y + dy * length), shade)
+        drawLine(GuideInk, Offset(x, y), Offset(x + dx * length, y), width)
+        drawLine(GuideInk, Offset(x, y), Offset(x, y + dy * length), width)
     }
 }

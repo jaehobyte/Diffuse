@@ -178,19 +178,18 @@ is a `header` and a three-element `kinds` list, not a second sheet.
 **The chip row**: horizontally scrollable `Row`, `Arrangement.spacedBy(12.dp)` (DESIGN.md §1). Each
 chip is a 48dp-wide column with a 48dp hit area: a 32dp circular swatch filled with
 `HslColor.toRgb(band.centerDeg, 0.7f, 0.5f)`, and the band label below in `label` type. Selected:
-a **2dp `editInk` ring** 3dp outside the swatch, and the label in `editInk`; unselected labels are
-`editInkSecondary`. The swatch itself is the same size either way, so the row does not reflow when
+a **2dp `accent` ring** 3dp outside the swatch, and the label in `editInk`; unselected labels are
+`editInkSecondary`. The chip carries the selected semantics with a radio-button role. The swatch itself is the same size either way, so the row does not reflow when
 the selection moves. Test tag `MixBandChip:<band>`.
 
 ## 7. Two rulings this section owns
 
-**The selected chip is never `accent`.** DESIGN.md §4 marks a selected tool with the accent, but
-that rule is written for the tool strip, and §1 allows the accent once per *surface*. A sheet's one
-accent is its 적용 pill — the prompt bar gives its accent up for exactly this reason. So selection
-here is a ring in `editInk`, and the eight swatches are **content colour, not chrome**: they are
-the thing being edited, in the same sense the photo is, which is why a red swatch sitting near a
-red 적용 pill does not read as a second call to action. A test asserts the red swatch's ARGB is not
-the `accent` token, so this stays a stated decision rather than a coincidence.
+**The selection ring is `accent`; the swatch never is.** DESIGN.md §1 marks selection in blue, so
+the ring around the selected band is the accent — selection, not a second filled primary, which
+stays the 적용 pill. The eight swatches are **content colour, not chrome**: they are the thing being
+edited, in the same sense the photo is, and are never recoloured to the brand. A test asserts no
+band's swatch ARGB is the `accent` token, so this stays a stated decision rather than a coincidence.
+(Until the 2026-10 style change the ring was `editInk`, under the old one-accent-per-surface rule.)
 
 **색조 is used twice, and that is intended.** `color_tint` is 색조 (adjust_color.md) and `mix_hue`
 is 색조 as well. They are different controls in different sheets, and both are what a Korean
@@ -353,7 +352,8 @@ These are spec-level and the loop must not decide them:
 1. **render.md line 54** says "Golden image per `AdjustKind` at +0.5 and −0.5". With 34 kinds that
    is no longer what the project does; §10 above is the rule for HSL kinds. render.md needs one
    sentence pointing here. CLAUDE.md freezes `specs/*.md` for the loop, so a human writes it.
-2. **§7's two rulings** — the `editInk` ring instead of the accent, and 색조 appearing in two
+2. **§7's two rulings** — the selection ring (originally `editInk`, `accent` since the 2026-10
+   style change) and 색조 appearing in two
    sheets — are decisions this spec takes on DESIGN.md's behalf. If either is wrong, it is cheaper
    to say so before T55 than after its goldens exist.
 
