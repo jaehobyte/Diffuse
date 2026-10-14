@@ -50,7 +50,6 @@ class ToolSheetHostTest {
                 canUndo = false,
                 canRedo = false,
                 canCompare = false,
-                onBack = {},
                 onUndo = {},
                 onRedo = {},
                 onCompareChange = {},
@@ -83,7 +82,7 @@ class ToolSheetHostTest {
         compose.waitForIdle()
 
         compose.onNodeWithTag(EditSheetTestTag).assertExists()
-        ColorKinds.forEach { compose.onNodeWithTag(adjustSliderTag(it)).assertExists() }
+        ColorKinds.forEach { compose.onNodeWithTag(adjustKindTag(it)).assertExists() }
     }
 
     @Test
@@ -104,7 +103,7 @@ class ToolSheetHostTest {
         compose.waitForIdle()
 
         compose.onNodeWithTag(EditSheetTestTag).assertExists()
-        mixKinds(HslBand.Red).forEach { compose.onNodeWithTag(adjustSliderTag(it)).assertExists() }
+        mixKinds(HslBand.Red).forEach { compose.onNodeWithTag(adjustKindTag(it)).assertExists() }
     }
 
     /** work/decisions.md D092: 디테일 is a root tool for every photograph. */
@@ -116,7 +115,7 @@ class ToolSheetHostTest {
         compose.waitForIdle()
 
         compose.onNodeWithTag(EditSheetTestTag).assertExists()
-        DetailKinds.forEach { compose.onNodeWithTag(adjustSliderTag(it)).assertExists() }
+        DetailKinds.forEach { compose.onNodeWithTag(adjustKindTag(it)).assertExists() }
     }
 
     /**

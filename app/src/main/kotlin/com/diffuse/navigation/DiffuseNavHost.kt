@@ -133,7 +133,6 @@ internal fun EditorWithExport(
 
     Box(modifier = Modifier.fillMaxSize()) {
         EditorRoute(
-            onBack = onBack,
             onExport = {
                 settings = settings.autoFormatFor(state.document?.hasAlpha == true)
                 sheetOpen = true

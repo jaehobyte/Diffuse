@@ -457,7 +457,6 @@ class MultiShotSheetTest {
                 canUndo = false,
                 canRedo = false,
                 canCompare = false,
-                onBack = {},
                 onUndo = {},
                 onRedo = {},
                 onCompareChange = {},

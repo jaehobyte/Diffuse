@@ -18,27 +18,33 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.diffuse.core.ui.theme.LocalAppColors
+import com.diffuse.core.ui.theme.Tokens
 import com.diffuse.core.ui.theme.Typography
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-/** DESIGN.md §4 (Slider). */
-private val TrackHeight = 4.dp
-private val ThumbDiameter = 20.dp
-private val ThumbStroke = 1.dp
-private val CentreTickWidth = 2.dp
+/** DESIGN.md §4 (Slider): the Photo Editor's ruler — ticks, no track, no thumb. */
+private const val TICK_COUNT = 41
+private const val MAJOR_EVERY = 5
+private val TickWidth = 2.dp
+private val MinorTickHeight = 8.dp
+private val MajorTickHeight = 12.dp
+private val CurrentTickHeight = 20.dp
+private val ZeroDotDiameter = 4.dp
+private val ZeroDotGap = 6.dp
+private val EndInset = 8.dp
 private val TouchTargetHeight = 48.dp
 private val ValueColumnWidth = 64.dp
 
@@ -50,18 +56,11 @@ private const val PERCENT_SCALE = 100f
 
 const val AdjustSliderTestTag = "AdjustSlider"
 
-/** DESIGN.md §4: the inactive track must read on the near-white glass sheet. */
-private const val TRACK_ALPHA = 0.35f
-
-/** A soft shade under the white thumb, so it stands off the light sheet as well as the track. */
-private val ThumbShade = Color.Black.copy(alpha = 0.14f)
-private val ThumbShadeOffset = 1.dp
-
 /**
- * DESIGN.md §4: 4dp track with the active span in blue, 20dp white thumb with a 1dp hairline
- * stroke, the value pinned to the right in `mono` rather than floating over the thumb, and a
- * 2dp centre tick when the adjustment is zero-centred. Double-tap returns to the neutral value.
- * The active span runs from the neutral point — the centre when zero-centred, else the start.
+ * DESIGN.md §4: 41 ticks across the width, every fifth one taller and brighter, the current
+ * value a taller `accent` tick, and a dot above the centre when the adjustment is zero-centred.
+ * The value is pinned to the right in `mono` unless the host shows it elsewhere ([showValue]).
+ * Double-tap returns to the neutral value. A drag reads the finger's absolute position.
  */
 @Composable
 fun AdjustSlider(
@@ -76,19 +75,21 @@ fun AdjustSlider(
      * default keeps the raw range readable for anything that has no scale of its own.
      */
     format: (Float) -> String = { defaultFormat(it, zeroCentered) },
+    /** DESIGN.md §4 Adjust sheet: the selected circle already shows the number, so it hides this. */
+    showValue: Boolean = true,
 ) {
     val colors = LocalAppColors.current
     val density = LocalDensity.current
-    val thumbRadiusPx = with(density) { ThumbDiameter.toPx() / 2f }
+    val insetPx = with(density) { EndInset.toPx() }
 
-    var trackWidthPx by remember { mutableFloatStateOf(0f) }
+    var rulerWidthPx by remember { mutableFloatStateOf(0f) }
     val currentValue by rememberUpdatedState(value)
     val change by rememberUpdatedState(onChange)
     val finished by rememberUpdatedState(onChangeFinished)
 
     fun valueAt(x: Float): Float {
-        val usable = (trackWidthPx - 2f * thumbRadiusPx).coerceAtLeast(1f)
-        val fraction = ((x - thumbRadiusPx) / usable).coerceIn(0f, 1f)
+        val usable = (rulerWidthPx - 2f * insetPx).coerceAtLeast(1f)
+        val fraction = ((x - insetPx) / usable).coerceIn(0f, 1f)
         return range.start + fraction * (range.endInclusive - range.start)
     }
 
@@ -115,26 +116,27 @@ fun AdjustSlider(
             contentAlignment = Alignment.CenterStart,
         ) {
             Canvas(modifier = Modifier.fillMaxWidth().height(TouchTargetHeight)) {
-                trackWidthPx = size.width
-                drawSlider(
+                rulerWidthPx = size.width
+                drawRuler(
                     fraction = fractionOf(currentValue, range),
                     zeroCentered = zeroCentered,
-                    sliderColors = SliderColors(
-                        track = colors.inkMuted.copy(alpha = TRACK_ALPHA),
-                        active = colors.accent,
-                        tick = colors.inkSecondary,
-                        stroke = colors.hairline,
+                    rulerColors = RulerColors(
+                        major = Tokens.sliderTickMajor,
+                        minor = Tokens.sliderTickMinor,
+                        current = colors.accent,
                     ),
                 )
             }
         }
-        Text(
-            text = format(value),
-            style = Typography.mono,
-            color = colors.inkSecondary,
-            textAlign = TextAlign.End,
-            modifier = Modifier.widthIn(min = ValueColumnWidth),
-        )
+        if (showValue) {
+            Text(
+                text = format(value),
+                style = Typography.mono,
+                color = colors.inkSecondary,
+                textAlign = TextAlign.End,
+                modifier = Modifier.widthIn(min = ValueColumnWidth),
+            )
+        }
     }
 }
 
@@ -178,52 +180,44 @@ private fun defaultFormat(value: Float, zeroCentered: Boolean): String {
 }
 
 /** DrawScope is itself a Density, so the dp values convert without one being passed in. */
-private data class SliderColors(val track: Color, val active: Color, val tick: Color, val stroke: Color)
+private data class RulerColors(val major: Color, val minor: Color, val current: Color)
 
-private fun DrawScope.drawSlider(
+private fun DrawScope.drawRuler(
     fraction: Float,
     zeroCentered: Boolean,
-    sliderColors: SliderColors,
+    rulerColors: RulerColors,
 ) {
-    val trackHeightPx = TrackHeight.toPx()
-    val thumbRadiusPx = ThumbDiameter.toPx() / 2f
-    val tickWidthPx = CentreTickWidth.toPx()
-    val strokePx = ThumbStroke.toPx()
+    val tickWidthPx = TickWidth.toPx()
+    val insetPx = EndInset.toPx()
+    val usable = size.width - 2f * insetPx
     val centreY = size.height / 2f
 
-    drawRoundRect(
-        color = sliderColors.track,
-        topLeft = Offset(0f, centreY - trackHeightPx / 2f),
-        size = Size(size.width, trackHeightPx),
-        cornerRadius = androidx.compose.ui.geometry.CornerRadius(trackHeightPx / 2f),
-    )
-
-    val thumbX = thumbRadiusPx + fraction * (size.width - 2f * thumbRadiusPx)
-    val neutralX = if (zeroCentered) size.width / 2f else 0f
-    drawRect(
-        color = sliderColors.active,
-        topLeft = Offset(minOf(neutralX, thumbX), centreY - trackHeightPx / 2f),
-        size = Size(abs(thumbX - neutralX), trackHeightPx),
-    )
-
-    if (zeroCentered) {
-        drawRect(
-            color = sliderColors.tick,
-            topLeft = Offset(size.width / 2f - tickWidthPx / 2f, centreY - trackHeightPx / 2f),
-            size = Size(tickWidthPx, trackHeightPx),
+    fun tick(x: Float, heightPx: Float, color: Color) {
+        drawRoundRect(
+            color = color,
+            topLeft = Offset(x - tickWidthPx / 2f, centreY - heightPx / 2f),
+            size = Size(tickWidthPx, heightPx),
+            cornerRadius = CornerRadius(tickWidthPx / 2f),
         )
     }
 
-    drawCircle(
-        color = ThumbShade,
-        radius = thumbRadiusPx,
-        center = Offset(thumbX, centreY + ThumbShadeOffset.toPx()),
-    )
-    drawCircle(color = Color.White, radius = thumbRadiusPx, center = Offset(thumbX, centreY))
-    drawCircle(
-        color = sliderColors.stroke,
-        radius = thumbRadiusPx - strokePx / 2f,
-        center = Offset(thumbX, centreY),
-        style = Stroke(width = strokePx),
-    )
+    repeat(TICK_COUNT) { i ->
+        val x = insetPx + usable * i / (TICK_COUNT - 1)
+        val major = i % MAJOR_EVERY == 0
+        tick(
+            x = x,
+            heightPx = (if (major) MajorTickHeight else MinorTickHeight).toPx(),
+            color = if (major) rulerColors.major else rulerColors.minor,
+        )
+    }
+
+    if (zeroCentered) {
+        drawCircle(
+            color = rulerColors.major,
+            radius = ZeroDotDiameter.toPx() / 2f,
+            center = Offset(size.width / 2f, centreY - CurrentTickHeight.toPx() / 2f - ZeroDotGap.toPx()),
+        )
+    }
+
+    tick(x = insetPx + fraction * usable, heightPx = CurrentTickHeight.toPx(), color = rulerColors.current)
 }

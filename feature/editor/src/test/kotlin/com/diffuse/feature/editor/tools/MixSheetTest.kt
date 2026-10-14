@@ -94,8 +94,9 @@ class MixSheetTest {
             mixKinds(HslBand.Red),
         )
         mixKinds(HslBand.Red).forEach {
-            compose.onNodeWithTag(adjustSliderTag(it)).assertExists()
+            compose.onNodeWithTag(adjustKindTag(it)).assertExists()
         }
+        compose.onNodeWithTag(adjustSliderTag(AdjustKind.HslRedHue)).assertExists()
     }
 
     @Test
@@ -106,8 +107,9 @@ class MixSheetTest {
         compose.waitForIdle()
 
         mixKinds(HslBand.Blue).forEach {
-            compose.onNodeWithTag(adjustSliderTag(it)).assertExists()
+            compose.onNodeWithTag(adjustKindTag(it)).assertExists()
         }
+        compose.onNodeWithTag(adjustKindTag(AdjustKind.HslRedHue)).assertDoesNotExist()
         compose.onNodeWithTag(adjustSliderTag(AdjustKind.HslRedHue)).assertDoesNotExist()
     }
 
@@ -126,6 +128,8 @@ class MixSheetTest {
     fun `a drag collapses into one history entry once released`() {
         showSheet()
 
+        // The slider follows the selected circle (DESIGN.md §4 Adjust sheet).
+        compose.onNodeWithTag(adjustKindTag(AdjustKind.HslRedSaturation)).performClick()
         compose.onNodeWithTag(adjustSliderTag(AdjustKind.HslRedSaturation))
             .performTouchInput { swipeRight() }
         compose.waitForIdle()
@@ -149,6 +153,7 @@ class MixSheetTest {
         )
 
         compose.onNodeWithTag(MaskedOnlyToggleTestTag).assertExists()
+        compose.onNodeWithTag(adjustKindTag(AdjustKind.HslRedSaturation)).performScrollTo().performClick()
         // The sheet caps at 45% of the screen, so this row can start below the fold.
         compose.onNodeWithTag(adjustSliderTag(AdjustKind.HslRedSaturation))
             .performScrollTo()

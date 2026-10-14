@@ -201,7 +201,8 @@ private fun StyleTile(
                 .background(colors.surfaceRaised)
                 .border(
                     width = TILE_RING,
-                    color = if (selected) colors.accent else Color.Transparent,
+                    // DESIGN.md §4: a selected thumbnail carries the Photo Editor's white ring.
+                    color = if (selected) colors.selectionFill else Color.Transparent,
                     shape = shape,
                 ),
         ) {

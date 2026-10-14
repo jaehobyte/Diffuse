@@ -41,7 +41,10 @@ import com.diffuse.feature.editor.canvas.OverlayTransform
 
 const val EditorScreenTestTag = "EditorScreen"
 
-/** specs/editor_shell.md: top bar 56dp / canvas / tool strip 72dp, portrait only in v1. */
+/**
+ * specs/editor_shell.md: top bar 56dp / canvas / tool strip 72dp, portrait only in v1. Leaving is
+ * system back (DESIGN.md §4): the bar has no arrow, so the screen takes no `onBack`.
+ */
 @Composable
 fun EditorScreen(
     preview: ImageBitmap?,
@@ -52,7 +55,6 @@ fun EditorScreen(
     canUndo: Boolean,
     canRedo: Boolean,
     canCompare: Boolean,
-    onBack: () -> Unit,
     onUndo: () -> Unit,
     onRedo: () -> Unit,
     onCompareChange: (Boolean) -> Unit,
@@ -81,7 +83,7 @@ fun EditorScreen(
     message: String? = null,
     onMessageShown: () -> Unit = {},
 ) {
-    // DESIGN.md §1: light controls around a dark canvas surround — Edit is not a dark theme.
+    // DESIGN.md §1: one black palette for the bar, the canvas surround and the strip.
     AppTheme(mode = ThemeMode.Edit) {
         var viewport by rememberSaveable(stateSaver = ViewportSaver) {
             mutableStateOf(CanvasViewport())
@@ -97,7 +99,6 @@ fun EditorScreen(
                 canRedo = canRedo,
                 canReset = canReset,
                 canCompare = canCompare,
-                onBack = onBack,
                 onUndo = onUndo,
                 onRedo = onRedo,
                 // tasks.md T22: dropping a Crop changes the dimensions, so refit the canvas.
@@ -184,8 +185,7 @@ private fun EditorBody(
             disabledTools = disabledTools,
             level = toolLevel.level,
             onLevelChange = toolLevel.onChange,
-            // DESIGN.md §8: the strip's light surface runs under the transparent navigation bar,
-            // so its dark icons have something to stand on instead of the dark canvas surround.
+            // DESIGN.md §8: the strip's black runs under the transparent navigation bar.
             modifier = Modifier
                 .background(LocalAppColors.current.surface)
                 .navigationBarsPadding()

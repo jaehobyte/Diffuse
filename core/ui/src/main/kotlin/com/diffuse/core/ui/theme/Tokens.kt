@@ -13,63 +13,69 @@ import androidx.compose.ui.unit.sp
 import com.diffuse.core.ui.R
 
 /**
- * Raw design values from DESIGN.md §2. DESIGN.md names this file the home of its
- * tokens, so these literals are the definition, not a copy. TokensTest asserts
- * every one of them against the §2 tables.
+ * Raw design values from DESIGN.md §2, sampled from the Galaxy Photo Editor. DESIGN.md names
+ * this file the home of its tokens, so these literals are the definition, not a copy.
+ * TokensTest asserts every one of them against the §2 tables.
  */
 object Tokens {
 
-    // --- Brand & light surfaces ---
-    val accent = Color(0xFF387AFF)
-    val accentPressed = Color(0xFF2864D9)
+    // --- Brand & selection ---
+    /** The Photo Editor's yellow: selected tab, current slider tick, the listening mic. */
+    val accent = Color(0xFFF9DA4B)
 
-    /** A filled primary button: white text on [accent] would miss 4.5:1, so it is darker. */
-    val primaryFill = Color(0xFF2864D9)
+    /** The wedge inside a selected adjust circle. */
+    val accentSoft = Color(0xFFF9E16E)
+    val accentPressed = Color(0xFFE3C53A)
+
+    /** One UI blue for the few filled buttons, a step darker so white text holds 4.5:1. */
+    val primaryFill = Color(0xFF2F6BEB)
     val onAccent = Color(0xFFFFFFFF)
-    val canvasLight = Color(0xFFFCFCFF)
-    val surfaceSoft = Color(0xFFFCFCFF)
-    val surfaceCard = Color(0xFFF5F4F6)
-    val surfaceSecondary = Color(0xFFEBEFF5)
-    val hairline = Color(0xFFE6E6E9)
-    val ink = Color(0xFF000000)
-    val inkSecondary = Color(0xFF4D4D52)
-    val inkMuted = Color(0xFF8E8E92)
-    val selectionFill = Color(0xFFD9E2F6)
-    val selectionBorder = Color(0xFF8FB2F5)
-    val promptTint = Color(0xFFD7E4FF)
 
-    // --- Editor & glass ---
-    val editBackground = Color(0xFF1C1C1E)
-    val editSurface = Color(0xFFFCFCFF)
-    val editSurfaceRaised = Color(0xFFF5F4F6)
-    val editHairline = Color(0xFFE6E6E9)
-    val editInk = Color(0xFF000000)
-    val editInkSecondary = Color(0xFF4D4D52)
+    /** A selected chip or circle inverts: white fill, black glyph. */
+    val selectionFill = Color(0xFFFAFAFA)
+    val selectionInk = Color(0xFF000000)
+    val promptTint = Color(0xFF2A3346)
 
-    /** Text and guides over the dark canvas or a progress scrim; never the controls' [editInk]. */
-    val canvasOverlayInk = Color(0xFFFCFCFF)
+    // --- Surfaces & ink (shared by Browse and Edit) ---
+    val background = Color(0xFF000000)
+    val surface = Color(0xFF000000)
+    val surfaceRaised = Color(0xFF202023)
+    val surfaceSecondary = Color(0xFF2C2C30)
+    val surfaceMenu = Color(0xFF272727)
+    val hairline = Color(0xFF3A3A3D)
+    val ink = Color(0xFFFAFAFA)
+    val inkSecondary = Color(0xFFA6A6A7)
+    val inkMuted = Color(0xFF6E6E70)
+
+    // --- Editor ---
+    val editBackground = Color(0xFF000000)
+    val editSurface = Color(0xFF000000)
+    val editSurfaceRaised = Color(0xFF202023)
+    val editHairline = Color(0xFF3A3A3D)
+    val editInk = Color(0xFFFAFAFA)
+    val editInkSecondary = Color(0xFFA6A6A7)
+
+    /** Text and guides over the canvas or a progress scrim. */
+    val canvasOverlayInk = Color(0xFFFAFAFA)
     val canvasCheckerA = Color(0xFF2C2C2E)
     val canvasCheckerB = Color(0xFF242426)
-    val sheetGlassTop = Color(0xF5F7F8FB)
-    val sheetGlassBottom = Color(0xF0E6E9F1)
-    val sheetEdge = Color(0xCCFFFFFF)
-    val sheetHandle = Color(0xFFB4B6BC)
-    val pillStatus = Color(0xFFA8A8AC)
+
+    /** The ruler slider: every fifth tick is major, the rest minor. */
+    val sliderTickMajor = Color(0xFF8D8D8E)
+    val sliderTickMinor = Color(0xFF4D4D4F)
+
+    /** The AI entry circle, the one gradient DESIGN.md §6 allows. */
+    val aiGradientStart = Color(0xFF5C8AE6)
+    val aiGradientEnd = Color(0xFF9D7BD8)
 
     // --- Semantic ---
-    val success = Color(0xFF1E7A46)
-    val warning = Color(0xFFB8741A)
-
-    /** DESIGN.md §2: HighlightRed, kept apart from the blue brand. */
+    val success = Color(0xFF3DBE6A)
+    val warning = Color(0xFFF2A33C)
     val error = Color(0xFFFF3B30)
 
-    /**
-     * DESIGN.md §2 asks small link and error text for 4.5:1 on its real background. [accent]
-     * and [error] fall short on the glass sheet, so text uses these darker siblings — chosen to
-     * hold 4.5:1 even where the sheet's bottom edge sits over black.
-     */
-    val linkText = Color(0xFF1F57C7)
-    val errorText = Color(0xFFB3261E)
+    /** DESIGN.md §2: link and error text hold 4.5:1 on black and on [surfaceRaised]. */
+    val linkText = Color(0xFF6FA3FF)
+    val errorText = Color(0xFFFF6B5E)
 }
 
 /**
@@ -94,11 +100,14 @@ object Dimens {
 
     /** DESIGN.md §5: the smallest touch target anywhere. */
     val touchTarget = 48.dp
+
+    /** DESIGN.md §4 Adjust sheet: the circle that stands for one adjustment. */
+    val adjustCircle = 56.dp
 }
 
 /**
- * DESIGN.md §3: the Android system sans-serif, as the reference app uses. The bundled
- * Pretendard file stays in the resources; no style names it any more.
+ * DESIGN.md §3: the Android system sans-serif. The bundled Pretendard file stays in the
+ * resources; no style names it any more.
  */
 private val SystemSans = FontFamily.Default
 
@@ -180,12 +189,7 @@ object Typography {
     )
 }
 
-/**
- * DESIGN.md §6: only the glass sheet casts a shadow, with a 1dp light edge; a photo's
- * iconCircle may lift 2dp. Everything else is flat.
- */
+/** DESIGN.md §6: nothing casts a shadow except a photo's iconCircle, at 2dp when it must. */
 object Elevation {
-    val sheetShadow = 10.dp
-    val sheetEdgeWidth = 1.dp
     val iconCircle = 2.dp
 }

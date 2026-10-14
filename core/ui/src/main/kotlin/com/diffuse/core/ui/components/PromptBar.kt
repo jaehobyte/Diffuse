@@ -1,7 +1,6 @@
 package com.diffuse.core.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -36,10 +35,8 @@ import com.diffuse.core.ui.theme.Shapes
 import com.diffuse.core.ui.theme.Tokens
 import com.diffuse.core.ui.theme.Typography
 
-/** DESIGN.md §4 (Prompt bar): a white 56dp pill; the height is a minimum so large text fits. */
+/** DESIGN.md §4 (Prompt bar): a `surfaceRaised` 56dp pill; the height is a minimum so large text fits. */
 private val BarHeight = 56.dp
-/** On the near-white glass sheet a hairline is what keeps the white pill visible. */
-private val BarBorder = 1.dp
 private val IconSize = 24.dp
 private val TouchTarget = Dimens.touchTarget
 private val HorizontalPadding = 12.dp
@@ -79,7 +76,7 @@ fun PromptBar(
         modifier = modifier
             .testTag(PromptBarTestTag)
             .fillMaxWidth()
-            .barSurface(edge = colors.hairline)
+            .barSurface(fill = colors.surfaceRaised)
             .padding(horizontal = HorizontalPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -130,12 +127,11 @@ fun PromptBar(
     }
 }
 
-/** DESIGN.md §4: the white pill, at least 56dp tall. */
-private fun Modifier.barSurface(edge: Color): Modifier = this
+/** DESIGN.md §4: the dark pill, at least 56dp tall, with no border. */
+private fun Modifier.barSurface(fill: Color): Modifier = this
     .heightIn(min = BarHeight)
     .clip(Shapes.pill)
-    .background(Tokens.canvasLight)
-    .border(BarBorder, edge, Shapes.pill)
+    .background(fill)
 
 /** DESIGN.md §5: even a 24dp icon gets a 48dp hit area. */
 @Composable

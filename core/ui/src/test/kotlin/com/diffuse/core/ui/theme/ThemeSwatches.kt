@@ -29,7 +29,7 @@ internal fun ThemeSwatches() {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Tokens.surfaceSoft)
+            .background(Tokens.background)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -37,11 +37,12 @@ internal fun ThemeSwatches() {
             title = "Brand + Semantic",
             swatches = listOf(
                 "accent" to Tokens.accent,
+                "accentSoft" to Tokens.accentSoft,
                 "accentPressed" to Tokens.accentPressed,
                 "primaryFill" to Tokens.primaryFill,
                 "onAccent" to Tokens.onAccent,
                 "selectionFill" to Tokens.selectionFill,
-                "selectionBorder" to Tokens.selectionBorder,
+                "selectionInk" to Tokens.selectionInk,
                 "promptTint" to Tokens.promptTint,
                 "success" to Tokens.success,
                 "warning" to Tokens.warning,
@@ -55,10 +56,11 @@ internal fun ThemeSwatches() {
             SwatchGroup(
                 title = "Browse",
                 swatches = listOf(
-                    "canvasLight" to Tokens.canvasLight,
-                    "surfaceSoft" to Tokens.surfaceSoft,
-                    "surfaceCard" to Tokens.surfaceCard,
+                    "background" to Tokens.background,
+                    "surface" to Tokens.surface,
+                    "surfaceRaised" to Tokens.surfaceRaised,
                     "surfaceSecondary" to Tokens.surfaceSecondary,
+                    "surfaceMenu" to Tokens.surfaceMenu,
                     "hairline" to Tokens.hairline,
                     "ink" to Tokens.ink,
                     "inkSecondary" to Tokens.inkSecondary,
@@ -85,11 +87,10 @@ private val EditSwatches = listOf(
     "canvasOverlayInk" to Tokens.canvasOverlayInk,
     "canvasCheckerA" to Tokens.canvasCheckerA,
     "canvasCheckerB" to Tokens.canvasCheckerB,
-    "sheetGlassTop" to Tokens.sheetGlassTop,
-    "sheetGlassBottom" to Tokens.sheetGlassBottom,
-    "sheetEdge" to Tokens.sheetEdge,
-    "sheetHandle" to Tokens.sheetHandle,
-    "pillStatus" to Tokens.pillStatus,
+    "sliderTickMajor" to Tokens.sliderTickMajor,
+    "sliderTickMinor" to Tokens.sliderTickMinor,
+    "aiGradientStart" to Tokens.aiGradientStart,
+    "aiGradientEnd" to Tokens.aiGradientEnd,
 )
 
 private const val SWATCHES_PER_ROW = 4
@@ -146,7 +147,7 @@ private fun TypeScale() {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Tokens.canvasLight)
+            .background(Tokens.surfaceRaised)
             .padding(8.dp),
     ) {
         samples.forEach { (name, style) ->

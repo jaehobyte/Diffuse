@@ -55,7 +55,6 @@ class CompareGestureTest {
                 canUndo = false,
                 canRedo = false,
                 canCompare = canCompare,
-                onBack = {},
                 onUndo = {},
                 onRedo = {},
                 onCompareChange = {},

@@ -8,6 +8,32 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+## D102 - Galaxy Photo Editor look: one black palette, yellow selection, circle-row adjust sheets
+
+Status: Accepted (2026-10-14, interactive request "갤럭시 포토에디터와 유사하게"). DESIGN.md was rewritten
+from the live One UI 8.5 Photo Editor (SM-S948N over adb); the analysis is in
+`docs/superpowers/specs/2026-10-14-galaxy-photo-editor-restyle-design.md`.
+
+- **Style changed, contracts kept.** Tool list and order, the two-level strip with the AI parent
+  last, the sheet lifecycle (취소/적용), hold-to-compare, export, history and prompt-bar behaviour are
+  untouched. The Photo Editor's instant-commit model (no 적용) was not adopted: it would rewrite the
+  sheet lifecycle across thirteen tools for no product decision.
+- **Back arrow dropped.** The Photo Editor's bar has none; system back already leaves through the
+  nav host's `BackHandler`, so `EditorScreen`/`EditorRoute` lost `onBack` rather than keep a dead
+  parameter.
+- **Labels stay on the strip.** The Photo Editor's tabs are icon-only, but the AI level holds eight
+  abstract tools; labels drop to 11sp under a 26dp icon, selection is the yellow icon, no underline.
+- **Adjust sheets take the 색조 layout.** One 56dp circle per kind (selected = white with a yellow
+  wedge and the number), a single ruler slider for the active kind. `adjustSliderTag(kind)` now names
+  the one slider while that kind is active; `adjustKindTag(kind)` names its circle. Tests select the
+  circle before dragging.
+- **Slider keeps absolute-position drag.** The Photo Editor scrolls its ruler under a fixed pointer;
+  the drawing is adopted, the gesture is not, so `swipeRight` still raises the value.
+- **Spec prose that describes the old look** (`specs/editor_shell.md` light bars and ←,
+  `specs/prompt_input.md` white pill, `specs/tool_groups.md` blue indicator) is superseded by
+  DESIGN.md §9; specs are protected files and were not edited in this change.
+- **Every golden re-recorded.** The restyle touches all 55; none was regenerated to hide a regression.
+
 ## D101 - One run to the end: plan workflows run Topaz on the uncommitted candidate, previewed in place
 
 Status: Accepted (2026-10-14, work/tasks.md 단일 실행·현재 화면 미리보기). Supersedes D099's "confirm

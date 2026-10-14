@@ -702,8 +702,8 @@ private fun Thumb(
         .size(THUMB_SIZE)
         .clip(shape)
         .background(colors.surfaceRaised)
-        // DESIGN.md §1: selection is blue; the photo fills the thumb, so a ring rather than a fill.
-        .border(THUMB_RING, if (selected) colors.accent else Color.Transparent, shape)
+        // DESIGN.md §4: a selected thumbnail carries a white ring; the photo fills the thumb.
+        .border(THUMB_RING, if (selected) colors.selectionFill else Color.Transparent, shape)
         .semantics { this.selected = selected }
         .clickable(enabled = !state.busy, role = Role.RadioButton, onClickLabel = label) {
             actions.onSelect(item.key)

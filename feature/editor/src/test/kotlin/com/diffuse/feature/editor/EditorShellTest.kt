@@ -72,7 +72,6 @@ class EditorShellTest {
                 canUndo = canUndo,
                 canRedo = canRedo,
                 canCompare = canCompare,
-                onBack = {},
                 onUndo = {},
                 onRedo = {},
                 onCompareChange = { compareStates += it },
@@ -101,7 +100,6 @@ class EditorShellTest {
                 canUndo = false,
                 canRedo = false,
                 canCompare = false,
-                onBack = {},
                 onUndo = {},
                 onRedo = {},
                 onCompareChange = {},
@@ -187,7 +185,7 @@ class EditorShellTest {
                 Column {
                     EditorTopBar(
                         canUndo = true, canRedo = true, canReset = true, canCompare = true,
-                        onBack = {}, onUndo = {}, onRedo = {}, onReset = {},
+                        onUndo = {}, onRedo = {}, onReset = {},
                         onCompareChange = {}, onExport = {},
                     )
                     // The same pill with nothing competing for the row: its natural width.
@@ -229,7 +227,7 @@ class EditorShellTest {
                 selectedTool = Tool.Light,
                 onToolClick = {},
                 canUndo = false, canRedo = false, canCompare = false,
-                onBack = {}, onUndo = {}, onRedo = {}, onCompareChange = {}, onExport = {},
+                onUndo = {}, onRedo = {}, onCompareChange = {}, onExport = {},
                 sheet = {
                     if (open()) {
                         Box(
@@ -295,7 +293,7 @@ class EditorShellTest {
                 selectedTool = Tool.Light,
                 onToolClick = {},
                 canUndo = false, canRedo = false, canCompare = false,
-                onBack = {}, onUndo = {}, onRedo = {}, onCompareChange = {}, onExport = {},
+                onUndo = {}, onRedo = {}, onCompareChange = {}, onExport = {},
                 sheet = {
                     Box(modifier = Modifier.testTag(fakeSheetTag).fillMaxWidth().height(fakeSheetHeight))
                 },

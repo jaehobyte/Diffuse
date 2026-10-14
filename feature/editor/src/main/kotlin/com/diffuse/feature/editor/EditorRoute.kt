@@ -8,7 +8,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -57,7 +56,6 @@ import kotlinx.coroutines.launch
  */
 @Composable
 fun EditorRoute(
-    onBack: () -> Unit,
     onExport: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: EditorViewModel = hiltViewModel(),
@@ -65,7 +63,6 @@ fun EditorRoute(
     onOpenProject: (String) -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val scope = rememberCoroutineScope()
     val document = state.document
 
     OpenedCopies(state, viewModel, onOpenProject)
@@ -95,12 +92,6 @@ fun EditorRoute(
             canRedo = state.canRedo,
             canCompare = state.canCompare,
             canReset = state.canReset,
-            onBack = {
-                scope.launch {
-                    viewModel.onLeave()
-                    onBack()
-                }
-            },
             onUndo = viewModel::undo,
             onRedo = viewModel::redo,
             onReset = viewModel::reset,

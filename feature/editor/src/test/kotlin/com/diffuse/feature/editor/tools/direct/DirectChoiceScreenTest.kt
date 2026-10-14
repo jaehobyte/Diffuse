@@ -66,7 +66,7 @@ class DirectChoiceScreenTest {
         val viewModel = harness.opened()
         harness.planner.next(WARM_AND_BRIGHT)
         viewModel.direct.submit("따뜻하고 밝게")
-        compose.setContent { EditorRoute(onBack = {}, onExport = {}, viewModel = viewModel) }
+        compose.setContent { EditorRoute(onExport = {}, viewModel = viewModel) }
         compose.waitForIdle()
 
         compose.onNodeWithTag(directItemTag("s2")).performScrollTo().assertIsOn().performClick()

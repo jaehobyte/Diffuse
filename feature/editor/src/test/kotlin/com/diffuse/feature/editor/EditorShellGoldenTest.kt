@@ -38,7 +38,6 @@ class EditorShellGoldenTest {
                 canRedo = false,
                 canCompare = true,
                 canReset = true,
-                onBack = {},
                 onUndo = {},
                 onRedo = {},
                 onCompareChange = {},
