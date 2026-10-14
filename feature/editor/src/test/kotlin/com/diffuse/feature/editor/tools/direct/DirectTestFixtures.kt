@@ -1,5 +1,9 @@
 package com.diffuse.feature.editor.tools.direct
 
+import com.diffuse.core.ai.FakeTopazProvider
+import com.diffuse.core.data.TopazWorkspace
+import com.diffuse.feature.editor.tools.enhance.TopazStorage
+import com.diffuse.feature.editor.tools.enhance.testTopazSettings
 import android.graphics.Bitmap
 import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
@@ -62,11 +66,27 @@ import org.robolectric.annotation.GraphicsMode
  * The 지시 ViewModel harness `DirectToolTest` and `DirectRecommendTest` share: the fakes, the
  * colour-coded renderer and the in-memory repository, so both build the screen the same way.
  */
-internal class DirectHarness {
-    val segmentation = FakeSegmentationProvider(openDelayMs = 0)
+internal class DirectHarness(
+    /** §19: blank is a Topaz key the user never entered. */
+    topazKey: String = "topaz-test-key",
+    /** §19: the real renderer, for the tests that compare pixels; the fake one otherwise. */
+    private val realRenderer: Renderer? = null,
+) {
+    /** §19: this harness's own Topaz folder, so a test can see what a session left behind. */
+    val topazRoot: java.io.File = java.io.File(
+        ApplicationProvider.getApplicationContext<android.app.Application>().cacheDir,
+        "topaz_direct_${System.nanoTime()}",
+    )
+
+    /** D098: what 고해상도 저장 was handed, and what it answers. */
+    val saves = mutableListOf<java.io.File>()
+    var saveResult: Result<Unit> = Result.Success(Unit)
+
+    val segmentation = FakeSegmentationProvider(openDelayMs = 0).apply { textInstances = 1 }
     val eraser = FakeEraseProvider()
     val filler = FakeFillProvider()
     val planner = FakePlanProvider()
+    val topaz = FakeTopazProvider(topazKey)
     val renderer = DirectFakeRenderer()
     val repository = DirectRecordingRepository()
     val settings = Sam3Settings(ApplicationProvider.getApplicationContext()).apply {
@@ -79,7 +99,7 @@ internal class DirectHarness {
     fun viewModel() = EditorViewModel(
         context = ApplicationProvider.getApplicationContext(),
         repository = repository,
-        renderer = renderer,
+        renderer = realRenderer ?: renderer,
         ai = EditorAi(
             segmentation,
             eraser,
@@ -90,10 +110,24 @@ internal class DirectHarness {
             settings,
             geminiSettings,
             FakeMatchStyleProvider(),
+            topaz,
+            testTopazSettings(),
         ),
         dispatchers = TestDispatchers,
         savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),
+        topazStorage = TopazStorage(TopazWorkspace(topazRoot, TestDispatchers)) { file, _, _, _ ->
+            saves += file
+            saveResult
+        },
     )
+}
+
+/** §19: 선택한 보정 실행, 선택 확인 for every existing selection on the overlay, then 적용. */
+internal fun EditorViewModel.previewAndApply() {
+    applySheet()
+    while (uiState.value.direct.candidate?.phase == CandidatePhase.Confirming) applySheet()
+    assertEquals(CandidatePhase.Review, uiState.value.direct.candidate?.phase)
+    applySheet()
 }
 
 /** Resolves any mask to a full-frame one, as the erase tool's test does. */
@@ -103,13 +137,22 @@ internal class DirectFakeRenderer : Renderer {
     var fail = false
     var gate: CompletableDeferred<Unit>? = null
 
+    /** §19: every document rendered in full — what a Topaz upload was made from. */
+    val fullDocuments = mutableListOf<EditDocument>()
+
+    /** §19: holds a full render (the Topaz step's 준비) in flight. */
+    var fullGate: CompletableDeferred<Unit>? = null
+
     override suspend fun preview(document: EditDocument, targetLongEdgePx: Int): Result<Bitmap> {
         gate?.await()
         return if (fail) Result.Failure(AppError.Unavailable) else Result.Success(frame(document))
     }
 
-    override suspend fun full(document: EditDocument, onProgress: (Float) -> Unit) =
-        Result.Success(frame(document))
+    override suspend fun full(document: EditDocument, onProgress: (Float) -> Unit): Result<Bitmap> {
+        fullDocuments += document
+        fullGate?.await()
+        return Result.Success(frame(document))
+    }
 
     private fun frame(document: EditDocument): Bitmap =
         Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888).apply {
@@ -140,15 +183,37 @@ internal class DirectFakeRenderer : Renderer {
 }
 
 internal class DirectRecordingRepository : ProjectRepository {
-    private var document = EditDocument(
+    /** What `load` returns and `save` keeps — a test may seed it, e.g. with a manual selection. */
+    var document = EditDocument(
         id = PROJECT_ID,
         source = ImageRef("/p.jpg"),
         createdAt = 0L,
         updatedAt = 0L,
     )
 
+    /** §18: every path a discarded plan preview asked to delete. */
+    val discarded = mutableListOf<String>()
+
+    /** D098: every project a Topaz result was opened as, every one deleted again, and a failing create. */
+    val created = mutableListOf<SourceImage>()
+    val deleted = mutableListOf<String>()
+    var failCreate = false
+
+    /** Holds a create in flight — the window a cancelled copy needs. */
+    var createGate: CompletableDeferred<Unit>? = null
+
+    override suspend fun discardFiles(projectId: String, paths: Set<String>): Result<Unit> {
+        discarded += paths
+        return Result.Success(Unit)
+    }
+
     override fun observeAll(): Flow<List<ProjectSummary>> = flowOf(emptyList())
-    override suspend fun create(source: SourceImage): Result<String> = Result.Success(PROJECT_ID)
+    override suspend fun create(source: SourceImage): Result<String> {
+        createGate?.await()
+        if (failCreate) return Result.Failure(AppError.Io(java.io.IOException("full")))
+        created += source
+        return Result.Success("copy-${created.size}")
+    }
     override suspend fun load(id: String): Result<EditDocument> = Result.Success(document)
     override suspend fun save(document: EditDocument): Result<Unit> {
         this.document = document
@@ -202,7 +267,10 @@ internal class DirectRecordingRepository : ProjectRepository {
         Result.Success(Unit)
 
     override suspend fun duplicate(id: String): Result<String> = Result.Success("copy")
-    override suspend fun delete(id: String): Result<Unit> = Result.Success(Unit)
+    override suspend fun delete(id: String): Result<Unit> {
+        deleted += id
+        return Result.Success(Unit)
+    }
 }
 
 private const val PROJECT_ID = "p"

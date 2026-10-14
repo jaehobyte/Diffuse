@@ -1,10 +1,16 @@
 package com.diffuse.core.ai.gemini
 
 import android.util.Base64
+import com.diffuse.core.ai.CropNote
+import com.diffuse.core.ai.CurrentAdjust
+import com.diffuse.core.ai.PlanContext
 import com.diffuse.core.ai.PlanMode
 import com.diffuse.core.ai.PlanProposal
 import com.diffuse.core.ai.PlanRequest
 import com.diffuse.core.ai.PlanStep
+import com.diffuse.core.ai.TargetSource
+import com.diffuse.core.ai.TopazCapability
+import com.diffuse.core.ai.topaz.TopazPurpose
 import com.diffuse.core.common.AppError
 import com.diffuse.core.common.DispatcherProvider
 import com.diffuse.core.common.Logger
@@ -118,8 +124,9 @@ internal class GeminiPlanClient(
         val calls = response.candidates.firstOrNull()?.content?.parts.orEmpty().mapNotNull { it.functionCall }
         val call = calls.singleOrNull()?.takeIf { it.name == FN_PROPOSE_EDIT }
         return try {
-            val decoded = ProposalDecoder.decode(call?.args ?: throw Unplannable("${calls.size} function calls"))
-            ProposalCheck.violation(decoded, request.text)?.let { throw Unplannable(it) }
+            val args = call?.args ?: throw Unplannable("${calls.size} function calls")
+            val decoded = ProposalDecoder.decode(args, request.context)
+            ProposalCheck.violation(decoded, request.text, request.context)?.let { throw Unplannable(it) }
             val proposal = cropLast(decoded)
             // §14: the outcome and the step kinds only. Observations, goals and the user's words
             // stay out of the log.
@@ -136,35 +143,132 @@ internal class GeminiPlanClient(
     }
 
     /**
-     * specs/vibe_edit.md §5, §4.1: a crop wherever the model put it moves to the **end**, so the
-     * 자르기 tool can open on it. `ProposalCheck` refuses a second one. No other step is
-     * reordered — the model's order is the plan everywhere else.
+     * specs/vibe_edit.md §5, §4.1: a crop wherever the model put it moves to the end of the local
+     * steps, so the 자르기 tool can open on it; §19: a Topaz step, which is a hand-off and never a
+     * local step, goes after everything. `ProposalCheck` refuses a second of either. No other step
+     * is reordered — the model's order is the plan everywhere else — and every step keeps its id.
      */
     private fun cropLast(proposal: PlanProposal): PlanProposal {
-        val crop = proposal.workflow.lastOrNull { it.step is PlanStep.Crop } ?: return proposal
-        return proposal.copy(workflow = proposal.workflow.filterNot { it.step is PlanStep.Crop } + crop)
+        val (moved, kept) = proposal.workflow.partition { it.step is PlanStep.Crop || it.step is PlanStep.Topaz }
+        if (moved.isEmpty()) return proposal
+        return proposal.copy(workflow = kept + moved.sortedBy { it.step is PlanStep.Topaz })
     }
 
     /**
-     * §14: the mode and the document's current settings, as the final values a new `adjust`
-     * would replace. A pure summary; no file path, project id or EXIF is sent.
+     * §14, §15: the mode and the snapshot — every value as the final setting a new step would
+     * replace, every selection by its opaque ref, the operation order, the crop, and what each
+     * style and Topaz purpose actually does. A pure summary: no file path, mask id, project id,
+     * key or EXIF is sent.
      */
     private fun contextText(request: PlanRequest): String = buildString {
         val context = request.context
         append("Mode: ").append(if (request.mode == PlanMode.Recommend) "recommend" else "direct").append('\n')
         append("Request: ").append(if (request.text.isBlank()) "(none)" else "the next part, verbatim").append('\n')
-        append("Current settings (final values; an adjust replaces the value for the same kind and scope):")
-        if (context.adjustments.isEmpty()) append(" none")
-        context.adjustments.forEach { adjust ->
-            append("\n- ").append(adjust.kind.settingName).append(" = ")
-                .append(String.format(Locale.ROOT, "%.2f", adjust.value))
-                .append(if (adjust.masked) " (on an existing selection)" else " (whole photo)")
-        }
-        append("\nExisting selection: ").append(if (context.hasSelection) "yes" else "none")
-        append("\nCropped: ").append(if (context.cropped) "yes" else "no")
+        append("Snapshot. The photo you see is already rendered with every operation below.\n")
+        if (context.imageWidth > 0) append("Preview: ${context.imageWidth}x${context.imageHeight}\n")
+        append("Crop: ").append(context.crop?.let(::cropText) ?: if (context.cropped) "yes" else "none").append('\n')
+        settings(context)
+        targets(context)
+        operations(context)
+        styles(context)
+        context.topaz?.let { topaz(it) }
     }
 
-    /** A 혼합 kind reads as `adjust_color_range`'s own words, so the model can repeat it back. */
+    private fun StringBuilder.settings(context: PlanContext) {
+        val whole = context.adjustments.filter { it.targetRef == null }
+        append("Whole-photo settings (final values; a kind not listed is 0; an adjust replaces the value in place):")
+        val tones = whole.filter { it.kind.hsl == null }
+        if (tones.isEmpty()) append(" none")
+        tones.forEach { append("\n- ").append(adjustText(it)) }
+        append("\nColour ranges (whole photo; every band and channel not listed is 0):")
+        val ranges = whole.filter { it.kind.hsl != null }
+        if (ranges.isEmpty()) append(" all 0")
+        ranges.forEach { append("\n- ").append(adjustText(it)) }
+        append('\n')
+    }
+
+    private fun StringBuilder.targets(context: PlanContext) {
+        append("Selections (targets):")
+        if (context.targets.isEmpty()) append(" none")
+        context.targets.forEach { target ->
+            append("\n- ").append(target.ref).append(if (target.active) " (active)" else "").append(": ")
+            val description = target.description
+            if (description != null && target.source == TargetSource.Confirmed) {
+                append("\"").append(description).append("\", confirmed by the user in this session")
+            } else if (description != null && target.source == TargetSource.Resolved) {
+                append("\"").append(description)
+                    .append("\", found for that phrase by an earlier plan in this session (not confirmed by the user)")
+            } else {
+                append("unknown - made by hand or in an earlier session; do not guess what it is")
+            }
+            val own = context.adjustments.filter { it.targetRef == target.ref }
+            append("; settings: ").append(if (own.isEmpty()) "none" else own.joinToString(", ") { adjustText(it) })
+        }
+        append('\n')
+    }
+
+    private fun StringBuilder.operations(context: PlanContext) {
+        append("Operation order (rendered first to last, crop always last):")
+        if (context.operations.isEmpty()) append(" none")
+        context.operations.forEach { note ->
+            append("\n").append(note.order).append(". ").append(note.kind)
+            note.targetRef?.let { append(" on ").append(it) }
+        }
+        append('\n')
+    }
+
+    private fun StringBuilder.styles(context: PlanContext) {
+        if (context.styles.isEmpty()) return
+        append(
+            "Styles (the values each writes at intensity 100; intensity multiplies them, a value that " +
+                "becomes 0 is not written; a written value replaces that whole-photo setting in place, a " +
+                "new one is appended; nothing else changes):",
+        )
+        context.styles.forEach { effect ->
+            append("\n- ").append(effect.style.id).append(": ")
+            append(effect.values.entries.joinToString(", ") { (kind, value) -> "${kind.settingName}=${format(value)}" })
+        }
+        append('\n')
+    }
+
+    private fun StringBuilder.topaz(capability: TopazCapability) {
+        append("Topaz (paid, remote, whole photo; the result is a high-resolution file or a new edit copy): ")
+        append(if (capability.configured) "key set" else "no key - the user must add one in settings first")
+        val width = capability.inputWidth
+        val height = capability.inputHeight
+        append("; input ").append(if (width != null && height != null) "${width}x$height" else "size unknown")
+        if (capability.hasAlpha) append("; the photo has transparency, so no purpose can run")
+        TopazPurpose.entries.forEach { purpose ->
+            append("\n- ").append(purpose.wireName).append(": scale ").append(purpose.scales.joinToString("/"))
+            append(", face_recovery ").append(if (purpose.faceRecovery) "available" else "not available")
+            if (purpose.manualSharpen) append(", sharpen_strength available")
+            if (purpose.generative) append(", generative")
+            append(", max ${purpose.maxInputMegapixels} MP in / ${purpose.maxOutputMegapixels} MP out")
+        }
+        append('\n')
+    }
+
+    private fun adjustText(adjust: CurrentAdjust): String =
+        "${adjust.kind.settingName}=${format(adjust.value)}" +
+            (if (adjust.ref.isNotEmpty()) " (${adjust.ref}, #${adjust.order})" else "")
+
+    private fun cropText(crop: CropNote): String =
+        String.format(
+            Locale.ROOT,
+            "kept %.2f..%.2f x %.2f..%.2f of the frame",
+            crop.left,
+            crop.right,
+            crop.top,
+            crop.bottom,
+        ) +
+            if (crop.angleDeg != 0f) String.format(Locale.ROOT, ", rotated %.1f deg", crop.angleDeg) else ""
+
+    private fun format(value: Float): String = String.format(Locale.ROOT, "%.2f", value)
+
+    /**
+     * A 혼합 kind reads as `adjust_color_range`'s own words, so the model can repeat it back; a
+     * kind `adjust` does not offer keeps its plain name, since a style may still write it.
+     */
     private val AdjustKind.settingName: String
         get() = hsl?.let { "${it.band.wireName} ${it.channel.wireName}" } ?: wireName
 

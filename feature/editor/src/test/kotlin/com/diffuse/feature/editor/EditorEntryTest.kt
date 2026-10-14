@@ -1,5 +1,8 @@
 package com.diffuse.feature.editor
 
+import com.diffuse.core.ai.FakeTopazProvider
+import com.diffuse.feature.editor.tools.enhance.testTopazSettings
+import com.diffuse.feature.editor.tools.enhance.testTopazStorage
 import android.graphics.Bitmap
 import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
@@ -144,9 +147,12 @@ class EditorEntryTest {
             Sam3Settings(ApplicationProvider.getApplicationContext()),
             GeminiSettings(ApplicationProvider.getApplicationContext()),
             FakeMatchStyleProvider(),
+            FakeTopazProvider(),
+            testTopazSettings(),
         ),
         dispatchers = TestDispatchers,
         savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),
+        topazStorage = testTopazStorage(),
     )
 
     private class FakeRenderer : Renderer {

@@ -8,6 +8,7 @@ import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.feature.editor.R
 import com.diffuse.feature.editor.tools.AdjustSheet
 import com.diffuse.feature.editor.tools.MaskOption
+import com.diffuse.feature.editor.tools.enhance.TopazShortcut
 
 /** specs/adjust_light.md: 노출 / 대비 / 하이라이트 / 그림자, in that order. */
 val LightKinds = listOf(
@@ -26,6 +27,8 @@ fun LightSheet(
     onApply: () -> Unit,
     modifier: Modifier = Modifier,
     maskOption: MaskOption = MaskOption.None,
+    /** specs/topaz_enhancement.md §1: the AI shortcut, shown only when the host wires one. */
+    aiShortcut: (() -> Unit)? = null,
 ) {
     AdjustSheet(
         title = stringResource(R.string.light_title),
@@ -37,5 +40,6 @@ fun LightSheet(
         onApply = onApply,
         modifier = modifier,
         maskOption = maskOption,
+        header = { aiShortcut?.let { TopazShortcut(R.string.topaz_shortcut_light, it) } },
     )
 }

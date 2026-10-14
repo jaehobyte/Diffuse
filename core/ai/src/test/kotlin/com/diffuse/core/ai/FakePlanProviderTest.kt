@@ -23,8 +23,8 @@ class FakePlanProviderTest {
         assertEquals(PlanOutcome.Ready, proposal.outcome)
         assertEquals(
             listOf(
-                PlanStep.Select("나무"),
-                PlanStep.Adjust(AdjustKind.Saturation, 0.3f, masked = true),
+                PlanStep.Select("나무", "n1"),
+                PlanStep.Adjust(AdjustKind.Saturation, 0.3f, PlanTarget.New("n1")),
             ),
             proposal.plan.steps,
         )
@@ -33,7 +33,7 @@ class FakePlanProviderTest {
 
     @Test
     fun `next overrides exactly one call`() = runTest {
-        val custom = EditPlan(listOf(PlanStep.CutOut))
+        val custom = EditPlan(listOf(PlanStep.Select("subject", "n1"), PlanStep.CutOut("n1")))
         provider.next(custom)
 
         assertEquals(custom, provider.plan(image(), direct("배경 지워줘")).valueOrFail().plan)

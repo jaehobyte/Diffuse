@@ -6,6 +6,7 @@ import com.diffuse.core.ai.Availability
 import com.diffuse.core.ai.SegmentationProvider
 import com.diffuse.core.ai.gemini.GeminiSettings
 import com.diffuse.core.ai.sam3.Sam3Settings
+import com.diffuse.core.ai.topaz.TopazSettings
 import com.diffuse.core.common.AppError
 import com.diffuse.core.common.Result
 import com.diffuse.feature.editor.R
@@ -35,6 +36,8 @@ class SelectionController(
      * this controller already owns its lifecycle. The 지우기 tool opens the same one.
      */
     private val geminiSettings: GeminiSettings,
+    /** specs/topaz_enhancement.md §4: the same sheet carries the Topaz key, stored apart. */
+    private val topazSettings: TopazSettings,
     private val scope: CoroutineScope,
 ) {
 
@@ -66,6 +69,11 @@ class SelectionController(
         scope.launch {
             geminiSettings.config.collect { config ->
                 _state.value = _state.value.copy(geminiApiKey = config.apiKey)
+            }
+        }
+        scope.launch {
+            topazSettings.config.collect { config ->
+                _state.value = _state.value.copy(topazApiKey = config.apiKey)
             }
         }
     }
@@ -270,9 +278,12 @@ class SelectionController(
             .copy(preparing = false, busy = false, phraseBusy = false, phrase = "")
     }
 
-    fun saveSettings(baseUrl: String, token: String, geminiApiKey: String) {
+    fun saveSettings(baseUrl: String, token: String, geminiApiKey: String, topazApiKey: String) {
         settings.update(baseUrl, token)
         geminiSettings.update(geminiApiKey)
+        // An unchanged key is not a change: TopazSettings keeps its generation, so a run in
+        // flight survives a save that only touched another server.
+        topazSettings.update(topazApiKey)
         _state.value = _state.value.copy(showSettings = false)
     }
 

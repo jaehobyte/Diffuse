@@ -87,23 +87,40 @@ class FakeSegmentationProvider(
         return Result.Success(SegMask(mask, score = SCORE))
     }
 
+    /** How many instances a text prompt finds; specs/vibe_edit.md §18 tests one and several. */
+    var textInstances: Int = INSTANCE_COUNT
+
+    /** §18: every instance comes back with an all-zero alpha, as a broken server can answer. */
+    var blankText: Boolean = false
+
+    /** §18: instances at this size instead of the session's, as a mismatched answer would be. */
+    var textMaskSize: Pair<Int, Int>? = null
+
+    /** specs/vibe_edit.md §19: how many text prompts were asked — "no SAM call" is a count. */
+    var textCount: Int = 0
+        private set
+
     override suspend fun byText(session: SegSession, phrase: String): Result<List<SegMask>> {
+        textCount++
         takeError()?.let { return Result.Failure(it) }
         if (phrase.isBlank()) return Result.Failure(AppError.Invalid("empty phrase"))
         if (phrase.trim() == ABSENT_PHRASE) return Result.Success(emptyList())
 
-        val shortEdge = min(session.imageWidth, session.imageHeight).toFloat()
+        val width = textMaskSize?.first ?: session.imageWidth
+        val height = textMaskSize?.second ?: session.imageHeight
+        val shortEdge = min(width, height).toFloat()
         // Centres derived from the phrase so a given word always segments the same way.
         val seed = abs(phrase.trim().hashCode())
-        val masks = List(INSTANCE_COUNT) { index ->
+        val masks = List(textInstances) { index ->
             val fraction = ((seed / (index + 1)) % 100) / 100f
-            val centreX = (INSTANCE_INSET + fraction * INSTANCE_SPREAD) * session.imageWidth
-            val centreY = (INSTANCE_INSET + index * INSTANCE_STEP) * session.imageHeight
+            val centreX = (INSTANCE_INSET + fraction * INSTANCE_SPREAD) * width
+            val centreY = (INSTANCE_INSET + index * INSTANCE_STEP) * height
             SegMask(
                 alpha = MaskBitmaps.circle(
-                    width = session.imageWidth,
-                    height = session.imageHeight,
-                    centreX = centreX,
+                    width = width,
+                    height = height,
+                    // Off the frame: every pixel clear.
+                    centreX = if (blankText) -width.toFloat() else centreX,
                     centreY = centreY,
                     radius = TEXT_RADIUS * shortEdge,
                 ),

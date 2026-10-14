@@ -1,5 +1,8 @@
 package com.diffuse.feature.editor.tools.direct
 
+import com.diffuse.core.ai.FakeTopazProvider
+import com.diffuse.feature.editor.tools.enhance.testTopazSettings
+import com.diffuse.feature.editor.tools.enhance.testTopazStorage
 import android.graphics.Bitmap
 import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
@@ -20,6 +23,7 @@ import com.diffuse.core.ai.PlanOutcome
 import com.diffuse.core.ai.PlanProposal
 import com.diffuse.core.ai.PlanRequest
 import com.diffuse.core.ai.PlanStep
+import com.diffuse.core.ai.PlanTarget
 import com.diffuse.core.ai.gemini.GeminiSettings
 import com.diffuse.core.ai.sam3.Sam3Settings
 import com.diffuse.core.ai.speech.FakeSpeechInput
@@ -63,7 +67,7 @@ import org.robolectric.annotation.GraphicsMode
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class DirectToolTest {
 
-    private val segmentation = FakeSegmentationProvider(openDelayMs = 0)
+    private val segmentation = FakeSegmentationProvider(openDelayMs = 0).apply { textInstances = 1 }
     private val eraser = FakeEraseProvider()
     private val filler = FakeFillProvider()
     private val planner = FakePlanProvider()
@@ -143,7 +147,7 @@ class DirectToolTest {
     fun `a plan validate rejects is the same hint`() = runTest {
         val viewModel = opened()
         // §9.1: a masked adjust with no selection anywhere cannot run.
-        planner.next(EditPlan(listOf(PlanStep.Adjust(AdjustKind.Saturation, 0.3f, masked = true))))
+        planner.next(EditPlan(listOf(PlanStep.Adjust(AdjustKind.Saturation, 0.3f, PlanTarget.New("n1")))))
 
         viewModel.direct.submit(REQUEST)
 
@@ -155,7 +159,9 @@ class DirectToolTest {
     fun `a second submit replaces the first plan`() = runTest {
         val viewModel = opened()
         viewModel.direct.submit(REQUEST)
-        val replacement = EditPlan(listOf(PlanStep.Select("하늘")))
+        val replacement = EditPlan(
+            listOf(PlanStep.Select("하늘", "n1"), PlanStep.Adjust(AdjustKind.Exposure, 0.1f, PlanTarget.New("n1"))),
+        )
         planner.next(replacement)
 
         viewModel.direct.submit("하늘을 선택해줘")
@@ -197,12 +203,21 @@ class DirectToolTest {
         assertEquals(R.string.direct_failed, viewModel.uiState.value.direct.message?.res)
     }
 
-    // ---- §9.3, running ----------------------------------------------------
+    // ---- §18, preview then apply --------------------------------------------
 
     @Test
-    fun `적용 runs the plan, one history entry per step`() = runTest {
+    fun `실행 builds a candidate off the document without a confirmation, and 적용 commits it once`() = runTest {
         val viewModel = opened()
         viewModel.direct.submit(REQUEST)
+
+        // §19: the plan's own selection is found and used; nothing waits for a tap.
+        viewModel.applySheet()
+
+        // Reviewed, not committed: the document and its history are untouched.
+        val candidate = viewModel.uiState.value.direct.candidate!!
+        assertEquals(CandidatePhase.Review, candidate.phase)
+        assertEquals(emptyList<Operation>(), viewModel.uiState.value.document?.operations)
+        assertFalse(viewModel.uiState.value.canUndo)
 
         viewModel.applySheet()
 
@@ -213,37 +228,40 @@ class DirectToolTest {
             document.activeMaskId,
             document.operations.filterIsInstance<Operation.Adjust>().single().maskId,
         )
-        // One entry per step: two undos peel the plan apart.
-        viewModel.undo()
-        assertEquals(1, viewModel.uiState.value.document!!.operations.size)
+        // One entry for the whole plan: one undo returns to the input.
         viewModel.undo()
         assertEquals(0, viewModel.uiState.value.document!!.operations.size)
+        assertFalse(viewModel.uiState.value.canUndo)
     }
 
-    // ---- §4.1 the crop hand-off (T58) ------------------------------------
+    // ---- §4.1, §19 the plan's crop is in the reviewed candidate --------------
 
     @Test
-    fun `a plan that ends with a crop opens the 자르기 tool on what it committed`() = runTest {
+    fun `a plan that ends with a crop shows it in the candidate and applies it without opening 자르기`() = runTest {
         val viewModel = opened()
         planner.next(EditPlan(listOf(PlanStep.Crop(CropRatio.Story9x16))))
         viewModel.direct.submit(REQUEST)
 
         viewModel.applySheet()
+        val reviewed = viewModel.uiState.value.direct.candidate!!.document!!.crop()!!
+        assertTrue("a 9:16 crop is taller than it is wide", reviewed.rect.width() < reviewed.rect.height())
+        viewModel.applySheet()
 
+        assertNull("no 자르기 sheet is required", viewModel.uiState.value.selectedTool)
+        assertEquals(reviewed, viewModel.uiState.value.document!!.crop())
+        // The manual tool still opens on the applied rect for a different framing.
+        viewModel.onToolClick(Tool.Crop)
         assertEquals(Tool.Crop, viewModel.uiState.value.selectedTool)
-        val crop = viewModel.uiState.value.document!!.crop()!!
-        assertTrue("a 9:16 crop is taller than it is wide", crop.rect.width() < crop.rect.height())
-        // The chip stays selected, so dragging cannot lose the ratio the model chose.
-        assertEquals(AspectPreset.NineSixteen, viewModel.uiState.value.cropState.preset)
+        assertEquals(reviewed.rect, viewModel.uiState.value.cropState.rect)
     }
 
     @Test
     fun `a plan with no crop leaves every tool closed`() = runTest {
         val viewModel = opened()
-        planner.next(EditPlan(listOf(PlanStep.Adjust(AdjustKind.Exposure, 0.4f, masked = false))))
+        planner.next(EditPlan(listOf(PlanStep.Adjust(AdjustKind.Exposure, 0.4f))))
         viewModel.direct.submit(REQUEST)
 
-        viewModel.applySheet()
+        viewModel.previewAndApply()
 
         assertNull(viewModel.uiState.value.selectedTool)
     }
@@ -253,23 +271,30 @@ class DirectToolTest {
         val viewModel = opened()
         // "없음" is the fake's phrase that finds nothing, so the run stops at step 0.
         planner.next(
-            EditPlan(listOf(PlanStep.Select("없음"), PlanStep.Crop(CropRatio.Story9x16))),
+            EditPlan(
+                listOf(
+                    PlanStep.Select("없음", "n1"),
+                    PlanStep.Adjust(AdjustKind.Exposure, 0.1f, PlanTarget.New("n1")),
+                    PlanStep.Crop(CropRatio.Story9x16),
+                ),
+            ),
         )
         viewModel.direct.submit(REQUEST)
 
         viewModel.applySheet()
 
-        // The Select failed, so the crop never ran; opening 자르기 would be a lie.
-        assertNull(viewModel.uiState.value.selectedTool)
+        // The Select failed, so nothing ran: the sheet stays open on the proposal, no 자르기.
+        assertEquals(Tool.Direct, viewModel.uiState.value.selectedTool)
+        assertNull(viewModel.uiState.value.direct.candidate)
         assertNull(viewModel.uiState.value.document!!.crop())
     }
 
     @Test
-    fun `the sheet closes when the run ends`() = runTest {
+    fun `the sheet closes once the candidate is applied`() = runTest {
         val viewModel = opened()
         viewModel.direct.submit(REQUEST)
 
-        viewModel.applySheet()
+        viewModel.previewAndApply()
 
         assertNull(viewModel.uiState.value.selectedTool)
         assertNull(viewModel.uiState.value.direct.plan)
@@ -294,7 +319,11 @@ class DirectToolTest {
     @Test
     fun `a Select that finds nothing names the word and commits nothing`() = runTest {
         val viewModel = opened()
-        planner.next(EditPlan(listOf(PlanStep.Select("없음"))))
+        planner.next(
+            EditPlan(
+                listOf(PlanStep.Select("없음", "n1"), PlanStep.Adjust(AdjustKind.Exposure, 0.1f, PlanTarget.New("n1"))),
+            ),
+        )
         viewModel.direct.submit(REQUEST)
 
         viewModel.applySheet()
@@ -306,13 +335,14 @@ class DirectToolTest {
     }
 
     @Test
-    fun `a failure mid-run keeps the steps before it`() = runTest {
+    fun `a failure mid-run commits nothing, not even the steps before it`() = runTest {
         val viewModel = opened()
         planner.next(
             EditPlan(
                 listOf(
-                    PlanStep.Adjust(AdjustKind.Exposure, 0.5f, masked = false),
-                    PlanStep.Select("나무"),
+                    PlanStep.Adjust(AdjustKind.Exposure, 0.5f),
+                    PlanStep.Select("나무", "n1"),
+                    PlanStep.Adjust(AdjustKind.Contrast, 0.1f, PlanTarget.New("n1")),
                 ),
             ),
         )
@@ -321,7 +351,9 @@ class DirectToolTest {
 
         viewModel.applySheet()
 
-        assertEquals(1, viewModel.uiState.value.document!!.operations.size)
+        assertEquals(emptyList<Operation>(), viewModel.uiState.value.document!!.operations)
+        assertFalse(viewModel.uiState.value.canUndo)
+        assertNull(viewModel.uiState.value.direct.candidate)
         assertEquals(R.string.direct_failed, viewModel.uiState.value.direct.message?.res)
     }
 
@@ -333,15 +365,15 @@ class DirectToolTest {
         planner.next(
             EditPlan(
                 listOf(
-                    PlanStep.Select("bus"),
-                    PlanStep.Erase,
-                    PlanStep.Adjust(AdjustKind.Saturation, 0.2f, masked = false),
+                    PlanStep.Select("bus", "n1"),
+                    PlanStep.Erase("n1"),
+                    PlanStep.Adjust(AdjustKind.Saturation, 0.2f),
                 ),
             ),
         )
         viewModel.direct.submit(REQUEST)
 
-        viewModel.applySheet()
+        viewModel.previewAndApply()
 
         val operations = viewModel.uiState.value.document!!.operations
         // Select, then the erase's own margin mask + result (T50), then the adjustment — and the
@@ -365,15 +397,15 @@ class DirectToolTest {
         planner.next(
             EditPlan(
                 listOf(
-                    PlanStep.Adjust(AdjustKind.Saturation, 0.2f, masked = false),
-                    PlanStep.Select("chair"),
-                    PlanStep.Fill("a red umbrella"),
+                    PlanStep.Adjust(AdjustKind.Saturation, 0.2f),
+                    PlanStep.Select("chair", "n1"),
+                    PlanStep.Fill("a red umbrella", "n1"),
                 ),
             ),
         )
         viewModel.direct.submit(REQUEST)
 
-        viewModel.applySheet()
+        viewModel.previewAndApply()
 
         assertEquals(PLAIN, filler.lastImage!!.getPixel(0, 0))
         val operations = viewModel.uiState.value.document!!.operations
@@ -387,35 +419,33 @@ class DirectToolTest {
     }
 
     @Test
-    fun `each step of a mixed plan is its own history entry`() = runTest {
+    fun `one undo takes a whole applied plan back`() = runTest {
         val viewModel = opened()
         planner.next(
             EditPlan(
                 listOf(
-                    PlanStep.Select("bus"),
-                    PlanStep.Erase,
-                    PlanStep.Adjust(AdjustKind.Saturation, 0.2f, masked = false),
+                    PlanStep.Select("bus", "n1"),
+                    PlanStep.Erase("n1"),
+                    PlanStep.Adjust(AdjustKind.Saturation, 0.2f),
                 ),
             ),
         )
         viewModel.direct.submit(REQUEST)
-        viewModel.applySheet()
+        viewModel.previewAndApply()
 
         viewModel.undo()
-        assertTrue(viewModel.uiState.value.document!!.operations.none { it is Operation.Adjust })
-        viewModel.undo()
-        assertTrue(viewModel.uiState.value.document!!.generativeErases().isEmpty())
-        viewModel.undo()
         assertEquals(emptyList<Operation>(), viewModel.uiState.value.document!!.operations)
+        viewModel.redo()
+        assertEquals(4, viewModel.uiState.value.document!!.operations.size)
     }
 
     @Test
     fun `the erase in a plan is told what the Select was looking for`() = runTest {
         val viewModel = opened()
-        planner.next(EditPlan(listOf(PlanStep.Select("bus"), PlanStep.Erase)))
+        planner.next(EditPlan(listOf(PlanStep.Select("bus", "n1"), PlanStep.Erase("n1"))))
         viewModel.direct.submit(REQUEST)
 
-        viewModel.applySheet()
+        viewModel.previewAndApply()
 
         assertEquals("bus", eraser.lastHint)
     }
@@ -438,9 +468,12 @@ class DirectToolTest {
             settings,
             geminiSettings,
             FakeMatchStyleProvider(),
+            FakeTopazProvider(),
+            testTopazSettings(),
         ),
         dispatchers = TestDispatchers,
         savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),
+        topazStorage = testTopazStorage(),
     )
 
     private fun assertNotNull(value: Any?) =

@@ -8,6 +8,7 @@ import com.diffuse.core.ai.FakeEraseProvider
 import com.diffuse.core.ai.FakeFillProvider
 import com.diffuse.core.ai.FakeSegmentationProvider
 import com.diffuse.core.ai.PlanStep
+import com.diffuse.core.ai.PlanTarget
 import com.diffuse.core.ai.StyleId
 import com.diffuse.core.common.AppError
 import com.diffuse.core.common.DispatcherProvider
@@ -38,7 +39,7 @@ import org.robolectric.annotation.GraphicsMode
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class PlanRunnerTest {
 
-    private val segmentation = FakeSegmentationProvider(openDelayMs = 0)
+    private val segmentation = FakeSegmentationProvider(openDelayMs = 0).apply { textInstances = 1 }
     private val eraser = FakeEraseProvider()
     private val savedMasks = mutableListOf<String>()
     private val savedErases = mutableListOf<String>()
@@ -96,7 +97,7 @@ class PlanRunnerTest {
 
     @Test
     fun `a masked adjust with no selection anywhere is rejected`() {
-        val step = PlanStep.Adjust(AdjustKind.Saturation, 0.3f, masked = true)
+        val step = PlanStep.Adjust(AdjustKind.Saturation, 0.3f, PlanTarget.New("n1"))
 
         assertEquals(step, runner.validate(EditPlan(listOf(step)), document()))
     }
@@ -104,12 +105,12 @@ class PlanRunnerTest {
     @Test
     fun `an erase and a cut-out with no selection are rejected`() {
         assertEquals(
-            PlanStep.Erase,
-            runner.validate(EditPlan(listOf(PlanStep.Erase)), document()),
+            PlanStep.Erase("n1"),
+            runner.validate(EditPlan(listOf(PlanStep.Erase("n1"))), document()),
         )
         assertEquals(
-            PlanStep.CutOut,
-            runner.validate(EditPlan(listOf(PlanStep.CutOut)), document()),
+            PlanStep.CutOut("n1"),
+            runner.validate(EditPlan(listOf(PlanStep.CutOut("n1"))), document()),
         )
     }
 
@@ -117,10 +118,10 @@ class PlanRunnerTest {
     fun `an earlier Select in the same plan satisfies all three`() {
         val plan = EditPlan(
             listOf(
-                PlanStep.Select("나무"),
-                PlanStep.Adjust(AdjustKind.Saturation, 0.3f, masked = true),
-                PlanStep.Erase,
-                PlanStep.CutOut,
+                PlanStep.Select("나무", "n1"),
+                PlanStep.Adjust(AdjustKind.Saturation, 0.3f, PlanTarget.New("n1")),
+                PlanStep.Erase("n1"),
+                PlanStep.CutOut("n1"),
             ),
         )
 
@@ -128,26 +129,59 @@ class PlanRunnerTest {
     }
 
     @Test
-    fun `an active mask on the document satisfies all three`() {
+    fun `an existing selection is reached by name, and only for an adjust`() {
         val document = documentWithMask()
+        val existing = PlanStep.Adjust(AdjustKind.Saturation, 0.3f, PlanTarget.Existing("t1", "m"))
 
-        assertNull(
-            runner.validate(
-                EditPlan(
-                    listOf(
-                        PlanStep.Adjust(AdjustKind.Saturation, 0.3f, masked = true),
-                        PlanStep.Erase,
-                        PlanStep.CutOut,
-                    ),
-                ),
-                document,
+        assertNull(runner.validate(EditPlan(listOf(existing)), document))
+        // §15: the active mask is never a fallback: generative steps need their own selection.
+        assertEquals(PlanStep.Erase("n1"), runner.validate(EditPlan(listOf(PlanStep.Erase("n1"))), document))
+        // A ref whose mask the document does not hold (an undo removed it) cannot run.
+        assertEquals(existing, runner.validate(EditPlan(listOf(existing)), document()))
+    }
+
+    /** review N2: g1 → g2 → g1 — the third step acts on g1's selection, by its label. */
+    @Test
+    fun `an adjust names its selection even after another one became active`() = runTest {
+        val plan = EditPlan(
+            listOf(
+                PlanStep.Select("face", "n1"),
+                PlanStep.Adjust(AdjustKind.Exposure, 0.2f, PlanTarget.New("n1")),
+                PlanStep.Select("hair", "n2"),
+                PlanStep.Adjust(AdjustKind.Contrast, 0.1f, PlanTarget.New("n2")),
+                PlanStep.Adjust(AdjustKind.Shadows, 0.1f, PlanTarget.New("n1")),
             ),
         )
+        assertNull(runner.validate(plan, document()))
+
+        val result = runner.run(plan, document(), preview(), null, SOURCE_ASPECT)
+            .toList().filterIsInstance<RunEvent.Committed>().last().document
+
+        val masks = result.operations.filterIsInstance<Operation.Mask>().map { it.id }
+        val shadows = result.operations.filterIsInstance<Operation.Adjust>().single { it.kind == AdjustKind.Shadows }
+        assertEquals("the face's mask, not the hair's that is active", masks[0], shadows.maskId)
+        assertEquals(masks[1], result.activeMaskId)
+    }
+
+    /** §15: an erase may only consume the selection made right before it. */
+    @Test
+    fun `an erase on an earlier selection than the current one is refused`() {
+        val plan = EditPlan(
+            listOf(
+                PlanStep.Select("face", "n1"),
+                PlanStep.Adjust(AdjustKind.Exposure, 0.2f, PlanTarget.New("n1")),
+                PlanStep.Select("hair", "n2"),
+                PlanStep.Adjust(AdjustKind.Contrast, 0.1f, PlanTarget.New("n2")),
+                PlanStep.Erase("n1"),
+            ),
+        )
+
+        assertEquals(PlanStep.Erase("n1"), runner.validate(plan, document()))
     }
 
     @Test
     fun `an unmasked adjust needs no selection at all`() {
-        val plan = EditPlan(listOf(PlanStep.Adjust(AdjustKind.Exposure, 0.5f, masked = false)))
+        val plan = EditPlan(listOf(PlanStep.Adjust(AdjustKind.Exposure, 0.5f)))
 
         assertNull(runner.validate(plan, document()))
     }
@@ -158,8 +192,8 @@ class PlanRunnerTest {
     fun `the happy path emits Started and Committed per step, then Completed`() = runTest {
         val plan = EditPlan(
             listOf(
-                PlanStep.Select("나무"),
-                PlanStep.Adjust(AdjustKind.Saturation, 0.3f, masked = true),
+                PlanStep.Select("나무", "n1"),
+                PlanStep.Adjust(AdjustKind.Saturation, 0.3f, PlanTarget.New("n1")),
             ),
         )
 
@@ -179,8 +213,8 @@ class PlanRunnerTest {
     fun `a masked adjust carries the mask the Select just made`() = runTest {
         val plan = EditPlan(
             listOf(
-                PlanStep.Select("나무"),
-                PlanStep.Adjust(AdjustKind.Saturation, 0.3f, masked = true),
+                PlanStep.Select("나무", "n1"),
+                PlanStep.Adjust(AdjustKind.Saturation, 0.3f, PlanTarget.New("n1")),
             ),
         )
 
@@ -196,8 +230,8 @@ class PlanRunnerTest {
     fun `an unmasked adjust carries no mask id`() = runTest {
         val plan = EditPlan(
             listOf(
-                PlanStep.Select("나무"),
-                PlanStep.Adjust(AdjustKind.Exposure, 0.5f, masked = false),
+                PlanStep.Select("나무", "n1"),
+                PlanStep.Adjust(AdjustKind.Exposure, 0.5f),
             ),
         )
 
@@ -208,7 +242,7 @@ class PlanRunnerTest {
 
     @Test
     fun `an erase and a cut-out run against the selection the plan made`() = runTest {
-        val plan = EditPlan(listOf(PlanStep.Select("나무"), PlanStep.Erase, PlanStep.CutOut))
+        val plan = EditPlan(listOf(PlanStep.Select("나무", "n1"), PlanStep.Erase("n1"), PlanStep.CutOut("n1")))
 
         val document = lastDocument(plan)
 
@@ -228,21 +262,21 @@ class PlanRunnerTest {
     @Test
     fun `a fill with no selection is rejected before the plan is shown`() {
         assertEquals(
-            PlanStep.Fill("a red umbrella"),
-            runner.validate(EditPlan(listOf(PlanStep.Fill("a red umbrella"))), document()),
+            PlanStep.Fill("a red umbrella", "n1"),
+            runner.validate(EditPlan(listOf(PlanStep.Fill("a red umbrella", "n1"))), document()),
         )
     }
 
     @Test
     fun `an earlier Select satisfies a fill, with no new validation rule`() {
-        val plan = EditPlan(listOf(PlanStep.Select("chair"), PlanStep.Fill("a red umbrella")))
+        val plan = EditPlan(listOf(PlanStep.Select("chair", "n1"), PlanStep.Fill("a red umbrella", "n1")))
 
         assertNull(runner.validate(plan, document()))
     }
 
     @Test
     fun `a fill runs against the selection the plan made and stores the prompt`() = runTest {
-        val plan = EditPlan(listOf(PlanStep.Select("chair"), PlanStep.Fill("a red umbrella")))
+        val plan = EditPlan(listOf(PlanStep.Select("chair", "n1"), PlanStep.Fill("a red umbrella", "n1")))
 
         val document = lastDocument(plan)
 
@@ -266,7 +300,7 @@ class PlanRunnerTest {
     @Test
     fun `the generative steps are shown the frame without the adjustments`() = runTest {
         val plan = EditPlan(
-            listOf(PlanStep.Select("chair"), PlanStep.Fill("a red umbrella"), PlanStep.Erase),
+            listOf(PlanStep.Select("chair", "n1"), PlanStep.Fill("a red umbrella", "n1"), PlanStep.Erase("n1")),
         )
 
         lastDocument(plan)
@@ -276,8 +310,8 @@ class PlanRunnerTest {
     }
 
     @Test
-    fun `a fill with no Select uses the mask the document already had`() = runTest {
-        val plan = EditPlan(listOf(PlanStep.Fill("a wooden bench")))
+    fun `a fill with no Select in the plan never falls back to the document's mask`() = runTest {
+        val plan = EditPlan(listOf(PlanStep.Fill("a wooden bench", "n1")))
 
         val events = runner.run(
             plan,
@@ -287,17 +321,14 @@ class PlanRunnerTest {
             sourceAspect = SOURCE_ASPECT,
         ).toList()
 
-        val document = events.filterIsInstance<RunEvent.Committed>().last().document
-        // The document's own mask is what the rectangle was measured from; it stays active.
-        assertEquals("m", document.activeMaskId)
-        assertNotEquals("m", document.generativeFills().single().maskId)
-        assertEquals(1, filler.fillCount)
+        assertEquals(RunEvent.Stopped(0, AppError.Invalid("no selection")), events.last())
+        assertEquals(0, filler.fillCount)
     }
 
     @Test
     fun `a failing fill stops the run and commits nothing for that step`() = runTest {
         filler.failNext(AppError.Unavailable)
-        val plan = EditPlan(listOf(PlanStep.Select("chair"), PlanStep.Fill("a red umbrella")))
+        val plan = EditPlan(listOf(PlanStep.Select("chair", "n1"), PlanStep.Fill("a red umbrella", "n1")))
 
         val events = runner.run(
             plan,
@@ -315,7 +346,7 @@ class PlanRunnerTest {
     /** specs/vibe_edit.md §9.2 + T51: the eraser is told what was removed. */
     @Test
     fun `the erase hint is the phrase the Select used`() = runTest {
-        val plan = EditPlan(listOf(PlanStep.Select("bus"), PlanStep.Erase))
+        val plan = EditPlan(listOf(PlanStep.Select("bus", "n1"), PlanStep.Erase("n1")))
 
         lastDocument(plan)
 
@@ -324,7 +355,7 @@ class PlanRunnerTest {
 
     @Test
     fun `an erase with no Select in the plan has no hint to give`() = runTest {
-        val plan = EditPlan(listOf(PlanStep.Erase))
+        val plan = EditPlan(listOf(PlanStep.Erase("n1")))
 
         runner.run(plan, documentWithMask(), preview(), activeMask = fullMask(), sourceAspect = SOURCE_ASPECT).toList()
 
@@ -333,7 +364,7 @@ class PlanRunnerTest {
 
     @Test
     fun `the mask the eraser was shown is larger than the selection`() = runTest {
-        val plan = EditPlan(listOf(PlanStep.Select("나무"), PlanStep.Erase))
+        val plan = EditPlan(listOf(PlanStep.Select("나무", "n1"), PlanStep.Erase("n1")))
 
         lastDocument(plan)
 
@@ -351,27 +382,35 @@ class PlanRunnerTest {
     }
 
     @Test
-    fun `an erase with no Select uses the mask the document already had`() = runTest {
-        val plan = EditPlan(listOf(PlanStep.Erase))
-        val document = documentWithMask()
+    fun `an erase with no Select in the plan never falls back to the document's mask`() = runTest {
+        val plan = EditPlan(listOf(PlanStep.Erase("n1")))
 
         val events = runner
-            .run(plan, document, preview(), fullMask(), SOURCE_ASPECT)
+            .run(plan, documentWithMask(), preview(), fullMask(), SOURCE_ASPECT)
             .toList()
 
-        val committed = events.filterIsInstance<RunEvent.Committed>().single()
-        // T50: the erase stores the margin mask it ran through, and leaves the user's selection
-        // active for whatever comes next.
-        assertEquals(document.activeMaskId, committed.document.activeMaskId)
-        assertNotEquals(document.activeMaskId, committed.document.generativeErases().single().maskId)
+        assertEquals(RunEvent.Stopped(0, AppError.Invalid("no selection")), events.last())
+        assertEquals(0, eraser.eraseCount)
+    }
+
+    /** T50: an erase stores its margin mask and leaves the plan's own selection active. */
+    @Test
+    fun `an erase keeps its own selection active and stores the margin apart`() = runTest {
+        val plan = EditPlan(listOf(PlanStep.Select("bus", "n1"), PlanStep.Erase("n1")))
+
+        val committed = runner.run(plan, document(), preview(), null, SOURCE_ASPECT)
+            .toList().filterIsInstance<RunEvent.Committed>().last().document
+
+        val selected = committed.operations.filterIsInstance<Operation.Mask>().first().id
+        assertEquals(selected, committed.activeMaskId)
+        assertNotEquals(selected, committed.generativeErases().single().maskId)
         assertEquals(1, eraser.eraseCount)
-        assertEquals(RunEvent.Completed, events.last())
     }
 
     @Test
     fun `a Select that finds nothing stops the run before anything is committed`() = runTest {
         val plan = EditPlan(
-            listOf(PlanStep.Select("없음"), PlanStep.Adjust(AdjustKind.Saturation, 0.3f, true)),
+            listOf(PlanStep.Select("없음", "n1"), PlanStep.Adjust(AdjustKind.Saturation, 0.3f, PlanTarget.New("n1"))),
         )
 
         val events = runner.run(plan, document(), preview(), activeMask = null, sourceAspect = SOURCE_ASPECT).toList()
@@ -389,9 +428,9 @@ class PlanRunnerTest {
     fun `a failure at step 2 leaves step 1 committed`() = runTest {
         val plan = EditPlan(
             listOf(
-                PlanStep.Adjust(AdjustKind.Exposure, 0.5f, masked = false),
-                PlanStep.Select("나무"),
-                PlanStep.Adjust(AdjustKind.Saturation, 0.3f, masked = true),
+                PlanStep.Adjust(AdjustKind.Exposure, 0.5f),
+                PlanStep.Select("나무", "n1"),
+                PlanStep.Adjust(AdjustKind.Saturation, 0.3f, PlanTarget.New("n1")),
             ),
         )
         failMaskWrite = true
@@ -408,9 +447,9 @@ class PlanRunnerTest {
     fun `a failing step reports its own error and nothing after it runs`() = runTest {
         val plan = EditPlan(
             listOf(
-                PlanStep.Select("나무"),
-                PlanStep.Erase,
-                PlanStep.Adjust(AdjustKind.Exposure, 0.5f, masked = false),
+                PlanStep.Select("나무", "n1"),
+                PlanStep.Erase("n1"),
+                PlanStep.Adjust(AdjustKind.Exposure, 0.5f),
             ),
         )
         eraser.failNext(AppError.Invalid("blocked:SAFETY"))
@@ -425,8 +464,8 @@ class PlanRunnerTest {
     fun `cancelling mid-step commits nothing for that step`() = runTest {
         val plan = EditPlan(
             listOf(
-                PlanStep.Adjust(AdjustKind.Exposure, 0.5f, masked = false),
-                PlanStep.Select("나무"),
+                PlanStep.Adjust(AdjustKind.Exposure, 0.5f),
+                PlanStep.Select("나무", "n1"),
             ),
         )
 
@@ -446,7 +485,7 @@ class PlanRunnerTest {
 
     @Test
     fun `one session is opened for the whole run and closed when it ends`() = runTest {
-        val plan = EditPlan(listOf(PlanStep.Select("나무"), PlanStep.Select("하늘")))
+        val plan = EditPlan(listOf(PlanStep.Select("나무", "n1"), PlanStep.Select("하늘", "n1")))
 
         runner.run(plan, document(), preview(), activeMask = null, sourceAspect = SOURCE_ASPECT).toList()
 
@@ -456,7 +495,7 @@ class PlanRunnerTest {
 
     @Test
     fun `a plan with no Select opens no session at all`() = runTest {
-        val plan = EditPlan(listOf(PlanStep.Adjust(AdjustKind.Exposure, 0.5f, masked = false)))
+        val plan = EditPlan(listOf(PlanStep.Adjust(AdjustKind.Exposure, 0.5f)))
 
         runner.run(plan, document(), preview(), activeMask = null, sourceAspect = SOURCE_ASPECT).toList()
 
@@ -490,7 +529,7 @@ class PlanRunnerTest {
     fun `the crop lands last, after the steps before it`() = runTest {
         val plan = EditPlan(
             listOf(
-                PlanStep.Adjust(AdjustKind.Exposure, 0.5f, masked = false),
+                PlanStep.Adjust(AdjustKind.Exposure, 0.5f),
                 PlanStep.Crop(CropRatio.Story9x16),
             ),
         )

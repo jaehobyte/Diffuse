@@ -9,6 +9,8 @@ import com.diffuse.core.ai.SegmentationProvider
 import com.diffuse.core.ai.gemini.GeminiSettings
 import com.diffuse.core.ai.sam3.Sam3Settings
 import com.diffuse.core.ai.speech.SpeechInput
+import com.diffuse.core.ai.topaz.TopazProvider
+import com.diffuse.core.ai.topaz.TopazSettings
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -31,4 +33,7 @@ class EditorAi @Inject constructor(
     val sam3Settings: Sam3Settings,
     val geminiSettings: GeminiSettings,
     val matchStyle: MatchStyleProvider,
+    /** specs/topaz_enhancement.md §4: the Topaz Image API, and the key it is paid with. */
+    val topaz: TopazProvider,
+    val topazSettings: TopazSettings,
 )

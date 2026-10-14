@@ -8,6 +8,7 @@ import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.feature.editor.R
 import com.diffuse.feature.editor.tools.AdjustSheet
 import com.diffuse.feature.editor.tools.MaskOption
+import com.diffuse.feature.editor.tools.enhance.TopazShortcut
 
 /** specs/adjust_detail.md: 선명도 / 비네트, both one-sided, so no centre tick. */
 val DetailKinds = listOf(AdjustKind.Sharpen, AdjustKind.Vignette)
@@ -21,6 +22,8 @@ fun DetailSheet(
     onApply: () -> Unit,
     modifier: Modifier = Modifier,
     maskOption: MaskOption = MaskOption.None,
+    /** specs/topaz_enhancement.md §1: the AI shortcut, shown only when the host wires one. */
+    aiShortcut: (() -> Unit)? = null,
 ) {
     AdjustSheet(
         title = stringResource(R.string.detail_title),
@@ -32,5 +35,6 @@ fun DetailSheet(
         onApply = onApply,
         modifier = modifier,
         maskOption = maskOption,
+        header = { aiShortcut?.let { TopazShortcut(R.string.topaz_shortcut_enhance, it) } },
     )
 }

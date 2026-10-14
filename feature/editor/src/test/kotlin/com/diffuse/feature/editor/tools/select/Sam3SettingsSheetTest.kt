@@ -25,8 +25,8 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * specs/segmentation.md §6 and generative_erase.md §8: one 서버 설정 sheet, three fields. The
- * 자동 보정 server it used to carry is gone with the tool (D097).
+ * specs/segmentation.md §6, generative_erase.md §8 and topaz_enhancement.md §4: one 서버 설정
+ * sheet, four fields. The 자동 보정 server it used to carry is gone with the tool (D097).
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -35,7 +35,12 @@ class Sam3SettingsSheetTest {
     @get:Rule
     val compose = createComposeRule()
 
-    private data class Saved(val baseUrl: String, val token: String, val geminiApiKey: String)
+    private data class Saved(
+        val baseUrl: String,
+        val token: String,
+        val geminiApiKey: String,
+        val topazApiKey: String = TOPAZ_OLD,
+    )
 
     private val saved = mutableListOf<Saved>()
     private var cancelled = 0
@@ -149,19 +154,65 @@ class Sam3SettingsSheetTest {
         assertTrue("sheet took $sheet of $screen", sheet <= screen * 0.45f + 1f)
     }
 
+    /** specs/topaz_enhancement.md §4: the Topaz key saves, and clears, on its own. */
+    @Test
+    fun `the Topaz key is masked and saves or clears without touching the others`() {
+        showSheet()
+
+        val field = compose.onNodeWithTag(TopazKeyFieldTestTag).performScrollTo()
+        field.performTextReplacement("tp-new")
+        compose.onNodeWithText("저장").performClick()
+        compose.onNodeWithTag(TopazKeyFieldTestTag).performTextReplacement("")
+        compose.onNodeWithText("저장").performClick()
+
+        assertEquals(
+            listOf(
+                Saved("http://host:8080", "tok", "AIza-old", "tp-new"),
+                Saved("http://host:8080", "tok", "AIza-old", ""),
+            ),
+            saved,
+        )
+    }
+
+    @Test
+    fun `a typed Topaz key is shown as dots`() {
+        showSheet(topazApiKey = "tp-secret")
+
+        val shown = compose.onNodeWithTag(TopazKeyFieldTestTag).performScrollTo().fetchSemanticsNode()
+            .config[SemanticsProperties.EditableText].text
+        assertTrue("got '$shown'", !shown.contains("tp-secret"))
+    }
+
+    @Test
+    fun `cancel saves no Topaz key`() {
+        showSheet()
+
+        compose.onNodeWithTag(TopazKeyFieldTestTag).performScrollTo().performTextReplacement("tp-typed")
+        compose.onNodeWithText("취소").performClick()
+
+        assertTrue(saved.isEmpty())
+        assertEquals(1, cancelled)
+    }
+
     private fun showSheet(
         sam3: Sam3Config = Sam3Config(baseUrl = "http://host:8080", token = "tok"),
         geminiApiKey: String = "AIza-old",
+        topazApiKey: String = TOPAZ_OLD,
     ) {
         compose.setContent {
             AppTheme(mode = ThemeMode.Edit) {
                 Sam3SettingsSheet(
                     config = sam3,
                     geminiApiKey = geminiApiKey,
-                    onSave = { baseUrl, token, key -> saved += Saved(baseUrl, token, key) },
+                    topazApiKey = topazApiKey,
+                    onSave = { baseUrl, token, key, topaz -> saved += Saved(baseUrl, token, key, topaz) },
                     onCancel = { cancelled++ },
                 )
             }
         }
+    }
+
+    private companion object {
+        const val TOPAZ_OLD = "tp-old"
     }
 }

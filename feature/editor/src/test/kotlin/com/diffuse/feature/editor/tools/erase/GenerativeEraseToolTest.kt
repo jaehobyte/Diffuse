@@ -1,5 +1,8 @@
 package com.diffuse.feature.editor.tools.erase
 
+import com.diffuse.core.ai.FakeTopazProvider
+import com.diffuse.feature.editor.tools.enhance.testTopazSettings
+import com.diffuse.feature.editor.tools.enhance.testTopazStorage
 import android.graphics.Bitmap
 import android.graphics.Color
 import androidx.lifecycle.SavedStateHandle
@@ -309,9 +312,12 @@ class GenerativeEraseToolTest {
             settings,
             geminiSettings,
             FakeMatchStyleProvider(),
+            FakeTopazProvider(),
+            testTopazSettings(),
         ),
         dispatchers = TestDispatchers,
         savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),
+        topazStorage = testTopazStorage(),
     )
 
     /**

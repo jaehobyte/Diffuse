@@ -130,10 +130,11 @@ Three properties make the step safe to run without a preview of the rect:
    `crop_ratio` step to the end of the list and keeps only the final one (§5). This matches
    render.md, where `Crop` already applies last regardless of list position, and it means an
    adjustment is never computed against a smaller frame than the user will see.
-3. **The 자르기 tool opens straight afterwards** (§9.2), with the preset chip selected and the
-   committed rect loaded. The model chose the ratio; the user chooses the framing, by dragging, in
-   the tool that was built for it. The wrong-crop failure mode the old ruling feared costs one drag
-   rather than one undo.
+3. **The crop is in the candidate the user reviews** (§18, §19; 2026-10-14, D101 — replaces "the
+   자르기 tool opens straight afterwards"). The computed rect is part of the whole result compared
+   전/후 before anything is kept, so a wrong framing is seen before it is applied; turning the crop
+   item off and running again removes it, and the manual 자르기 tool still opens on the applied rect
+   for a different framing. It is no longer opened, or required, after 적용.
 
 The system instruction, also an English constant:
 
@@ -524,6 +525,8 @@ applies. Example sentences remain an input aid.
   product, petal differences kept); white balance only for a clear cast or a request; no promise
   that sharpening recovers blur; composition observed, never enforced, reframing only on request
   and only by ratio; minimal steps and conservative values; one goal set, keep-the-mood default.
+  **Superseded by §19 (2026-10-14):** reframing, erasing a visible distraction, a style and Topaz
+  may be default suggestions; quality, not the fewest steps or smallest values, is the aim.
 - **Priorities.** `PlanPriority`: explicit goal 5, explicit object 3, unrequested improvement 1 —
   ranks, not probabilities or value multipliers. Hard constraints (`subject_only`,
   `keep_background`, `keep_colors`, `other`) outrank any sum. Naming an object is not a goal;
@@ -537,8 +540,8 @@ applies. Example sentences remain an input aid.
   items, 6 limitations, 8 colour roles. `masked` left out follows the goal's scope.
 - **Mechanical checks (`ProposalCheck`)**, any one refuses the whole answer: ready ⇔ non-empty
   workflow with at least one non-Select step and no reason needed; other outcomes have no workflow
-  and a reason; a user goal needs non-blank text; Style/Crop/Erase/CutOut/Fill only under a user
-  goal; a subject goal uses only Select and selection-consuming steps, each after its **own**
+  and a reason; a user goal needs non-blank text; ~~Style/Crop/Erase/CutOut/Fill only under a user
+  goal~~ (removed by §19); a subject goal uses only Select and selection-consuming steps, each after its **own**
   goal's Select; a global goal only unmasked Adjust, Style, Crop; a colour-range goal only unmasked
   HSL; every Select is used before the next one; `subject_only`/`keep_background` allow no
   whole-photo tone step (crop allowed); `keep_colors` allows no temperature/tint/saturation/
@@ -565,7 +568,181 @@ applies. Example sentences remain an input aid.
   answer is cached in memory for an identical snapshot only; `다시 추천` asks once more. 적용 checks
   the snapshot again, runs the **reviewed** plan without re-planning, and a double tap runs once.
   Process death keeps nothing and resumes nothing.
-- **Unchanged:** no automatic upload or apply; §9's per-step history, partial runs and Undo;
+- **Unchanged:** no automatic upload or apply; Undo (§9's per-step history and partial runs are
+  superseded by §18: one reviewed candidate, one history entry);
   segmentation failure stops the run with no global fallback; bitmap ownership, IO dispatcher,
   cancellation and session release. The analysis fields are not logged — only the outcome and step
   kinds.
+
+## 15. Direction, the exact snapshot and explicit targets (2026-10-13, D099)
+Supersedes §14's per-step history, the unconditional reselection, the fixed 0.15/0.3 steps and
+"style + whole-photo adjust is always refused".
+
+- **Direction first.** `propose_edit` carries `direction {subject, strengths[], preserve[],
+  objective, success, source}`, required when ready. `source=default` marks an inferred objective as
+  an intention, not an observation. Every step still names a goal; no_change and
+  needs_clarification stay valid. The review shows it first, briefly (보정 방향).
+- **Snapshot.** `planContextOf` builds, from the document the frame was rendered from: every
+  `Adjust` as `(kind, final value, ref aN, order, target ref)`; colour ranges with "a band or channel
+  not listed is 0"; every mask as `tN` with active flag and a description only when this session
+  confirmed it (otherwise *unknown*, never guessed); every operation in render order (generated
+  pixels by kind only); the crop rect; the preview size; each style's real values; Topaz capability.
+  It states the photo is already rendered with all of it. Mask ids, paths, keys and job ids stay
+  local. The snapshot includes the session notes and the Gemini + Topaz settings generation; any
+  change drops the proposal and its candidate.
+- **Targets.** `select_region(phrase, target, multiple)` declares a new label (never a snapshot
+  ref, never twice). `adjust(kind, value, target?)`: no target = whole photo; a snapshot ref updates
+  that mask's setting **in place**; a label acts on that new mask (which may overlap and accumulate).
+  `erase_selection` / `cut_out_selection` / `fill_selection(target)` take no `masked` and consume the
+  selection made right before them; a cut-out deletes **outside** it. There is no `masked` argument;
+  `masked=true` refuses the proposal. g1 → g2 → g1 is legal only by naming g1's label; an unnamed
+  subject step is refused, never resolved to the active mask (review N2). `PlanRunner.validate` and
+  the run enforce the same, with no fallback to the document's active mask.
+- **Values are final** everywhere, a left-out value keeps the current one, an explicit 0 resets.
+- **State simulation** (`StateSimulation`) replays the steps on the snapshot with `withAdjust`'s and
+  `atIntensity`'s rules and refuses: one setting written twice; a value a later style replaces; an
+  adjust that repeats (±0.01) or reverses the style before it; a style that writes nothing. Going
+  further in the style's own direction, or a kind the style does not write, is allowed. Without the
+  catalog's values nothing is claimed. `PlanStateSimulationTest` compares it with the engine.
+
+## 16. Topaz in a plan
+`topaz_enhance(purpose, scale?, face_recovery?, sharpen_strength?)` maps onto the nine
+`TopazPurpose`s (no model/endpoint strings). **§19 (2026-10-14):** it may follow local steps as the
+plan's last hand-off (the client moves it after the crop); at most one per plan; global scope; never
+under an **explicit** subject_only / keep_background / colour constraint, never after a cut-out,
+never for a transparent document. Options are checked by `TopazJob.problem()` with the snapshot's
+working size when known. Every purpose and face recovery may be a default suggestion; the catalog
+describes each purpose on its own line (upscale vs crop, sharpen vs the local sharpen slider). The
+workflow is §19's (D101): the step runs last, once, on the local candidate's full render, after one
+`선택한 보정 실행`; a plan arriving submits nothing; results stay D098's.
+
+## 17. Preservation constraints
+`subject_only` / `keep_background`: local steps and a requested crop (with a limitation that the crop
+removes what is outside the frame); no whole-photo adjust, colour range, style, cut-out or Topaz.
+`keep_frame`: no crop or cut-out. `keep_hue`: no temperature, tint, hue, style, generative or Topaz.
+`keep_colors` (default reading of "색은 바꾸지 마"): additionally no saturation, vibrance or colour
+range; the review notes tonal steps still change perceived colour. `keep_exact_colors`: only select
+and crop. The code checks a plan against the constraint the model wrote; it cannot prove the model
+classified the request correctly. **§19:** only `explicit=true` constraints (what the user said)
+refuse a proposal or block 적용 (`ProtectedChanged`); an inferred one is shown as `(추정)` and is
+the model's taste, never a rule.
+
+## 18. Candidate preview, confirmation, comparison
+Flow: snapshot → plan → checks → **선택한 보정 실행** (§19, D101; was 미리보기) → candidate → compare → 적용 / 강도 줄이기 / 되돌리기.
+- The runner builds a candidate document; nothing is pushed to history or autosaved. 적용 re-checks
+  the document, text, settings and notes and commits **once** (one undo). A failure, a "no", a
+  cancel, an undo/redo, another project, a settings change or closing the sheet drops the candidate
+  and deletes the files it wrote (`ProjectRepository.discardFiles`, mask_/erase_/fill_ only, never
+  ones the saved document references). Process death keeps nothing; the original is reopened.
+- **§19 (D101):** a new selection the plan's own phrase found is used without asking once the checks
+  below pass; the review names what each was found for (`AI가 찾은 대상: …`) and the next snapshot
+  describes it as found (`TargetSource.Resolved`), never as confirmed by the user. Only an existing
+  selection of unknown meaning is shown on the overlay before it is used (선택 확인 / 중단, or turn its
+  item off). The segmenter's answer is checked first:
+  no instance with a set pixel → "찾지 못했어요"; a size other than the frame's → failure; several
+  instances for a step without `multiple` → "여러 개 찾아졌어요", never unioned. No fallback, retry
+  or partial apply.
+- Local checks before review: crop (frame change, told apart from colour), generated patches
+  (judged by the user), tonal steps under a colour rule, and — under subject_only/keep_background —
+  the share of pixels outside the used selections (dilated by 1/50 of the width) that moved more
+  than 2/255, on renders without the crop; above 0.5 % 적용 is off. A leaked mask passes this check,
+  which is why the overlay exists. Meaning and taste are the user's, by holding 전후 비교
+  (`HoldPill`; canvas shows this input while held).
+- 강도 줄이기: each numeric setting that differs moves to `b + 0.5 (t − b)` (b = input value for the same
+  kind and mask, 0 for a new mask); a style per value; within half a slider step of b it is b; crops,
+  erases, fills and cut-outs are untouched; no server call. Nothing left → "더 줄이면 바뀌는 것이
+  없어요", candidate dropped.
+- Paid generative steps say so before 실행 and are called once; rejecting or comparing never
+  calls again.
+- Strength guidance in the prompt comes from `PlanStrengthEvidenceTest` (work/evidence/plan_strength,
+  real CPU ops on photo_512 and synthetic dark/pastel/noisy variants). Kinds without a measured row
+  are told to stay small and call the amount a guess.
+
+## 19. Quality-first suggestions and per-item choice (2026-10-14, D100)
+Supersedes §14's "minimal steps / reframing only on request / never erase unasked", §14's
+"Style/Crop/Erase/CutOut/Fill only under a user goal", §16's "Topaz is the whole workflow" and the
+request-only Topaz purposes. Unchanged: D098's result boundary, explicit user constraints, the
+envelope and every structural check, the snapshot/lifetime rules of §14/§15 and §18's candidate.
+
+- **Policy (both modes, one instruction).** The best finished photo for its subject, composition,
+  mood and the user's purpose; any tool — light, colour, detail, style, ratio crop, erasing a visible
+  distraction, generative fill, one Topaz purpose — when this photo benefits; never omitted only for
+  not being named, never added only because it exists; `no_change` stays valid. Erase only a specific
+  thing that can be pointed at, with what and why; never the subject or part of the story. In Direct,
+  the request is met with user goals and anything more is a separate `default` goal (shown as
+  `요청 외에 AI가 추가로 제안한 보정이에요`). Independent effects are separate steps; a style is one.
+  The prompt says this; nothing measures whether the model now chooses better.
+- **Checks.** `ProposalCheck` no longer refuses a step for its goal's source. It still refuses
+  unknown tools/options/targets, dangling ids, goal-scope violations, a second crop/style/Topaz,
+  Topaz after a cut-out, steps an **explicit** constraint forbids, and §15's state simulation.
+  Sources are never rewritten.
+- **Items.** `PlanProposal.items`: every non-`Select` step is one item, id = the decoder's wire
+  position (`s3`, `s3.1`… for colour-range channels), kept through the crop/Topaz reorder.
+  `selected(chosen)` keeps the chosen items plus the selections they consume, in the original order;
+  a selection runs iff one of its consumers is on. `selectionProblem(context)` re-runs targets,
+  explicit constraints, Topaz structure and the state simulation on the choice, and
+  `PlanRunner.validate` re-runs on the document, before every run. A refused model answer is still
+  refused whole; turning an item off is the user's and is never done silently by the app.
+- **State.** `DirectState.chosen` (ids) and `blocks` (id → `TopazBlock`) belong to the current
+  proposal; a new or dropped proposal resets them. Every item starts on except a blocked one
+  (`NoKey`, or an input the purpose cannot take), which starts off with its reason on the row. Toggles
+  call nothing (no Gemini, SAM, generative or Topaz call, no edit). They are locked while a run,
+  overlay confirmation or check is in progress; 취소 is available and the choice is editable after.
+- **Rows** (`DirectSheet` 실행 단계, inside the existing scroll): `선택한 보정 n/m개` or
+  `적용할 보정을 선택하세요`; per item the correction ("sign 지우기", "노출 12", local templates), `대상:`
+  (the goal's Korean target, else the phrase, else 사진 전체), 예상/주의, cost (`생성 보정 · …`,
+  `Topaz 유료 · …`, generative Topaz warns it may redraw), the AI-addition line, a block reason and
+  `적용함`/`적용 안 함`. The whole row is one `toggleable(role = Switch)` ≥ 48dp with a state
+  description; no wire names are shown.
+- **Flow.** plan → choice → 선택한 보정 실행 (every chosen item, Topaz last — see *One run to the end*) →
+  candidate → compare / 강도 줄이기 / change the choice → keep. With nothing on, 실행/적용 are off and no history is made. A candidate carries the
+  local choice it was built for; 적용 is enabled only when that equals the current choice.
+- **Rebuild.** Changing the local choice under a candidate rebuilds it from the same input with the
+  chosen steps only (never by deleting operations from the old result). `PlanCache` (session-owned)
+  reuses confirmed selections (no SAM call, no second overlay) and generated patches keyed by step +
+  phrase + the input's non-`Adjust` operations + active selection — exactly what the provider was
+  shown. A rebuild that would need a remote call stops at `CandidatePhase.Stale`
+  (`선택이 바뀌어 다시 실행해야 해요`, canvas shows the input, 적용 off) until the user taps
+  `선택한 보정 다시 실행`, which calls only what misses. No automatic retry or re-charge; compare never calls.
+  Every local choice off drops the candidate. A rebuild after 강도 줄이기 is at the proposal's own
+  strength and says `선택을 바꿔 제안한 원래 강도로 다시 만들었어요`; halving never revives an off item.
+- **Lifetime and files.** The session runs from the first run to 적용 / invalidation / close; a
+  sequence number drops any late run or check. 되돌리기 and a failed or cancelled run keep the session's
+  files for reuse; the session's end deletes every file its runs wrote except the applied document's
+  (`ProjectRepository.discardFiles`). Process death keeps nothing and resumes nothing.
+- **One run to the end (2026-10-14, D101; replaces D100's Topaz hand-off and §18's per-selection
+  confirmation).** Contract: plan / toggle review (no call) → one `선택한 보정 실행` → local steps,
+  found selections, generated patches and the crop into an uncommitted candidate → the chosen Topaz
+  step on that candidate → the whole result on this canvas → the user keeps it. Recommendation and
+  지시 share this path; before the tap nothing is submitted. The item rows and
+  `실행하면 … Topaz 화질 개선까지 자동으로 진행해요. 이때 크레딧이 사용돼요` say what is paid first.
+  - Topaz step: the candidate is re-checked (`TopazBlock`: key, real size once cropped, alpha) and,
+    unless blocked or under a `ProtectedChanged` finding, rendered with `Renderer.full`, checked with
+    `TopazJob.problem()` on the real input (options a purpose does not offer run as its defaults) and
+    submitted exactly once through `TopazProcessor` — the 화질 개선 sheet's own processing; the sheet
+    is not opened. Progress is the run's last step with the provider's stage and only its own
+    percentage. Nothing is committed and no project is created to make the input.
+  - Review: the canvas shows the complete result only — the Topaz result (sampled at preview size,
+    its own aspect) with Topaz on, the local candidate without; 전 is the workflow's input (`HoldPill`,
+    calls nothing). A local + Topaz choice without a Topaz result shows the input and no 후. Without
+    Topaz, 적용 commits once (one undo). With Topaz, `고해상도 저장` (byte copy) or `새 편집본으로 열기`
+    (one `create`, local edits already in its pixels, nothing re-applied); the original's document,
+    history and autosave never change; nothing is saved or opened automatically; a create nobody
+    wants any more is deleted.
+  - Toggles after a run: a local change rebuilds offline (§19 Rebuild); the Topaz item alone moving
+    shows this session's result for the same candidate or none. Topaz results are kept per session
+    keyed by the candidate's source and rendered operations (ids a rebuild re-mints ignored), the item
+    and the key generation — not by `PlanCache`'s generated-patch key, which ignores `Adjust`. A miss
+    (another local choice, 강도 줄이기) shows no result, nothing to keep, and the primary
+    `선택한 보정 다시 실행` (one submit). Topaz off shows the local candidate; off→on for the same input
+    reuses the result; toggling, comparing and recomposing never submit.
+  - Failures: a local failure stops the run with its reason and nothing after it runs. A Topaz
+    failure (or `SubmitUnknown`, with its existing warning) keeps the local candidate under review
+    with the reason and `화질 개선 항목을 끄면 …`; it is never retried by itself, only by 다시 실행.
+    A failed save or copy reuses the result and never calls Topaz.
+  - Identity and files: the run sequence number covers the local steps, the Topaz step, a save and a
+    copy; cancel, close/Back, another tool, a document or settings change, or a new run makes a late
+    stage, result or file land nowhere (a result file from a provider that ignored its cancellation is
+    deleted). The session's Topaz folder is discarded at the session's end after a save is stopped and
+    a create has finished. Process death resumes nothing.
+  One purpose per plan; multiple Topaz results are never chained.

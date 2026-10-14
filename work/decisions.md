@@ -8,6 +8,141 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+## D101 - One run to the end: plan workflows run Topaz on the uncommitted candidate, previewed in place
+
+Status: Accepted (2026-10-14, work/tasks.md 단일 실행·현재 화면 미리보기). Supersedes D099's "confirm
+every selection" and "Topaz as a hand-off" and D100's commit-then-open-the-sheet; specs/vibe_edit.md
+§4.1, §16, §18, §19 and topaz_enhancement.md §1, §5, §7. D098's result boundary is kept.
+
+- **The workflow, not the sheet, runs Topaz.** `TopazProcessor` (render full → JPEG → one
+  `enhance` → sampled decode) is extracted from `TopazController` and shared; `DirectController`
+  calls it after `PlanRunner` on the candidate. Chosen over opening/driving the 화질 개선 sheet (two
+  controllers poking each other's UI, the old Preparing/run race) and over a second client. The
+  sheet's own 실행 flow is unchanged and still owns its state.
+- **Uncommitted candidate as Topaz input.** The upload is `Renderer.full(candidate)` — crop and local
+  edits included — so neither a commit nor a temporary project is needed to preview. D098 still
+  holds for keeping it: 고해상도 저장 or 새 편집본으로 열기, never an operation on the original.
+- **Topaz cache key = source + rendered operations without re-minted ids + item + key generation.**
+  `PlanCache.Key` drops `Adjust` (the generative frame), which a Topaz input does not. Ids of
+  `Adjust`/`Crop`/`CutOut` are ignored because every rebuild mints new ones for the same setting.
+- **Found ≠ confirmed.** A plan's own selection is used without a tap once the segmenter checks pass
+  and is recorded as `TargetSource.Resolved` ("found for that phrase, not confirmed by the user");
+  only an existing mask of unknown meaning still stops on the overlay. Not-found / ambiguous / bad
+  size still stop the run. No silent fallback to another target or the whole photo.
+- **No 자르기 after a plan.** The computed crop is reviewed in the candidate; `TopazHandOff` and the
+  `onFinished(cropRatio, topaz)` hand-off are removed (their stale-check intent lives in the run
+  sequence number, which now also covers the Topaz step, saves and copies).
+- **Run identity:** one `runSeq` for local steps, Topaz, save and copy; any invalidation bumps it and
+  cancels the job. A provider that ignores cancellation has its late result file deleted in
+  `TopazProcessor.process`. The Topaz folder belongs to the proposal session and is discarded after
+  a running save is cancelled and a create has finished.
+
+Consequences: a paid Topaz call now starts from the 지시 sheet's primary without a second
+confirmation; the cost line on the row and the run note above the primary are the only notice. Real
+device / real API behaviour (quality, timing, credits) is unverified by the fakes.
+
+## D100 - Quality-first suggestions, per-item toggles, Topaz after the local edits
+
+Status: Accepted (2026-10-14, work/tasks.md 품질 중심 추천 + 항목별 토글; the user's request overrides
+D094/D099's request-only and minimal-change rules). specs/vibe_edit.md §19; amends §14, §16, §17 and
+topaz_enhancement.md §1. D098's result boundary is unchanged.
+
+- **Policy in the prompt and the validator together.** The request-only rule (`needsRequest`,
+  `DEFAULT_TOPAZ_PURPOSES`) and "Topaz alone" are removed from both, so a default suggestion of a
+  style, ratio crop, erase, fill or any Topaz purpose is accepted as the model sent it — sources are
+  never rewritten to `user`. Only `explicit=true` constraints refuse a proposal or block 적용;
+  inferred ones were the model's guesses blocking its own suggestions. Topaz is refused after a
+  cut-out (alpha) and at most once.
+- **Items are steps, ids come from the wire position.** Every non-`Select` step is a toggle; a
+  `Select` is a dependency run iff a consumer is on. Chosen over goal-level toggles (one goal
+  bundled exposure and temperature) and over model-written ids (one more thing to validate). Ids are
+  assigned before the crop/Topaz reorder, so a choice never moves to another row.
+- **A choice re-runs, it never subtracts.** A candidate is the chosen steps run from the same input.
+  Removing ops from the full result would lose the value a later style replaced, an explicit 0's
+  original position and the input a generated patch was made from.
+- **Reuse by exact input.** `PlanCache` keys a generated patch by step + phrase + the input's
+  non-`Adjust` ops + active mask — the frame the provider is shown (`generativeInput`) is a function of
+  exactly those. A miss during a rebuild becomes `Stale` and waits for an explicit 미리보기; no silent
+  re-charge. Confirmed selections are reused by their `Select` step (same frame, same phrase).
+- **Files belong to the session, not the candidate.** 되돌리기 no longer deletes the candidate's files
+  (they are what a re-preview reuses); the session's end deletes all of them except the applied
+  document's. Same orphan class as before on process death.
+- **Topaz option validity stays an original-answer check**, not a choice check; a hand-off is
+  blocked (`TopazBlock`) only by the key or an input the options the sheet will open with cannot
+  take. The hand-off lives in `TopazHandOff` (EditorViewModel is at detekt's function ceiling) and is
+  claimed before 자르기's push/close, whose collectors would otherwise drop it.
+
+Consequences: whether Gemini now proposes erases/Topaz well — or too often — is unmeasured; the
+mock tests only fix what is accepted. 강도 줄이기 still acts on one candidate; a new choice resets it.
+
+## D099 - Plans: one direction, explicit targets, a reviewed candidate, Topaz as a hand-off
+
+2026-10-13, work/tasks.md (보정 추천·지시 개선 + Topaz 계획 도구). Supersedes D094's unconditional
+reselection, fixed 0.15/0.3 steps, "100 unless", style-plus-adjust ban and per-step history; lifts
+topaz_enhancement.md's "no Topaz in plans". specs/vibe_edit.md §15–§18.
+
+- **Targets are named, not inferred.** Opaque positional refs (`t1`, `a1`) per snapshot, resolved
+  locally; new selections are labels declared by `select_region`. Chosen over sending mask ids (local
+  data, and the model could invent them) and over "the active mask" (review N2's bug class).
+  Erase/fill/cut-out may only consume the selection made right before them, because the runner holds
+  that bitmap; existing masks are reachable by `adjust` only.
+- **Session notes, not persistence.** A plan-made selection the user confirmed gets a description
+  for this editor session only; reopened, every mask is unknown again. No DB or model change.
+- **Confirm every selection a plan uses.** Simpler than deciding which phrases are "ambiguous", and
+  the only place the mask's meaning can be checked; it costs one tap per selection.
+- **Candidate instead of per-step commits.** The run builds a document off history; 적용 is one push.
+  Files the candidate wrote are deleted on discard via `ProjectRepository.discardFiles` (default
+  no-op so the 18 test fakes stay as they are; the real one deletes only mask_/erase_/fill_ files
+  the saved document does not reference). Process death can still orphan those files — the same
+  class of leftover undo already leaves.
+- **강도 줄이기 on the document, not the plan:** halving the candidate's `Adjust` values toward the
+  input avoids re-running segmentation or paid calls and halves a style per value it wrote.
+  Snap at half a slider step (0.005) so repeated halving ends.
+- **Outside check is a floor, not a judge:** 0.5 % of outside pixels over 2/255 on crop-free renders,
+  selections dilated by width/50 for feathered edges. A leaked mask passes it; the overlay covers that.
+- **Topaz is one step and a hand-off.** Mixing a new-file result with document ops would blur D098's
+  boundary; the plan opens the existing sheet and never submits.
+- **Strength guidance from measurements:** `PlanStrengthEvidenceTest` on the real CPU ops; only
+  kinds with rows get ranges. Synthetic variants stand in for tone/noise only — not for faces,
+  balloons or real night photos.
+- **Shared `HoldPill` in core/ui** for compare (R1): the pill owns its pointer input.
+
+## D098 - Topaz results leave the document alone: a gallery file or a new edit copy
+
+Status: Accepted (2026-10-13, work/tasks.md Topaz Labs API 통합; the product choice is the task's).
+Adds specs/topaz_enhancement.md; amends specs/tool_groups.md §2, specs/export.md and
+specs/selection_tool.md §8.4.
+
+Decision:
+- **New edit copy policy.** A Topaz result never becomes an operation in the open document. It is
+  saved as a file, or opened as a new project (`ProjectRepository.create` through `ImageLoader`, so
+  ≤ 4096px) pushed over the current editor. The original's history is untouched; earlier
+  adjustments are baked into the copy's pixels.
+- **High-resolution save boundary.** Only a finished, validated result file may bypass the 4096px
+  export pipeline, by a byte-for-byte MediaStore copy (`MediaStoreFileStore`) whose stored bounds are
+  read back. The bitmap export path, its sizes and the global image bound are unchanged.
+- **Key ownership.** The Topaz key is the user's own (BYOK), stored alone in `topaz_settings`, sent
+  only to `https://api.topazlabs.com/image/v1`. A change bumps a generation that voids runs in flight.
+  No shared/operator key and no proxy; a billed shared service would need its own backend contract.
+- **Files.** `filesDir/topaz_work/<session>` belongs to the open sheet and is deleted on close after
+  readers finish; the first session of a process sweeps the folder. Project folders are never touched.
+- **Wire choices where the docs are silent or disagree.** The OpenAPI schema wins over the quickstart
+  (`download_url`, not `url`) and over model pages (`Standard`, not `Sharpen`). 창의적 디테일 uses
+  `Redefine` (in the schema) rather than Bloom 2 (not in it). Face recovery sends
+  `faceEnhancement=false` when off and 0.5/0.5 strength/creativity when on (required, no documented
+  default). 노이즈 제거 offers Autopilot only (two competing strength fields). Output is JPEG,
+  width-only sizing, app ceiling 256 MP / 400 MB.
+- **T4 is blocked**, not guessed: `RemoveBG`, `mode` and Object Matting's `box` encoding are not
+  fixed by the documentation.
+
+Reason:
+The task chose to preserve the original project and to keep the 4096px editing bound, which rules
+out flattening a high-resolution result into the open document.
+
+Consequences:
+Re-editing a Topaz result works at the working size only; the full-resolution file is reachable
+through 고해상도 저장. Face-recovery values and output quality are unvalidated without a real key.
+
 ## D097 - MonetGPT 자동 보정 is removed from the app; its saved `Adjust` ops stay
 
 Status: Accepted (2026-10-13, explicit user request; work/tasks.md 자동 보정 서버 제거). Changes

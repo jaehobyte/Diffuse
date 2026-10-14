@@ -102,6 +102,20 @@ class ProjectPersistenceTest {
         assertEquals(1, repository.observeAll().first().size)
     }
 
+    /** specs/topaz_enhancement.md §5: a new edit copy that fails to write leaves no folder or row. */
+    @Test
+    fun `a create that fails leaves no project folder and no row`() = runTest {
+        val repository = repository()
+        val broken = sourceImage().also { it.bitmap.recycle() }
+
+        val thrown = runCatching { repository.create(broken) }.exceptionOrNull()
+
+        assertTrue("expected the encode to fail, got $thrown", thrown != null)
+        val projects = File(files.projectDir("x").parentFile!!.path).listFiles().orEmpty()
+        assertTrue("found ${projects.toList()}", projects.isEmpty())
+        assertTrue(repository.observeAll().first().isEmpty())
+    }
+
     @Test
     fun `save then load round-trips the document`() = runTest {
         val repository = repository()

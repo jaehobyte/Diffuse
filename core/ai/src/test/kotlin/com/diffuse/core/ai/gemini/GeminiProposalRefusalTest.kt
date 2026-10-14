@@ -47,6 +47,7 @@ import com.diffuse.core.ai.gemini.GeminiPlanClientTest.Companion.JPEG
 import com.diffuse.core.ai.gemini.GeminiPlanClientTest.Companion.READY
 import com.diffuse.core.ai.gemini.GeminiPlanClientTest.Companion.REASON
 import com.diffuse.core.ai.gemini.GeminiPlanClientTest.Companion.constraint
+import com.diffuse.core.ai.gemini.GeminiPlanClientTest.Companion.direction
 import com.diffuse.core.ai.gemini.GeminiPlanClientTest.Companion.envelope
 import com.diffuse.core.ai.gemini.GeminiPlanClientTest.Companion.goal
 import com.diffuse.core.ai.gemini.GeminiPlanClientTest.Companion.step
@@ -110,10 +111,20 @@ class GeminiProposalRefusalTest {
             envelope(workflow = listOf(step("adjust", """{"kind":"exposure"}"""))),
             envelope(
                 goals = listOf(goal(scope = "subject")),
-                workflow = listOf(step("select_region", """{"phrase":" "}"""), step("erase_selection")),
+                workflow = listOf(
+                    step("select_region", """{"phrase":" ","target":"n1"}"""),
+                    step("erase_selection", """{"target":"n1"}"""),
+                ),
             ),
             envelope(workflow = listOf(step("crop_ratio", """{"ratio":"free"}"""))),
-            envelope(workflow = listOf(step("apply_style", """{"style":"sepia-dream"}"""))),
+            envelope(workflow = listOf(step("apply_style", """{"style":"sepia-dream","intensity":50}"""))),
+            // a select with no label, an erase with no target, a topaz purpose that does not exist
+            envelope(
+                goals = listOf(goal(scope = "subject")),
+                workflow = listOf(step("select_region", """{"phrase":"bus"}"""), step("erase_selection")),
+            ),
+            envelope(workflow = listOf(step("topaz_enhance", """{"purpose":"remove_background"}"""))),
+            envelope(workflow = listOf(step("topaz_enhance", """{"purpose":"upscale","scale":2.5}"""))),
             envelope(
                 goals = listOf(goal(scope = "color_range")),
                 workflow = listOf(step("adjust_color_range", """{"color":"teal","hue":0.2}""")),
@@ -166,7 +177,7 @@ class GeminiProposalRefusalTest {
             calls(
                 envelope(
                     goals = listOf(goal(scope = "subject")),
-                    workflow = listOf(step("select_region", """{"phrase":"face"}""")),
+                    workflow = listOf(step("select_region", """{"phrase":"face","target":"n1"}""")),
                 ),
             ),
         )
@@ -183,26 +194,71 @@ class GeminiProposalRefusalTest {
         assertUnplannable(client.plan(JPEG, PlanRequest("", PlanMode.Recommend)))
     }
 
-    /** §14: a look, a shape, a removal or a fill needs a request that names it. */
+    /**
+     * §19 (replaces §14's "a look, a shape, a removal or a fill needs a request"): a default goal
+     * may propose any of them — the user turns off what they do not want. A source is never
+     * rewritten to `user` to get there.
+     */
     @Test
-    fun `a default goal may not style, crop, erase, cut out or fill`() = runTest {
+    fun `a default goal may style, crop, erase, fill or hand off to topaz`() = runTest {
         val unrequested = listOf(
+            listOf(step("apply_style", """{"style":"film-warm","intensity":50}""")),
+            listOf(step("crop_ratio", """{"ratio":"portrait_4_5"}""")),
+            listOf(
+                step("select_region", """{"phrase":"trash can","target":"n1"}"""),
+                step("erase_selection", """{"target":"n1"}"""),
+            ),
+            listOf(
+                step("select_region", """{"phrase":"sign","target":"n1"}"""),
+                step("fill_selection", """{"prompt":"a bush","target":"n1"}"""),
+            ),
+            listOf(ADJUST, step("topaz_enhance", """{"purpose":"denoise"}""")),
+            listOf(step("topaz_enhance", """{"purpose":"colorize"}""")),
+            listOf(step("topaz_enhance", """{"purpose":"sharpen","face_recovery":true}""")),
+        ).map { workflow ->
+            val scope = if (workflow.any { "select_region" in it }) "subject" else "global"
+            envelope(
+                goals = listOf(goal(source = "default", scope = scope)),
+                workflow = workflow,
+                direction = direction("default"),
+            )
+        }
+        unrequested.forEach { server.enqueue(calls(it)) }
+
+        unrequested.forEach { case ->
+            val result = client.plan(JPEG, PlanRequest("", PlanMode.Recommend))
+            val proposal = (result as? Result.Success)?.value
+            assertTrue("expected $case to be accepted, got $result", proposal != null)
+            assertTrue(proposal!!.goals.all { it.source == GoalSource.Default })
+        }
+    }
+
+    /** §19: what the user said to keep still refuses a default suggestion that would break it. */
+    @Test
+    fun `an explicit constraint still refuses a default suggestion`() = runTest {
+        val broken = listOf(
             envelope(
                 goals = listOf(goal(source = "default")),
-                workflow = listOf(step("apply_style", """{"style":"film-warm"}""")),
+                workflow = listOf(step("apply_style", """{"style":"film-warm","intensity":50}""")),
+                extra = constraint("keep_background"),
+                direction = direction("default"),
+            ),
+            envelope(
+                goals = listOf(goal(source = "default")),
+                workflow = listOf(step("topaz_enhance", """{"purpose":"colorize"}""")),
+                extra = constraint("keep_colors"),
+                direction = direction("default"),
             ),
             envelope(
                 goals = listOf(goal(source = "default")),
                 workflow = listOf(step("crop_ratio", """{"ratio":"square"}""")),
-            ),
-            envelope(
-                goals = listOf(goal(source = "default", scope = "subject")),
-                workflow = listOf(step("select_region", """{"phrase":"bus"}"""), step("erase_selection")),
+                extra = constraint("keep_frame"),
+                direction = direction("default"),
             ),
         )
-        unrequested.forEach { server.enqueue(calls(it)) }
+        broken.forEach { server.enqueue(calls(it)) }
 
-        unrequested.forEach { assertUnplannable(client.plan(JPEG, PlanRequest("", PlanMode.Recommend)), it) }
+        broken.forEach { assertUnplannable(client.plan(JPEG, PlanRequest("", PlanMode.Recommend)), it) }
     }
 
     @Test
@@ -212,7 +268,7 @@ class GeminiProposalRefusalTest {
             envelope(
                 goals = listOf(goal(scope = "subject")),
                 workflow = listOf(
-                    step("select_region", """{"phrase":"face"}"""),
+                    step("select_region", """{"phrase":"face","target":"n1"}"""),
                     step("adjust", """{"kind":"exposure","value":0.3,"masked":false}"""),
                 ),
             ),
@@ -223,7 +279,12 @@ class GeminiProposalRefusalTest {
             // a subject goal with a style
             envelope(
                 goals = listOf(goal(scope = "subject")),
-                workflow = listOf(step("apply_style", """{"style":"film-warm"}""")),
+                workflow = listOf(step("apply_style", """{"style":"film-warm","intensity":50}""")),
+            ),
+            // a subject goal with a Topaz step
+            envelope(
+                goals = listOf(goal(scope = "subject")),
+                workflow = listOf(step("topaz_enhance", """{"purpose":"lighting"}""")),
             ),
         )
         outside.forEach { server.enqueue(calls(it)) }
@@ -231,17 +292,21 @@ class GeminiProposalRefusalTest {
         outside.forEach { assertUnplannable(client.plan(JPEG, DIRECT), it) }
     }
 
-    /** §14: "얼굴만 밝게" selects the face; it never borrows a selection another goal made. */
+    /**
+     * §15: a local step names its selection. Without a name it is not local — and in a subject
+     * goal that is refused, never resolved to whatever was selected last; an undeclared name is
+     * refused too.
+     */
     @Test
-    fun `a masked step needs its own goal's selection`() = runTest {
+    fun `a local step names a declared target`() = runTest {
         server.enqueue(
             calls(
                 envelope(
                     goals = listOf(goal("g1", scope = "subject"), goal("g2", scope = "subject")),
                     workflow = listOf(
-                        step("select_region", """{"phrase":"dress"}"""),
-                        step("adjust", """{"kind":"highlights","value":-0.2}"""),
-                        step("adjust", """{"kind":"exposure","value":0.2}""", goal = "g2"),
+                        step("select_region", """{"phrase":"dress","target":"n1"}"""),
+                        step("adjust", """{"kind":"highlights","value":-0.2,"target":"n1"}"""),
+                        step("adjust", """{"kind":"exposure","value":0.2,"target":"n2"}""", goal = "g2"),
                     ),
                 ),
             ),
@@ -265,7 +330,7 @@ class GeminiProposalRefusalTest {
                 envelope(
                     goals = listOf(goal("g1", scope = "subject"), goal("g2")),
                     workflow = listOf(
-                        step("select_region", """{"phrase":"face"}"""),
+                        step("select_region", """{"phrase":"face","target":"n1"}"""),
                         step("adjust", """{"kind":"exposure","value":0.2}""", goal = "g2"),
                     ),
                 ),
@@ -282,15 +347,24 @@ class GeminiProposalRefusalTest {
             envelope(
                 goals = listOf(goal("g1", scope = "subject"), goal("g2", scope = "color_range")),
                 workflow = listOf(
-                    step("select_region", """{"phrase":"green bus"}"""),
-                    step("adjust", """{"kind":"contrast","value":0.15}"""),
+                    step("select_region", """{"phrase":"green bus","target":"n1"}"""),
+                    step("adjust", """{"kind":"contrast","value":0.15,"target":"n1"}"""),
                     step("adjust_color_range", """{"color":"green","saturation":0.3}""", goal = "g2"),
                 ),
                 extra = constraint("subject_only"),
             ),
             // keep the background, then a style
             envelope(
-                workflow = listOf(step("apply_style", """{"style":"pastel-soft"}""")),
+                workflow = listOf(step("apply_style", """{"style":"pastel-soft","intensity":50}""")),
+                extra = constraint("keep_background"),
+            ),
+            // keep the background, then a cut-out — it deletes the outside
+            envelope(
+                goals = listOf(goal(scope = "subject")),
+                workflow = listOf(
+                    step("select_region", """{"phrase":"person","target":"n1"}"""),
+                    step("cut_out_selection", """{"target":"n1"}"""),
+                ),
                 extra = constraint("keep_background"),
             ),
             // keep the colours, then saturation
@@ -305,14 +379,13 @@ class GeminiProposalRefusalTest {
     }
 
     @Test
-    fun `a style with an adjust that repeats it, two styles or two crops are refused`() = runTest {
-        server.enqueue(calls(envelope(workflow = listOf(step("apply_style", """{"style":"film-warm"}"""), ADJUST))))
+    fun `two styles or two crops are refused`() = runTest {
         server.enqueue(
             calls(
                 envelope(
                     workflow = listOf(
-                        step("apply_style", """{"style":"film-warm"}"""),
-                        step("apply_style", """{"style":"moody-dark"}"""),
+                        step("apply_style", """{"style":"film-warm","intensity":50}"""),
+                        step("apply_style", """{"style":"moody-dark","intensity":50}"""),
                     ),
                 ),
             ),
@@ -328,7 +401,7 @@ class GeminiProposalRefusalTest {
             ),
         )
 
-        repeat(3) { assertUnplannable(client.plan(JPEG, DIRECT)) }
+        repeat(2) { assertUnplannable(client.plan(JPEG, DIRECT)) }
     }
 
     private fun assertUnplannable(result: Result<PlanProposal>, case: String = "") {

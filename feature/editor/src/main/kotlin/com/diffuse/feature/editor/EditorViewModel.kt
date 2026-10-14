@@ -34,14 +34,15 @@ import com.diffuse.feature.editor.tools.multishot.MultiShotState
 import com.diffuse.feature.editor.tools.style.StyleState
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.diffuse.feature.editor.tools.crop.CropState
-import com.diffuse.core.ai.CropRatio
-import com.diffuse.feature.editor.tools.crop.preset
 import com.diffuse.feature.editor.tools.direct.DirectCanvas
 import com.diffuse.feature.editor.tools.direct.DirectController
 import com.diffuse.feature.editor.tools.direct.DirectHost
 import com.diffuse.feature.editor.tools.direct.DirectState
 import com.diffuse.feature.editor.tools.direct.DirectTap
 import com.diffuse.feature.editor.tools.direct.PlanRunner
+import com.diffuse.feature.editor.tools.direct.planContextOf
+import com.diffuse.feature.editor.tools.direct.styleEffectsOf
+import com.diffuse.feature.editor.tools.direct.topazCapabilityOf
 import com.diffuse.feature.editor.tools.erase.EraseCommit
 import com.diffuse.feature.editor.tools.erase.EraseController
 import com.diffuse.feature.editor.tools.erase.EraseState
@@ -52,11 +53,25 @@ import com.diffuse.feature.editor.tools.fill.FillController
 import com.diffuse.feature.editor.tools.fill.FillState
 import com.diffuse.feature.editor.tools.select.SelectionController
 import com.diffuse.feature.editor.tools.select.SelectionState
+import com.diffuse.feature.editor.tools.enhance.TopazController
+import com.diffuse.feature.editor.tools.enhance.TopazGroup
+import com.diffuse.feature.editor.tools.enhance.TopazHost
+import com.diffuse.feature.editor.tools.enhance.TopazProcessor
+import com.diffuse.feature.editor.tools.enhance.TopazState
+import com.diffuse.feature.editor.tools.enhance.TopazStorage
+import com.diffuse.core.ai.PlanStep
+import com.diffuse.core.ai.TopazBlock
+import com.diffuse.core.ai.TopazCapability
+import com.diffuse.core.ai.topazBlock
+import com.diffuse.core.ai.topaz.TopazOptions
+import com.diffuse.core.ai.topaz.TopazPurpose
+import java.io.File
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
@@ -98,9 +113,14 @@ data class EditorUiState(
     val activeMask: Bitmap? = null,
     /** specs/multishot.md §2: the added photographs, their extraction and placement, until 적용. */
     val multiShot: MultiShotState = MultiShotState(),
+    /** specs/topaz_enhancement.md §2: the shared Topaz sheet; it never edits [document]. */
+    val topaz: TopazState = TopazState(),
 )
 
 /** specs/editor_shell.md: one ViewModel per screen, UI sends intents, VM reduces to state. */
+// specs/topaz_enhancement.md §5 added the seventh: Topaz files and the gallery copy are not AI, so
+// they are not in `EditorAi`'s bundle.
+@Suppress("LongParameterList")
 @HiltViewModel
 class EditorViewModel @Inject constructor(
     @ApplicationContext context: Context,
@@ -109,6 +129,7 @@ class EditorViewModel @Inject constructor(
     ai: EditorAi,
     dispatchers: DispatcherProvider,
     savedStateHandle: SavedStateHandle,
+    topazStorage: TopazStorage,
 ) : ViewModel() {
 
     /** specs/editor_shell.md: the id lives in SavedStateHandle so process death can restore. */
@@ -124,6 +145,48 @@ class EditorViewModel @Inject constructor(
 
     /** specs/editor_shell.md: a sheet snapshots the document so Cancel can restore it. */
     private var sheetBaseline: EditDocument? = null
+
+    /** §16, §19: what a Topaz run would be given for [EditDocument] — its key, size and alpha. */
+    private val topazCapability: suspend (EditDocument) -> TopazCapability = { document ->
+        withContext(dispatchers.io) { topazCapabilityOf(ai.topaz.config.value.isConfigured, document) }
+    }
+
+    /**
+     * specs/topaz_enhancement.md §5, vibe_edit.md §19: one Topaz processing path — render, submit
+     * once, decode — shared by the 화질 개선 sheet and a plan's workflow. What it cannot reach — the
+     * renderer, the gallery copy, a new project — arrives through the host. Nothing it makes is ever
+     * pushed onto [history] (D098).
+     */
+    private val topazProcessor = TopazProcessor(
+        provider = ai.topaz,
+        workspace = topazStorage.workspace,
+        host = object : TopazHost {
+            private val loader = ImageLoader(context.contentResolver, dispatchers)
+
+            override suspend fun renderInput(document: EditDocument): Bitmap? =
+                (renderer.full(document) as? Result.Success)?.value
+
+            override suspend fun renderBefore(document: EditDocument): Bitmap? =
+                (renderer.preview(document, PREVIEW_LONG_EDGE_PX) as? Result.Success)?.value
+
+            override suspend fun saveToGallery(file: File, mimeType: String, width: Int, height: Int) =
+                topazStorage.saver.save(file, mimeType, width, height)
+
+            /** §5: the result is read through `ImageLoader`, so the copy opens at the working size. */
+            override suspend fun createProject(file: File): Result<String> =
+                when (val loaded = loader.load(Uri.fromFile(file))) {
+                    is Result.Failure -> loaded
+                    is Result.Success -> repository.create(loaded.value)
+                }
+
+            override suspend fun discardProject(projectId: String) {
+                repository.delete(projectId)
+            }
+
+            override fun onOpenedCopy() = cancelSheet()
+        },
+        dispatchers = dispatchers,
+    )
     private var previewJob: Job? = null
 
     /** specs/selection_tool.md: the tool owns its own state, session and undo stack. */
@@ -131,6 +194,7 @@ class EditorViewModel @Inject constructor(
         ai.segmentation,
         ai.sam3Settings,
         ai.geminiSettings,
+        ai.topazSettings,
         viewModelScope,
     )
 
@@ -205,8 +269,24 @@ class EditorViewModel @Inject constructor(
                     ?.atIntensity(intensity)
                     .orEmpty()
             },
+            resolveMask = { document, maskId -> renderer.resolveMask(document, maskId) },
         ),
         scope = viewModelScope,
+        // §14, §16: a new Gemini key or model, or a new Topaz key, is a new answer.
+        settingsChanges = combine(ai.geminiSettings.config, ai.topaz.config) { gemini, topaz -> gemini to topaz },
+        // §15: one snapshot — the catalog's real values and Topaz's capability, read here.
+        contextOf = { document, frame, notes ->
+            planContextOf(
+                document = document,
+                notes = notes,
+                styles = styleEffectsOf(style.presets()),
+                topaz = withContext(dispatchers.io) { topazCapabilityOf(ai.topaz.config.value.isConfigured, document) },
+                imageWidth = frame.width,
+                imageHeight = frame.height,
+            )
+        },
+        dispatchers = dispatchers,
+        topaz = topazProcessor,
         host = object : DirectHost {
             override fun canvas(): DirectCanvas? {
                 val state = _uiState.value
@@ -221,29 +301,34 @@ class EditorViewModel @Inject constructor(
 
             override fun commit(document: EditDocument) {
                 history?.push(document)
+                history?.commitCoalesce()
             }
 
             override suspend fun releaseSession() = selection.release()
 
+            override suspend fun render(document: EditDocument): Bitmap? =
+                (renderer.preview(document, PREVIEW_LONG_EDGE_PX) as? Result.Success)?.value
+
+            override suspend fun resolveMask(document: EditDocument, maskId: String): Bitmap? =
+                renderer.resolveMask(document, maskId)
+
+            override suspend fun discardFiles(paths: Set<String>) {
+                repository.discardFiles(projectId, paths)
+            }
+
+            override suspend fun topazBlock(step: PlanStep.Topaz, document: EditDocument): TopazBlock? =
+                topazBlock(step, topazCapability(document))
+
             /**
-             * specs/vibe_edit.md §4.1: a plan that ended with a crop hands off to the 자르기
-             * tool, which opens on the rect that was just committed. The model chose the ratio;
-             * the user chooses the framing.
+             * specs/vibe_edit.md §4.1, §19: the sheet closes. A plan's crop was part of the
+             * candidate the user reviewed, so 자르기 is not opened after it; the manual tool stays
+             * one tap away for a different framing.
              */
-            override fun onFinished(cropRatio: CropRatio?) {
+            override fun onFinished() {
                 sheetBaseline = null
                 _uiState.value = _uiState.value.copy(selectedTool = null)
-                if (cropRatio != null) {
-                    onToolClick(Tool.Crop)
-                    // The rect is already at this ratio; selecting the chip keeps it there while
-                    // the user drags, which is the whole point of having chosen a ratio.
-                    _uiState.value = _uiState.value.copy(
-                        cropState = _uiState.value.cropState.withPreset(cropRatio.preset),
-                    )
-                }
             }
         },
-        settingsChanges = ai.geminiSettings.config,
     )
 
     /**
@@ -290,8 +375,18 @@ class EditorViewModel @Inject constructor(
         dispatchers = dispatchers,
     )
 
+    /**
+     * specs/topaz_enhancement.md. The tool renders, submits and holds the result file; what it
+     * cannot reach — the renderer, the gallery copy, a new project — arrives through the host.
+     * Nothing here pushes onto [history]: a Topaz result is a file or a new edit copy (§5).
+     */
+    val topaz = TopazController(processor = topazProcessor, scope = viewModelScope)
+
     init {
         viewModelScope.launch { load() }
+        viewModelScope.launch {
+            topaz.state.collect { _uiState.value = _uiState.value.copy(topaz = it) }
+        }
         viewModelScope.launch {
             multiShot.state.collect { _uiState.value = _uiState.value.copy(multiShot = it) }
         }
@@ -338,6 +433,9 @@ class EditorViewModel @Inject constructor(
                         sheetBaseline = null
                         _uiState.value = _uiState.value.copy(selectedTool = null)
                     }
+                    // specs/topaz_enhancement.md §5: an undo under the open sheet re-renders its
+                    // input and drops a result made from the picture that is gone.
+                    topaz.onDocumentChanged(it)
                 }
         }
         viewModelScope.launch {
@@ -353,6 +451,14 @@ class EditorViewModel @Inject constructor(
         viewModelScope.launch {
             direct.state.collect { _uiState.value = _uiState.value.copy(direct = it) }
         }
+        // specs/vibe_edit.md §18: the candidate changing (built, halved, dropped) changes what the
+        // canvas shows without changing the document — T77's collector shape again. §19: only a
+        // complete result's candidate is drawn; a local + Topaz choice waiting for Topaz shows the input.
+        viewModelScope.launch {
+            _uiState.map { if (it.selectedTool == Tool.Direct) it.direct.shownDocument else null }
+                .distinctUntilChanged()
+                .collect { _uiState.value.document?.let(::requestPreview) }
+        }
         // specs/vibe_edit.md §14: a plan may only be asked of a frame rendered from the document
         // on screen — never an older render, nor one a failed render left behind.
         viewModelScope.launch {
@@ -364,11 +470,11 @@ class EditorViewModel @Inject constructor(
                     direct.onCanvas(document, preview?.asAndroidBitmap())
                 }
         }
-        // §14: closing the sheet, a finished run or another tool ends the session's request.
+        // §14: closing the sheet, an applied candidate or another tool ends the session's request.
         viewModelScope.launch {
             _uiState.map { it.selectedTool == Tool.Direct }
                 .distinctUntilChanged()
-                .collect { open -> if (!open && !direct.state.value.running) direct.close() }
+                .collect { open -> if (!open) direct.close() }
         }
     }
 
@@ -425,6 +531,8 @@ class EditorViewModel @Inject constructor(
             Tool.MultiShot -> (multiShot.draftDocument() ?: document).let { draft ->
                 draft.copy(operations = draft.operations.filterNot { it is Operation.Crop })
             }
+            // specs/vibe_edit.md §18: the candidate under review is drawn, never committed.
+            Tool.Direct -> _uiState.value.direct.shownDocument ?: document
             else -> document
         }
         previewJob = viewModelScope.launch {
@@ -458,6 +566,7 @@ class EditorViewModel @Inject constructor(
             state.selectedTool == tool -> cancelSheet()
             tool == Tool.Select && !selection.onToolTapped() -> Unit
             tool in GENERATIVE_TOOLS -> onGenerativeToolTapped(state, tool)
+            tool == Tool.Enhance -> openTopaz(TopazGroup.Enhance)
             // specs/vibe_edit.md §10: a blank key opens the 서버 설정 sheet, through the same
             // controller-returns-an-intent shape 지우기 uses. One sheet, one owner.
             tool == Tool.Direct -> when (direct.onToolTapped()) {
@@ -533,6 +642,30 @@ class EditorViewModel @Inject constructor(
         }
     }
 
+    /**
+     * specs/topaz_enhancement.md §1: 화질 개선, and the 디테일 · 라이트 · 색상 shortcuts into it.
+     * A manual sheet with values not yet applied keeps them: the switch is refused and the user
+     * is asked to apply or cancel first — nothing is applied, dropped or uploaded on their behalf.
+     * Opening sends nothing; a missing key shows in the sheet rather than greying the tool.
+     */
+    fun openTopaz(group: TopazGroup, purpose: TopazPurpose? = null, options: TopazOptions? = null) {
+        val state = _uiState.value
+        val open = state.selectedTool
+        val unapplied = when (open) {
+            null, Tool.Enhance -> false
+            Tool.Select -> state.selection.hasMask || state.selection.points.isNotEmpty()
+            else -> state.document != sheetBaseline
+        }
+        if (unapplied) {
+            topaz.showMessage(R.string.topaz_shortcut_blocked)
+            return
+        }
+        if (open != null) cancelSheet()
+        sheetBaseline = state.document
+        _uiState.value = _uiState.value.copy(selectedTool = Tool.Enhance)
+        topaz.open(group, purpose, state.document, options)
+    }
+
     fun onAdjust(kind: AdjustKind, value: Float) {
         val stack = history ?: return
         val state = _uiState.value
@@ -571,6 +704,7 @@ class EditorViewModel @Inject constructor(
         style.close()
         direct.close()
         multiShot.close()
+        topaz.close()
         _uiState.value = _uiState.value.copy(selectedTool = null)
     }
 
@@ -620,18 +754,23 @@ class EditorViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(selectedTool = null)
                 history?.push(styled)
             }
-            // specs/vibe_edit.md §3: 적용 runs the plan; the sheet closes when the run ends.
+            // specs/vibe_edit.md §3, §19: the primary runs, applies or keeps — whatever it says.
             Tool.Direct -> direct.apply()
             // specs/multishot.md §2: the subjects are already saved; 적용 is one history entry.
             Tool.MultiShot -> multiShot.apply()
+            // specs/topaz_enhancement.md §2: the sheet's primary is 실행 or 새 편집본으로 열기,
+            // which it calls itself. Nothing is applied to this document.
+            Tool.Enhance -> Unit
             else -> {
                 val stack = history
-                if (state.selectedTool == Tool.Crop && stack != null) {
-                    stack.push(state.cropState.applyTo(stack.current.value))
+                val before = stack?.current?.value
+                if (state.selectedTool == Tool.Crop && stack != null && before != null) {
+                    stack.push(state.cropState.applyTo(before))
                 }
                 stack?.commitCoalesce()
                 sheetBaseline = null
-                _uiState.value = state.copy(selectedTool = null)
+                // Read again: the push may already have published the new document and Undo.
+                _uiState.value = _uiState.value.copy(selectedTool = null)
             }
         }
     }
@@ -686,12 +825,16 @@ class EditorViewModel @Inject constructor(
         // Before the save, so a slow write cannot hold the backend's session open (§6).
         multiShot.close()
         selection.release()
-        val document = _uiState.value.document ?: return
+        topaz.close()
+        // specs/vibe_edit.md §19: a workflow in flight stops and its files go; nothing is kept.
+        direct.close()
+        // The history, not the UI state, which lags it until the history collector has run.
+        val document = history?.current?.value ?: return
         if (!autosave.discardIfUntouched(document)) autosave.saveNow(document)
     }
 
     fun onStop() {
-        viewModelScope.launch { _uiState.value.document?.let { autosave.saveNow(it) } }
+        viewModelScope.launch { history?.current?.value?.let { autosave.saveNow(it) } }
     }
 
     companion object {

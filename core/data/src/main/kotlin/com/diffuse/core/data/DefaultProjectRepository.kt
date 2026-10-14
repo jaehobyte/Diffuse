@@ -43,19 +43,34 @@ class DefaultProjectRepository(
     override fun observeAll(): Flow<List<ProjectSummary>> =
         dao.observeAll().map { rows -> rows.map(ProjectEntity::toSummary) }
 
+    /**
+     * specs/topaz_enhancement.md §5: a create that fails or is cancelled leaves no folder behind.
+     * The row is written last, so a folder is all there is to remove.
+     */
     override suspend fun create(source: SourceImage): Result<String> =
         withContext(dispatchers.io) {
             val id = newId()
             val now = clock()
+            var complete = false
+            try {
+                createFiles(id, now, source).also { complete = it is Result.Success }
+            } finally {
+                if (!complete) files.projectDir(id).deleteRecursively()
+            }
+        }
+
+    private suspend fun createFiles(id: String, now: Long, source: SourceImage): Result<String> =
+        withContext(dispatchers.io) {
             runCatchingIo {
                 val extension = if (source.hasAlpha) "png" else "jpg"
                 val sourceFile = files.sourceFile(id, extension)
                 sourceFile.parentFile?.mkdirs()
-                sourceFile.outputStream().use { stream ->
+                val written = sourceFile.outputStream().use { stream ->
                     val format =
                         if (source.hasAlpha) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG
                     source.bitmap.compress(format, JPEG_QUALITY, stream)
                 }
+                if (!written) throw IOException("could not encode the source of $id")
                 val document = EditDocument(
                     id = id,
                     source = ImageRef(sourceFile.absolutePath),
@@ -295,6 +310,28 @@ class DefaultProjectRepository(
         Result.Success(Unit)
     }
 
+    /** Only the on-disk document is consulted, as in [discardShotSubjects]. */
+    override suspend fun discardFiles(projectId: String, paths: Set<String>): Result<Unit> =
+        withContext(dispatchers.io) {
+            val documentFile = files.documentFile(projectId)
+            val referenced = if (documentFile.isFile) {
+                val document = runCatching { EditDocumentJson.decode(documentFile.readText(), logger) }
+                    .getOrElse { return@withContext Result.Failure(AppError.Unsupported) }
+                document.referencedPaths()
+            } else {
+                emptySet()
+            }
+            val dir = files.projectDir(projectId).canonicalFile
+            paths.map(::File)
+                .filter { file ->
+                    file.canonicalFile.parentFile == dir &&
+                        DISCARDABLE.any { file.name.startsWith(it) } &&
+                        file.absolutePath !in referenced
+                }
+                .forEach { it.delete() }
+            Result.Success(Unit)
+        }
+
     override suspend fun duplicate(id: String): Result<String> = withContext(dispatchers.io) {
         val original = dao.findById(id) ?: return@withContext Result.Failure(AppError.MissingSource)
         val copyId = newId()
@@ -381,6 +418,9 @@ private fun EditDocument.referencedPaths(): Set<String> = buildSet {
         }.forEach { add(File(it.path).absolutePath) }
     }
 }
+
+/** specs/vibe_edit.md §18: the files a plan preview can write — never the source or the document. */
+private val DISCARDABLE = listOf("mask_", "erase_", "fill_")
 
 /**
  * specs/skin_retouch_pipeline.md §6 "복제 경로 재작성", widened by specs/multishot.md §7: a copy points

@@ -93,6 +93,15 @@ interface ProjectRepository {
      */
     suspend fun discardShotSubjects(projectId: String, fileIds: List<String>): Result<Unit>
 
+    /**
+     * specs/vibe_edit.md §18: deletes files a discarded plan preview wrote — masks and generated
+     * patches under [projectId]'s directory — except any the saved `document.json` references.
+     * A path outside the project is ignored. As with [discardShotSubjects], the editor passes only
+     * files its own session wrote and never committed. A repository that writes no files has
+     * nothing to delete, hence the default.
+     */
+    suspend fun discardFiles(projectId: String, paths: Set<String>): Result<Unit> = Result.Success(Unit)
+
     suspend fun duplicate(id: String): Result<String>
     suspend fun delete(id: String): Result<Unit>
 }

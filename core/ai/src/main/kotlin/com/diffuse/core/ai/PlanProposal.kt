@@ -11,6 +11,8 @@ package com.diffuse.core.ai
  */
 data class PlanProposal(
     val outcome: PlanOutcome,
+    /** §15: what the photo already does well and the one objective; required when ready. */
+    val direction: PlanDirection? = null,
     val observations: List<Observation> = emptyList(),
     val intent: RequestIntent = RequestIntent(),
     val goals: List<PlanGoal> = emptyList(),
@@ -52,8 +54,22 @@ data class IntentItem(val text: String, val explicit: Boolean)
 /**
  * The machine-checkable kinds of hard constraint. "실루엣 유지" is [Other]: whether a plan keeps a
  * silhouette is a question about pixels, which the app cannot answer from the plan.
+ *
+ * specs/vibe_edit.md §17: [KeepBackground] keeps the colour, brightness and content outside the
+ * selection — a requested crop still reframes. [KeepFrame] keeps the whole frame, so it and a crop
+ * contradict. Colour comes in three strengths: [KeepHue] keeps hue families, [KeepColors] (the
+ * default reading of "색은 바꾸지 마") keeps hue and saturation, [KeepExactColors] keeps RGB, which
+ * any tonal change breaks.
  */
-enum class ConstraintKind { SubjectOnly, KeepBackground, KeepColors, Other }
+enum class ConstraintKind {
+    SubjectOnly,
+    KeepBackground,
+    KeepFrame,
+    KeepHue,
+    KeepColors,
+    KeepExactColors,
+    Other,
+}
 
 data class Constraint(val text: String, val kind: ConstraintKind, val explicit: Boolean)
 
@@ -65,6 +81,22 @@ data class RequestIntent(
 
 /** [User] is a goal the request states; [Default] is one the model proposes without being asked. */
 enum class GoalSource { User, Default }
+
+/**
+ * specs/vibe_edit.md §15: the photo's strengths and the **one** visual objective the plan serves,
+ * before any tool. [source] is [GoalSource.Default] when the model inferred the objective — an
+ * intention, not an observation. [success] is something a person can check by comparing the
+ * result with this input, not a promise.
+ */
+data class PlanDirection(
+    /** The main subject and the relationship worth keeping. */
+    val subject: String,
+    val strengths: List<String> = emptyList(),
+    val preserve: List<String> = emptyList(),
+    val objective: String,
+    val success: String,
+    val source: GoalSource,
+)
 
 /** Where a goal's steps may act: the whole photo, one selected thing, or one colour range. */
 enum class GoalScope { Global, Subject, ColorRange }
@@ -83,10 +115,15 @@ enum class ColorRole { Preserve, Emphasize, Background }
 
 data class ColorNote(val role: ColorRole, val color: String, val target: String)
 
-/** One executable step and why it is there. [goalId] always names one of the proposal's goals. */
+/**
+ * One executable step and why it is there. [goalId] always names one of the proposal's goals.
+ * [id] is assigned by the decoder in wire order (specs/vibe_edit.md §19) and never changes with
+ * the proposal's order or text; empty means "the position in the proposal it was built with".
+ */
 data class WorkflowStep(
     val step: PlanStep,
     val goalId: String,
     val effect: String? = null,
     val caution: String? = null,
+    val id: String = "",
 )

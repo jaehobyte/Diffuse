@@ -1,5 +1,8 @@
 package com.diffuse.feature.editor.tools.expand
 
+import com.diffuse.core.ai.FakeTopazProvider
+import com.diffuse.feature.editor.tools.enhance.testTopazSettings
+import com.diffuse.feature.editor.tools.enhance.testTopazStorage
 import android.graphics.Bitmap
 import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
@@ -306,9 +309,12 @@ class ExpandToolTest {
             settings,
             geminiSettings,
             FakeMatchStyleProvider(),
+            FakeTopazProvider(),
+            testTopazSettings(),
         ),
         dispatchers = TestDispatchers,
         savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),
+        topazStorage = testTopazStorage(),
     )
 
     /** The bare source renders wider than the document does, so "which bitmap" is observable. */

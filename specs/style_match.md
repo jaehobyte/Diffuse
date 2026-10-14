@@ -168,6 +168,13 @@ apply_style(style: enum{<the catalog's ids>}, intensity: number)
   `apply_style`; a request naming a *change* ("더 따뜻하게") stays `adjust`. One worked example.
 - An unknown id drops the step and later steps survive, per §5.
 - The step renders as `direct_step_style` with the preset's own Korean name.
+- **2026-10-13 (vibe_edit.md §15, §18, D099):** `intensity` is required — the "100 unless asked"
+  default is gone; 100 is the whole preset, not a natural strength or a blend with the photo. The
+  planner is sent each style's real values (`styleEffectsOf`: the catalog's converted params at 100,
+  neutral dropped; grain and the other dropped keys never appear) and the rule that a style
+  replaces those whole-photo settings in place and appends new ones. Overlap is checked on those
+  values (`StateSimulation`), not by forbidding any adjust beside a style. The manual sheet's
+  default intensity is unchanged.
 
 ## 7. Rendering twelve tiles
 The tiles are the only new performance question, and the answer is to make it a small one:

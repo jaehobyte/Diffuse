@@ -67,20 +67,23 @@ class ToolStripLevelTest {
         assertTrue(ai.none { it is StripItem.OpenAi })
     }
 
-    /** D097: 자동 is gone and the rest keep their relative order. */
+    /**
+     * D097: 자동 is gone and the rest keep their relative order. specs/topaz_enhancement.md §1:
+     * 화질 개선 sits after 확대, and nothing else moves.
+     */
     @Test
     fun `the AI level holds the tools that call a provider`() {
         val ai = stripItems(ToolGroup.Ai).filterIsInstance<StripItem.OfTool>().map { it.tool }
 
         assertEquals(
             listOf(
-                Tool.Select, Tool.Erase, Tool.Fill, Tool.Expand, Tool.Style, Tool.MultiShot,
-                Tool.Direct,
+                Tool.Select, Tool.Erase, Tool.Fill, Tool.Expand, Tool.Enhance, Tool.Style,
+                Tool.MultiShot, Tool.Direct,
             ),
             ai,
         )
         assertEquals(
-            listOf("선택", "지우기", "채우기", "확대", "스타일", "멀티샷", "지시"),
+            listOf("선택", "지우기", "채우기", "확대", "화질 개선", "스타일", "멀티샷", "지시"),
             ai.map(::labelOf),
         )
     }
@@ -228,6 +231,7 @@ class ToolStripLevelTest {
         Tool.Erase -> "지우기"
         Tool.Fill -> "채우기"
         Tool.Expand -> "확대"
+        Tool.Enhance -> "화질 개선"
         Tool.Style -> "스타일"
         Tool.MultiShot -> "멀티샷"
         Tool.Direct -> "지시"

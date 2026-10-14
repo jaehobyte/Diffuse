@@ -1,5 +1,8 @@
 package com.diffuse.feature.editor.tools.crop
 
+import com.diffuse.core.ai.FakeTopazProvider
+import com.diffuse.feature.editor.tools.enhance.testTopazSettings
+import com.diffuse.feature.editor.tools.enhance.testTopazStorage
 import android.graphics.Bitmap
 import android.graphics.RectF
 import androidx.lifecycle.SavedStateHandle
@@ -155,9 +158,12 @@ class CropPreviewTest {
             settings,
             geminiSettings,
             FakeMatchStyleProvider(),
+            FakeTopazProvider(),
+            testTopazSettings(),
         ),
         dispatchers = TestDispatchers,
         savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),
+        topazStorage = testTopazStorage(),
     )
 
     /** Records the document it was asked to draw, which is the whole claim under test. */

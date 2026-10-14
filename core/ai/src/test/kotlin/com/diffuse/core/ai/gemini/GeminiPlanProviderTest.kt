@@ -9,6 +9,7 @@ import com.diffuse.core.ai.Availability
 import com.diffuse.core.ai.PlanMode
 import com.diffuse.core.ai.PlanRequest
 import com.diffuse.core.ai.PlanStep
+import com.diffuse.core.ai.PlanTarget
 import com.diffuse.core.common.AppError
 import com.diffuse.core.common.DispatcherProvider
 import com.diffuse.core.common.Result
@@ -141,8 +142,8 @@ class GeminiPlanProviderTest {
 
         assertEquals(
             listOf(
-                PlanStep.Select("tree"),
-                PlanStep.Adjust(AdjustKind.Saturation, 0.3f, masked = true),
+                PlanStep.Select("tree", "n1"),
+                PlanStep.Adjust(AdjustKind.Saturation, 0.3f, PlanTarget.New("n1")),
             ),
             (proposal as Result.Success).value.plan.steps,
         )
@@ -193,10 +194,11 @@ class GeminiPlanProviderTest {
         """
         {"candidates":[{"content":{"parts":[
           {"functionCall":{"name":"propose_edit","args":{"outcome":"ready",
+            "direction":{"subject":"나무","objective":"나무를 더 푸르게","success":"나무만 더 푸르다","source":"$source"},
             "goals":[{"id":"g1","text":"나무를 더 푸르게","source":"$source","scope":"subject"}],
             "workflow":[
-              {"tool":"select_region","goal_id":"g1","args":{"phrase":"tree"}},
-              {"tool":"adjust","goal_id":"g1","args":{"kind":"saturation","value":0.3}}
+              {"tool":"select_region","goal_id":"g1","args":{"phrase":"tree","target":"n1"}},
+              {"tool":"adjust","goal_id":"g1","args":{"kind":"saturation","value":0.3,"target":"n1"}}
             ]}}}
         ]}}]}
         """.trimIndent(),
