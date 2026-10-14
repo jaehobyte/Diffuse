@@ -321,7 +321,7 @@ class CropApplyTest {
         val repository = RecordingRepository(bare(source = halves()))
         val renderer = cpuRenderer()
         val viewModel = viewModel(repository, renderer)
-        compose.setContent { EditorRoute(onBack = {}, onExport = {}, viewModel = viewModel) }
+        compose.setContent { EditorRoute(onExport = {}, viewModel = viewModel) }
         compose.waitForIdle()
 
         compose.onNodeWithTag(string(Tool.Crop.labelRes)).performClick()

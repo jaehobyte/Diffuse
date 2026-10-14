@@ -63,7 +63,6 @@ class SheetCancelTest {
                 canUndo = false,
                 canRedo = false,
                 canCompare = false,
-                onBack = {},
                 onUndo = {},
                 onRedo = {},
                 onCompareChange = {},

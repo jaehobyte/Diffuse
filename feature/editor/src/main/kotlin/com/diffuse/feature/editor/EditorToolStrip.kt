@@ -11,14 +11,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -28,18 +28,21 @@ import com.diffuse.core.ui.theme.Tokens
 import com.diffuse.core.ui.theme.Typography
 
 /** specs/tool_groups.md §2: the strip's geometry is the same at both levels. */
-/** DESIGN.md §4: 72dp strip, 64dp items, 24dp icon, 2dp accent indicator when selected. */
+/** DESIGN.md §4: 72dp black strip, 64dp items, 26dp icon, the selected one yellow; no indicator. */
 private val StripHeight = 72.dp
 private val ItemWidth = 64.dp
-private val IconSize = 24.dp
-private val IndicatorHeight = 2.dp
-private val IndicatorWidth = 24.dp
-private val AiDotSize = 6.dp
+private val IconSize = 26.dp
+private val IconSlot = 40.dp
+private val AiIconSize = 22.dp
+private val LabelGap = 4.dp
 
 /** DESIGN.md §4: disabled controls drop to 38% alpha, keeping their colour. */
 private const val DISABLED_ALPHA = 0.38f
 
 const val ToolStripTestTag = "EditorToolStrip"
+
+/** DESIGN.md §2: the Photo Assist-style circle behind the AI parent, the one gradient allowed. */
+private val AiCircleBrush = Brush.linearGradient(listOf(Tokens.aiGradientStart, Tokens.aiGradientEnd))
 
 /**
  * specs/tool_groups.md §2. One strip, two levels: [level] decides which list is bound to it.
@@ -96,13 +99,11 @@ private fun StripItemView(
     onClick: () -> Unit,
 ) {
     val colors = LocalAppColors.current
-    // §2: ← is `editInk`, not accent, and is a tool-shaped item so the row stays one rhythm.
-    val base = when {
-        selected -> Tokens.accent
-        item is StripItem.Back -> colors.ink
-        else -> colors.inkSecondary
-    }
-    val tint = if (enabled) base else base.copy(alpha = DISABLED_ALPHA)
+    val alpha = if (enabled) 1f else DISABLED_ALPHA
+    // DESIGN.md §4: the selected tool is yellow, icon and label; the rest are white icons over
+    // secondary labels. ← is a tool-shaped item so the row stays one rhythm.
+    val iconTint = (if (selected) colors.accent else colors.ink).copy(alpha = alpha)
+    val labelTint = (if (selected) colors.accent else colors.inkSecondary).copy(alpha = alpha)
     val label = stringResource(item.labelRes())
 
     Column(
@@ -114,29 +115,22 @@ private fun StripItemView(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Box {
+        Box(
+            modifier = Modifier
+                .size(IconSlot)
+                .clip(CircleShape)
+                .then(if (item is StripItem.OpenAi) Modifier.background(AiCircleBrush, alpha = alpha) else Modifier),
+            contentAlignment = Alignment.Center,
+        ) {
             Icon(
                 imageVector = item.icon(),
                 contentDescription = label,
-                tint = tint,
-                modifier = Modifier.size(IconSize),
+                // §2: the AI parent is the gradient circle with a white glyph, like 포토 어시스트.
+                tint = if (item is StripItem.OpenAi) colors.ink.copy(alpha = alpha) else iconTint,
+                modifier = Modifier.size(if (item is StripItem.OpenAi) AiIconSize else IconSize),
             )
-            // §2: the dot marks the parent, and no child — inside the AI level it marks nothing.
-            if (item is StripItem.OpenAi) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .size(AiDotSize)
-                        .clip(CircleShape)
-                        .background(Tokens.accent.copy(alpha = if (enabled) 1f else DISABLED_ALPHA)),
-                )
-            }
         }
-        Text(text = label, style = Typography.label, color = tint)
-        Box(
-            modifier = Modifier
-                .size(width = IndicatorWidth, height = IndicatorHeight)
-                .background(if (selected) Tokens.accent else Color.Transparent),
-        )
+        Box(modifier = Modifier.height(LabelGap))
+        Text(text = label, style = Typography.labelSmall, color = labelTint)
     }
 }

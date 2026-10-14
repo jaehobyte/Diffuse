@@ -85,7 +85,9 @@ class LightSheetTest {
             ),
             LightKinds,
         )
-        LightKinds.forEach { compose.onNodeWithTag(adjustSliderTag(it)).assertExists() }
+        // DESIGN.md §4: one circle per kind; the slider belongs to the active (first) one.
+        LightKinds.forEach { compose.onNodeWithTag(adjustKindTag(it)).assertExists() }
+        compose.onNodeWithTag(adjustSliderTag(AdjustKind.Exposure)).assertExists()
     }
 
     @Test

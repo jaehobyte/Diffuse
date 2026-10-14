@@ -30,41 +30,45 @@ class TokensTest {
     )
 
     private val colorRows = listOf(
-        // Brand & light surfaces
-        ColorRow("accent", Tokens.accent, 0xFF387AFF),
-        ColorRow("accentPressed", Tokens.accentPressed, 0xFF2864D9),
-        ColorRow("primaryFill", Tokens.primaryFill, 0xFF2864D9),
+        // Brand & selection
+        ColorRow("accent", Tokens.accent, 0xFFF9DA4B),
+        ColorRow("accentSoft", Tokens.accentSoft, 0xFFF9E16E),
+        ColorRow("accentPressed", Tokens.accentPressed, 0xFFE3C53A),
+        ColorRow("primaryFill", Tokens.primaryFill, 0xFF2F6BEB),
         ColorRow("onAccent", Tokens.onAccent, 0xFFFFFFFF),
-        ColorRow("canvasLight", Tokens.canvasLight, 0xFFFCFCFF),
-        ColorRow("surfaceSoft", Tokens.surfaceSoft, 0xFFFCFCFF),
-        ColorRow("surfaceCard", Tokens.surfaceCard, 0xFFF5F4F6),
-        ColorRow("surfaceSecondary", Tokens.surfaceSecondary, 0xFFEBEFF5),
-        ColorRow("hairline", Tokens.hairline, 0xFFE6E6E9),
-        ColorRow("ink", Tokens.ink, 0xFF000000),
-        ColorRow("inkSecondary", Tokens.inkSecondary, 0xFF4D4D52),
-        ColorRow("inkMuted", Tokens.inkMuted, 0xFF8E8E92),
-        ColorRow("selectionFill", Tokens.selectionFill, 0xFFD9E2F6),
-        ColorRow("selectionBorder", Tokens.selectionBorder, 0xFF8FB2F5),
-        ColorRow("promptTint", Tokens.promptTint, 0xFFD7E4FF),
-        // Editor & glass
-        ColorRow("editBackground", Tokens.editBackground, 0xFF1C1C1E),
-        ColorRow("editSurface", Tokens.editSurface, 0xFFFCFCFF),
-        ColorRow("editSurfaceRaised", Tokens.editSurfaceRaised, 0xFFF5F4F6),
-        ColorRow("editHairline", Tokens.editHairline, 0xFFE6E6E9),
-        ColorRow("editInk", Tokens.editInk, 0xFF000000),
-        ColorRow("editInkSecondary", Tokens.editInkSecondary, 0xFF4D4D52),
-        ColorRow("canvasOverlayInk", Tokens.canvasOverlayInk, 0xFFFCFCFF),
+        ColorRow("selectionFill", Tokens.selectionFill, 0xFFFAFAFA),
+        ColorRow("selectionInk", Tokens.selectionInk, 0xFF000000),
+        ColorRow("promptTint", Tokens.promptTint, 0xFF2A3346),
+        // Surfaces & ink
+        ColorRow("background", Tokens.background, 0xFF000000),
+        ColorRow("surface", Tokens.surface, 0xFF000000),
+        ColorRow("surfaceRaised", Tokens.surfaceRaised, 0xFF202023),
+        ColorRow("surfaceSecondary", Tokens.surfaceSecondary, 0xFF2C2C30),
+        ColorRow("surfaceMenu", Tokens.surfaceMenu, 0xFF272727),
+        ColorRow("hairline", Tokens.hairline, 0xFF3A3A3D),
+        ColorRow("ink", Tokens.ink, 0xFFFAFAFA),
+        ColorRow("inkSecondary", Tokens.inkSecondary, 0xFFA6A6A7),
+        ColorRow("inkMuted", Tokens.inkMuted, 0xFF6E6E70),
+        // Editor
+        ColorRow("editBackground", Tokens.editBackground, 0xFF000000),
+        ColorRow("editSurface", Tokens.editSurface, 0xFF000000),
+        ColorRow("editSurfaceRaised", Tokens.editSurfaceRaised, 0xFF202023),
+        ColorRow("editHairline", Tokens.editHairline, 0xFF3A3A3D),
+        ColorRow("editInk", Tokens.editInk, 0xFFFAFAFA),
+        ColorRow("editInkSecondary", Tokens.editInkSecondary, 0xFFA6A6A7),
+        ColorRow("canvasOverlayInk", Tokens.canvasOverlayInk, 0xFFFAFAFA),
         ColorRow("canvasCheckerA", Tokens.canvasCheckerA, 0xFF2C2C2E),
         ColorRow("canvasCheckerB", Tokens.canvasCheckerB, 0xFF242426),
-        ColorRow("sheetGlassTop", Tokens.sheetGlassTop, 0xF5F7F8FB),
-        ColorRow("sheetGlassBottom", Tokens.sheetGlassBottom, 0xF0E6E9F1),
-        ColorRow("sheetEdge", Tokens.sheetEdge, 0xCCFFFFFF),
-        ColorRow("sheetHandle", Tokens.sheetHandle, 0xFFB4B6BC),
-        ColorRow("pillStatus", Tokens.pillStatus, 0xFFA8A8AC),
+        ColorRow("sliderTickMajor", Tokens.sliderTickMajor, 0xFF8D8D8E),
+        ColorRow("sliderTickMinor", Tokens.sliderTickMinor, 0xFF4D4D4F),
+        ColorRow("aiGradientStart", Tokens.aiGradientStart, 0xFF5C8AE6),
+        ColorRow("aiGradientEnd", Tokens.aiGradientEnd, 0xFF9D7BD8),
         // Semantic
-        ColorRow("success", Tokens.success, 0xFF1E7A46),
-        ColorRow("warning", Tokens.warning, 0xFFB8741A),
+        ColorRow("success", Tokens.success, 0xFF3DBE6A),
+        ColorRow("warning", Tokens.warning, 0xFFF2A33C),
         ColorRow("error", Tokens.error, 0xFFFF3B30),
+        ColorRow("linkText", Tokens.linkText, 0xFF6FA3FF),
+        ColorRow("errorText", Tokens.errorText, 0xFFFF6B5E),
     )
 
     private val textRows = listOf(
@@ -92,8 +96,8 @@ class TokensTest {
     }
 
     @Test
-    fun designDocDeclaresThirtyTwoColorTokens() {
-        assertEquals(32, colorRows.size, "DESIGN.md §2 lists 32 color tokens")
+    fun designDocDeclaresThirtyFiveColorTokens() {
+        assertEquals(35, colorRows.size, "DESIGN.md §2 lists 35 color tokens")
     }
 
     @TestFactory
@@ -115,25 +119,30 @@ class TokensTest {
     }
 
     @Test
-    fun browseAndEditPalettesUseTheirOwnSurfaces() {
-        assertEquals(Tokens.surfaceSoft, BrowseColors.background)
-        assertEquals(Tokens.canvasLight, BrowseColors.surface)
-        assertEquals(Tokens.surfaceCard, BrowseColors.surfaceRaised)
+    fun browseAndEditShareOneBlackPalette() {
+        // DESIGN.md §1: the Photo Editor and Gallery are the same black; so are the two modes.
+        assertEquals(Tokens.background, BrowseColors.background)
+        assertEquals(Tokens.surface, BrowseColors.surface)
+        assertEquals(Tokens.surfaceRaised, BrowseColors.surfaceRaised)
         assertEquals(Tokens.editBackground, EditColors.background)
         assertEquals(Tokens.editSurface, EditColors.surface)
         assertEquals(Tokens.editSurfaceRaised, EditColors.surfaceRaised)
+        assertEquals(BrowseColors, EditColors)
         // DESIGN.md §4: the secondary button is surfaceSecondary in both modes.
         assertEquals(Tokens.surfaceSecondary, BrowseColors.surfaceSecondary)
         assertEquals(Tokens.surfaceSecondary, EditColors.surfaceSecondary)
     }
 
     @Test
-    fun editControlsAreLightWithBlackText() {
-        // DESIGN.md §1, §9: Edit is not a dark theme — only the canvas surround is dark.
+    fun editControlsAreWhiteOnBlack() {
+        // DESIGN.md §1: black everywhere, white ink; selection inverts to white with black ink.
         assertEquals(Tokens.editInk, EditColors.ink)
         assertEquals(Tokens.ink, EditColors.ink)
-        assertTrue(EditColors.surface.luminance() > LIGHT_SURFACE)
+        assertTrue(EditColors.surface.luminance() < DARK_SURFACE)
         assertTrue(EditColors.background.luminance() < DARK_SURFACE)
+        assertTrue(EditColors.ink.luminance() > LIGHT_SURFACE)
+        assertTrue(Tokens.selectionFill.luminance() > LIGHT_SURFACE)
+        assertTrue(Tokens.selectionInk.luminance() < DARK_SURFACE)
     }
 
     @Test
@@ -146,19 +155,22 @@ class TokensTest {
     }
 
     @Test
-    fun smallTextKeepsFourAndAHalfToOneOnTheGlassSheet() {
-        // DESIGN.md §2: link and error text at 4.5:1 on its real background — the sheet's bottom
-        // edge is the darkest it gets, where the 94% glass sits over black.
-        val glassOverBlack = Tokens.sheetGlassBottom.compositeOver(Color.Black)
+    fun smallTextKeepsFourAndAHalfToOneOnBlackAndRaised() {
+        // DESIGN.md §2: link, error and secondary text at 4.5:1 on black and on surfaceRaised,
+        // the two surfaces small text sits on.
         listOf(
             "linkText" to Tokens.linkText,
             "errorText" to Tokens.errorText,
             "inkSecondary" to Tokens.inkSecondary,
+            "ink" to Tokens.ink,
         ).forEach { (name, color) ->
-            assertTrue(contrast(color, glassOverBlack) >= MIN_TEXT_CONTRAST, "$name on glass")
-            assertTrue(contrast(color, Tokens.canvasLight) >= MIN_TEXT_CONTRAST, "$name on canvasLight")
+            assertTrue(contrast(color, Tokens.background) >= MIN_TEXT_CONTRAST, "$name on black")
+            assertTrue(contrast(color, Tokens.surfaceRaised) >= MIN_TEXT_CONTRAST, "$name on surfaceRaised")
         }
         assertTrue(contrast(Tokens.onAccent, Tokens.primaryFill) >= MIN_TEXT_CONTRAST, "onAccent on primaryFill")
+        assertTrue(contrast(Tokens.selectionInk, Tokens.selectionFill) >= MIN_TEXT_CONTRAST, "selectionInk")
+        assertTrue(contrast(Tokens.selectionInk, Tokens.accentSoft) >= MIN_TEXT_CONTRAST, "value over wedge")
+        assertTrue(contrast(Tokens.accent, Tokens.background) >= MIN_TEXT_CONTRAST, "accent text on black")
         // §4 State display: overlay text on the 40% black scrim over a mid-grey photo. Over a
         // white one the scrim alone is not enough, which is what OverlayTextShadow is for.
         val scrimOverGrey = Color.Black.copy(alpha = 0.4f).compositeOver(Color(0xFF808080))
@@ -167,10 +179,8 @@ class TokensTest {
     }
 
     @Test
-    fun onlyTheGlassSheetCastsAShadow() {
-        // DESIGN.md §6: the sheet's 10dp shadow and 1dp edge; iconCircle at most 2dp.
-        assertEquals(10f, Elevation.sheetShadow.value)
-        assertEquals(1f, Elevation.sheetEdgeWidth.value)
+    fun onlyThePhotoIconCircleLifts() {
+        // DESIGN.md §6: no shadows; a photo's iconCircle at most 2dp.
         assertEquals(2f, Elevation.iconCircle.value)
     }
 

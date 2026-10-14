@@ -28,12 +28,11 @@ class MainActivity : ComponentActivity() {
     lateinit var exportSettingsStore: ExportSettingsStore
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // DESIGN.md §8: edge-to-edge with transparent bars. Both screens put a light bar under
-        // the status bar and a light surface under the navigation bar, so the icons are dark —
-        // fixed, not following the OS dark setting, because the app's own style does not.
+        // DESIGN.md §8: edge-to-edge with transparent bars over the app's black, so the icons
+        // are light — fixed, not following the OS dark setting, because the app's own style does not.
         enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
+            statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
         )
         super.onCreate(savedInstanceState)
         setContent {

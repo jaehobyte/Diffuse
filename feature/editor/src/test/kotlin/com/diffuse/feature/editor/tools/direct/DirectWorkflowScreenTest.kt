@@ -74,7 +74,7 @@ class DirectWorkflowScreenTest {
         val viewModel = planned(LOCAL_AND_TOPAZ)
         var opened: String? = null
         compose.setContent {
-            EditorRoute(onBack = {}, onExport = {}, viewModel = viewModel, onOpenProject = { opened = it })
+            EditorRoute(onExport = {}, viewModel = viewModel, onOpenProject = { opened = it })
         }
         compose.waitForIdle()
 
@@ -115,7 +115,7 @@ class DirectWorkflowScreenTest {
     @Test
     fun `with Topaz turned off on the screen, the canvas shows the local candidate and 적용 commits it`() {
         val viewModel = planned(LOCAL_AND_TOPAZ)
-        compose.setContent { EditorRoute(onBack = {}, onExport = {}, viewModel = viewModel) }
+        compose.setContent { EditorRoute(onExport = {}, viewModel = viewModel) }
         compose.waitForIdle()
 
         compose.onNodeWithTag(directItemTag("s2")).performScrollTo().performClick()

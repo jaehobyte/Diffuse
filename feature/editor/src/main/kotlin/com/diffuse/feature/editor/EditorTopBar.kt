@@ -9,11 +9,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Redo
 import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.rounded.Compare
-import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
@@ -24,10 +22,13 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import com.diffuse.core.ui.components.PrimaryPill
+import com.diffuse.core.ui.components.TertiaryPill
 import com.diffuse.core.ui.theme.LocalAppColors
 
-/** DESIGN.md §4: 56dp top bar on editSurface; ← left, undo/redo centre, compare + export right. */
+/**
+ * DESIGN.md §4: the Photo Editor's bar — black, ↶ ↷ ◐ on the left, `원본 복원` and `저장` as text
+ * buttons on the right, and no back arrow (system back leaves).
+ */
 private val TopBarHeight = 56.dp
 private val TopBarPadding = 8.dp
 private val IconSize = 24.dp
@@ -45,7 +46,6 @@ fun EditorTopBar(
     canRedo: Boolean,
     canReset: Boolean,
     canCompare: Boolean,
-    onBack: () -> Unit,
     onUndo: () -> Unit,
     onRedo: () -> Unit,
     onReset: () -> Unit,
@@ -60,25 +60,30 @@ fun EditorTopBar(
             .fillMaxWidth()
             .background(colors.surface)
             .statusBarsPadding()
-            // A minimum, so the 48dp export pill can grow with a large font instead of clipping.
+            // A minimum, so the 48dp text buttons can grow with a large font instead of clipping.
             .heightIn(min = TopBarHeight)
             .padding(horizontal = TopBarPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // The icons carry the weight so the export pill is measured at its own width first:
-        // a Korean label squeezed into whatever is left over is what "내보내기" was getting.
+        // The icons carry the weight so the text buttons are measured at their own width first:
+        // a Korean label squeezed into whatever is left over is what "내보내기" once got.
         Row(
             modifier = Modifier.weight(1f),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            BarIcon(Icons.AutoMirrored.Rounded.ArrowBack, R.string.editor_back, true, onBack)
             BarIcon(Icons.AutoMirrored.Rounded.Undo, R.string.editor_undo, canUndo, onUndo)
             BarIcon(Icons.AutoMirrored.Rounded.Redo, R.string.editor_redo, canRedo, onRedo)
-            BarIcon(Icons.Rounded.RestartAlt, R.string.editor_reset, canReset, onReset)
+            CompareButton(enabled = canCompare, onCompareChange = onCompareChange)
         }
 
-        CompareButton(enabled = canCompare, onCompareChange = onCompareChange)
-        PrimaryPill(
+        val reset = stringResource(R.string.editor_reset)
+        TertiaryPill(
+            text = reset,
+            onClick = onReset,
+            enabled = canReset,
+            modifier = Modifier.testTag(reset),
+        )
+        TertiaryPill(
             text = stringResource(R.string.editor_export),
             onClick = onExport,
             modifier = Modifier.testTag(ExportTestTag),

@@ -19,10 +19,10 @@ import com.diffuse.core.ui.theme.Shapes
 import com.diffuse.core.ui.theme.Typography
 
 /**
- * DESIGN.md §4 `tertiary`: transparent fill, `inkSecondary` label. Cancel / close.
+ * DESIGN.md §4 `tertiary`: transparent fill, `ink` label — the Photo Editor's text buttons.
  *
- * @param color overrides the label for the two places the default is wrong: a link action
- * (`AppColors.link`) and a cancel drawn over a dark progress scrim (`Tokens.canvasOverlayInk`).
+ * @param color overrides the label where the default is wrong: a sheet's 적용 (`AppColors.accent`)
+ * and a link action (`AppColors.link`).
  */
 @Composable
 fun TertiaryPill(
@@ -46,7 +46,7 @@ fun TertiaryPill(
         Text(
             text = text,
             style = Typography.bodyStrong,
-            color = color.takeOrElse { colors.inkSecondary }.copy(alpha = alpha),
+            color = color.takeOrElse { colors.ink }.copy(alpha = alpha),
         )
     }
 }

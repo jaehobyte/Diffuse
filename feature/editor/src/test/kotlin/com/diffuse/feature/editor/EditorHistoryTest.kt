@@ -52,7 +52,6 @@ class EditorHistoryTest {
                 canUndo = canUndo,
                 canRedo = canRedo,
                 canCompare = false,
-                onBack = {},
                 onUndo = { history.undo() },
                 onRedo = { history.redo() },
                 canReset = current.operations.isNotEmpty(),
