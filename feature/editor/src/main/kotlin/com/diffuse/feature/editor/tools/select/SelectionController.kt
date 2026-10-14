@@ -47,8 +47,11 @@ class SelectionController(
     /** In flight `byPoints` or `byText`; a new prompt supersedes it rather than queueing (§4). */
     private var job: Job? = null
 
-    /** Set when the user gives up on an `open` that is already on the wire. See [open]. */
-    private var abandonedOpen = false
+    /**
+     * Bumped by every [open] and by giving up on one; an `open` that comes back under an older
+     * ticket is not wanted any more. See [open].
+     */
+    private var openTicket = 0
 
     /** Whether this backend has ever answered. See [explain]. */
     private var everReady = false
@@ -123,22 +126,22 @@ class SelectionController(
         // `preparing` as well as `session`: an upload takes seconds, and without this a second
         // tap in that window starts a second one.
         if (_state.value.session != null || _state.value.preparing) return
-        abandonedOpen = false
+        val ticket = ++openTicket
         _state.value = _state.value.copy(preparing = true)
         // Deliberately not held in `job`. Cancelling an upload that is already on the wire does
         // not un-create the session the server makes from it — it only loses the id, leaving an
         // orphan to occupy one of the backend's four slots until its TTL expires. So the call
         // always runs to completion, and a session nobody wants any more is released below.
+        // `preparing` was already reset when it was given up on, and may belong to a newer open.
         scope.launch {
-            when (val opened = segmentation.open(preview)) {
-                is Result.Success -> if (abandonedOpen) {
-                    segmentation.close(opened.value)
-                    _state.value = _state.value.copy(preparing = false)
-                } else {
+            val opened = segmentation.open(preview)
+            val wanted = ticket == openTicket
+            when {
+                opened is Result.Success && !wanted -> segmentation.close(opened.value)
+                !wanted -> Unit
+                opened is Result.Success ->
                     _state.value = _state.value.copy(session = opened.value, preparing = false)
-                }
-                is Result.Failure -> _state.value =
-                    _state.value.copy(preparing = false, message = R.string.select_failed)
+                else -> _state.value = _state.value.copy(preparing = false, message = R.string.select_failed)
             }
         }
     }
@@ -148,7 +151,7 @@ class SelectionController(
      * without this leaks it for the backend's whole TTL.
      */
     suspend fun release() {
-        abandonedOpen = true
+        openTicket++
         job?.cancel()
         _state.value.session?.let { segmentation.close(it) }
         _state.value = _state.value.cleared().copy(session = null, preparing = false, busy = false)
@@ -245,8 +248,11 @@ class SelectionController(
     fun invert() {
         val current = _state.value
         val mask = current.mask ?: return
+        // The run 반전 ends is the one a prompt in flight is for; its answer would undo the flip.
+        job?.cancel()
         val flipped = MaskOps.inverted(mask)
         _state.value = current.copy(
+            busy = false,
             mask = flipped,
             base = flipped,
             points = emptyList(),
@@ -265,7 +271,7 @@ class SelectionController(
     fun cancelWork() {
         // A prompt creates nothing, so cancelling one is free; an `open` is not, so it is
         // marked abandoned instead and released as soon as its id is known.
-        abandonedOpen = true
+        openTicket++
         job?.cancel()
         // Whatever was accumulated stays exactly as it was.
         _state.value = _state.value.copy(preparing = false, busy = false, phraseBusy = false)
@@ -318,18 +324,20 @@ class SelectionController(
         }
         _state.value = next.copy(busy = true)
         job = scope.launch {
-            _state.value = when (val result = segmentation.byPoints(session, prompt)) {
+            val result = segmentation.byPoints(session, prompt)
+            // Written onto the state as it is now: a phrase typed meanwhile is not taken back.
+            _state.value = when (result) {
                 is Result.Success -> {
                     // The run's result merges into what was already accumulated (§4).
                     val merged = MaskOps.merged(next.base, result.value.alpha, next.mode)
-                    next.copy(
+                    _state.value.copy(
                         mask = merged.takeUnless(MaskOutline::isEmpty),
                         lowConfidence = result.value.score < SelectionState.LOW_CONFIDENCE_SCORE,
                         busy = false,
                     )
                 }
                 // The mask the user already had survives a failed prompt.
-                is Result.Failure -> next.copy(busy = false, message = R.string.select_failed)
+                is Result.Failure -> _state.value.copy(busy = false, message = R.string.select_failed)
             }
         }
     }

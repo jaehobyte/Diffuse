@@ -86,11 +86,13 @@ fun AdjustSlider(
     val currentValue by rememberUpdatedState(value)
     val change by rememberUpdatedState(onChange)
     val finished by rememberUpdatedState(onChangeFinished)
+    // The gesture blocks outlive a change of range, so they read it through this.
+    val currentRange by rememberUpdatedState(range)
 
     fun valueAt(x: Float): Float {
         val usable = (rulerWidthPx - 2f * insetPx).coerceAtLeast(1f)
         val fraction = ((x - insetPx) / usable).coerceIn(0f, 1f)
-        return range.start + fraction * (range.endInclusive - range.start)
+        return currentRange.start + fraction * (currentRange.endInclusive - currentRange.start)
     }
 
     Row(
@@ -107,7 +109,7 @@ fun AdjustSlider(
                 .height(TouchTargetHeight)
                 .sliderGestures(
                     onReset = {
-                        change(DEFAULT_VALUE.coerceIn(range))
+                        change(DEFAULT_VALUE.coerceIn(currentRange))
                         finished()
                     },
                     onDragTo = { x -> change(valueAt(x)) },

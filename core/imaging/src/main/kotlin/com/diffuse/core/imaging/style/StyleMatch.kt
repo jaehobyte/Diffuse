@@ -6,6 +6,7 @@ import com.diffuse.core.imaging.model.AdjustKind
 import com.diffuse.core.imaging.model.HslBand
 import com.diffuse.core.imaging.model.HslColor
 import com.diffuse.core.imaging.render.Ops
+import com.diffuse.core.imaging.render.luma
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.ln
 import kotlin.math.sqrt
@@ -40,10 +41,6 @@ object StyleMatch {
     /** `ColorOps` shifts a channel by `v × 0.1`; temperature moves two channels apart. */
     private const val TEMPERATURE_SPREAD = 0.2f
     private const val TINT_SHIFT = 0.1f
-
-    private const val LUMA_R = 0.2126f
-    private const val LUMA_G = 0.7152f
-    private const val LUMA_B = 0.0722f
 
     /**
      * §5: shadows and highlights are not measured. They are the tonal distribution `Contrast`
@@ -151,7 +148,7 @@ object StyleMatch {
             // deviation the ramp's: an offset that is zero-mean in RGB is not zero-mean in luma,
             // because luma weights green ten times blue, and the leftover showed up as +0.06 of
             // contrast on a frame that is supposed to measure as nothing at all.
-            val pureLuma = LUMA_R * red + LUMA_G * green + LUMA_B * blue
+            val pureLuma = luma(red, green, blue)
             bitmap.setPixel(
                 index % FRAME,
                 index / FRAME,
@@ -227,7 +224,7 @@ object StyleMatch {
                     val r = Color.red(argb) / FULL
                     val g = Color.green(argb) / FULL
                     val b = Color.blue(argb) / FULL
-                    val l = LUMA_R * r + LUMA_G * g + LUMA_B * b
+                    val l = luma(r, g, b)
                     red += r
                     green += g
                     blue += b

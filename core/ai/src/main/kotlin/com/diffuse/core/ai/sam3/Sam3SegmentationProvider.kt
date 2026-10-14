@@ -81,6 +81,7 @@ class Sam3SegmentationProvider @Inject internal constructor(
         prompting(session) { imageId -> client.points(imageId, prompt) }
             .map { masks ->
                 // multimask=true returns the model's candidates; api.md orders them by score.
+                masks.drop(1).forEach { it.alpha.recycle() }
                 masks.firstOrNull()?.let { scaled(it, session) }
                     ?: return Result.Failure(AppError.Invalid("no mask returned"))
             }

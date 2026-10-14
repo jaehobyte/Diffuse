@@ -27,8 +27,10 @@ import com.diffuse.core.ui.theme.LocalAppColors
 import com.diffuse.core.ui.theme.Tokens
 import com.diffuse.core.ui.theme.Typography
 
-/** specs/tool_groups.md §2: the strip's geometry is the same at both levels. */
-/** DESIGN.md §4: 72dp black strip, 64dp items, 26dp icon, the selected one yellow; no indicator. */
+/**
+ * DESIGN.md §4: 72dp black strip, 64dp items, 26dp icon, the selected one yellow; no indicator.
+ * specs/tool_groups.md §2: the strip's geometry is the same at both levels.
+ */
 private val StripHeight = 72.dp
 private val ItemWidth = 64.dp
 private val IconSize = 26.dp

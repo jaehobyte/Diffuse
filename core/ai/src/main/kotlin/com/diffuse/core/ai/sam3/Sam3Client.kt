@@ -2,28 +2,23 @@ package com.diffuse.core.ai.sam3
 
 import android.graphics.Bitmap
 import com.diffuse.core.ai.PointPrompt
+import com.diffuse.core.ai.gemini.await
 import com.diffuse.core.common.AppError
 import com.diffuse.core.common.DispatcherProvider
 import com.diffuse.core.common.Logger
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
-import okhttp3.Call
-import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.Response
 import java.io.IOException
 import java.time.Instant
 import java.time.format.DateTimeParseException
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.coroutineContext
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 
 internal data class Sam3Session(
     val imageId: String,
@@ -175,6 +170,9 @@ internal class Sam3Client(
             Sam3Outcome.Failure(AppError.Io(e))
         } catch (e: kotlinx.serialization.SerializationException) {
             Sam3Outcome.Failure(AppError.Io(e))
+        } catch (e: IllegalArgumentException) {
+            // A mask field that is not base64.
+            Sam3Outcome.Failure(AppError.Io(e))
         }
     }
 
@@ -202,19 +200,6 @@ internal class Sam3Client(
     } catch (_: DateTimeParseException) {
         // Advisory only (specs/ai_provider.md §3); an unreadable timestamp is not a failure.
         Long.MAX_VALUE
-    }
-
-    private suspend fun Call.await(): Response = suspendCancellableCoroutine { continuation ->
-        continuation.invokeOnCancellation { cancel() }
-        enqueue(object : Callback {
-            override fun onFailure(call: Call, e: IOException) {
-                if (!continuation.isCancelled) continuation.resumeWithException(e)
-            }
-
-            override fun onResponse(call: Call, response: Response) {
-                continuation.resume(response)
-            }
-        })
     }
 
     companion object {

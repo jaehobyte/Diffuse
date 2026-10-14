@@ -23,6 +23,8 @@ import com.diffuse.feature.editor.tools.erase.EraseMask
 import com.diffuse.feature.editor.tools.fill.FillCommit
 import com.diffuse.feature.editor.tools.fill.FillMask
 import com.diffuse.feature.editor.tools.select.MaskOps
+import com.diffuse.feature.editor.tools.select.MaskOutline
+import com.diffuse.feature.editor.tools.style.withGlobalAdjusts
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -345,7 +347,7 @@ class PlanRunner(
         ): Result<EditDocument> {
             val found = when (val answered = segmentation.byText(session, step.phrase)) {
                 is Result.Failure -> return answered
-                is Result.Success -> answered.value.map { it.alpha }.filter(::anySet)
+                is Result.Success -> answered.value.map { it.alpha }.filter { !MaskOutline.isEmpty(it) }
             }
             return when {
                 found.isEmpty() -> Result.Failure(AppError.Invalid("$NOT_FOUND_PREFIX${step.phrase}"))
@@ -430,9 +432,7 @@ class PlanRunner(
          * document alone; `apply_style`'s enum is closed, so that means the catalog moved.
          */
         private suspend fun style(step: PlanStep.Style, document: EditDocument): EditDocument =
-            styleParams(step.style, step.intensity)
-                .entries
-                .fold(document) { acc, (kind, value) -> acc.withAdjust(kind, value, maskId = null) }
+            document.withGlobalAdjusts(styleParams(step.style, step.intensity))
 
         private fun cutOut(document: EditDocument): Result<EditDocument> {
             val maskId = document.activeMaskId
@@ -472,12 +472,3 @@ class PlanRunner(
         const val NEEDS_PREVIEW = "needs preview"
     }
 }
-
-/** §18: an instance with no pixel set is no selection at all (an all-zero alpha). */
-private fun anySet(mask: Bitmap): Boolean {
-    val pixels = IntArray(mask.width * mask.height)
-    mask.getPixels(pixels, 0, mask.width, 0, 0, mask.width, mask.height)
-    return pixels.any { it ushr ALPHA_SHIFT != 0 }
-}
-
-private const val ALPHA_SHIFT = 24

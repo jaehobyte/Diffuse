@@ -64,6 +64,18 @@ class CropStateTest {
     }
 
     @Test
+    fun `a full straighten right survives the round trip on every quarter turn`() {
+        for (turns in 0 until 4) {
+            val state = CropState(sourceAspect = imageAspect).rotated(turns).straightened(45f)
+
+            val restored = CropState.from(state.applyTo(document), sourceAspect = imageAspect)
+
+            assertEquals("turns $turns", turns, restored.quarterTurns)
+            assertEquals("turns $turns", 45f, restored.straightenDeg, 0.02f)
+        }
+    }
+
+    @Test
     fun `a full frame apply removes the crop`() {
         val applied = CropState().applyTo(document.withCrop(RectF(0.2f, 0.2f, 0.8f, 0.8f), 0f))
 

@@ -149,7 +149,11 @@ internal fun EditorWithExport(
             )
         }
         if (exportJob != null) {
-            ExportProgressOverlay(progress = progress, onCancel = { exportJob?.cancel() })
+            ExportProgressOverlay(
+                progress = progress,
+                // A cancelled job never reaches its own `exportJob = null`.
+                onCancel = { exportJob?.cancel(); exportJob = null },
+            )
         }
         SnackbarHost(snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
     }

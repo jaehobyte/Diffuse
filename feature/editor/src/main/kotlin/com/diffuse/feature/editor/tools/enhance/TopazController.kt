@@ -409,11 +409,19 @@ class TopazController(
             input = null,
             estimate = TopazEstimateState.NotChecked,
         )
+        work?.cancel()
         work = scope.launch {
-            val files = session ?: when (val opened = processor.open()) {
-                is Result.Success -> opened.value.also { session = it }
+            // Not cancellable once asked: a folder made for a run that moved on is discarded here,
+            // not lost with its path.
+            val files = session ?: when (val opened = withContext(NonCancellable) { processor.open() }) {
+                is Result.Success -> opened.value
                 is Result.Failure -> return@launch prepared(token, null)
             }
+            if (token != runToken) {
+                if (files !== session) withContext(NonCancellable) { processor.discard(files) }
+                return@launch
+            }
+            session = files
             prepared(token, processor.prepare(document, files))
         }
     }

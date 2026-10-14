@@ -68,11 +68,7 @@ internal object MultiShotOp {
     fun protect(composite: Bitmap, input: Bitmap, mask: Bitmap): Bitmap {
         val width = composite.width
         val height = composite.height
-        val scaled = if (mask.width == width && mask.height == height) {
-            mask
-        } else {
-            Bitmap.createScaledBitmap(mask, width, height, true)
-        }
+        val scaled = mask.scaledTo(width, height, filter = true)
         val out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val compositeRow = IntArray(width)
         val inputRow = IntArray(width)

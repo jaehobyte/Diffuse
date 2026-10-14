@@ -13,6 +13,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.res.stringResource
 import com.diffuse.feature.editor.canvas.CanvasGestureMode
@@ -25,8 +27,6 @@ import com.diffuse.feature.editor.tools.ToolSheetHost
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.ui.graphics.asAndroidBitmap
-import androidx.compose.ui.platform.LocalContext
 import com.diffuse.feature.editor.tools.style.StyleSheet
 import com.diffuse.feature.editor.tools.enhance.TopazActions
 import com.diffuse.feature.editor.tools.enhance.TopazCompareLabel
@@ -67,6 +67,9 @@ fun EditorRoute(
 
     OpenedCopies(state, viewModel, onOpenProject)
 
+    // specs/persistence.md: the app going to the background saves now, not 2s later.
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.onStop() }
+
     // specs/tool_groups.md §3: the open level is UI state, not document state, and it resets to
     // `Root` on every entry to the screen — a user coming back to a photo sees the whole app.
     var toolLevel by rememberSaveable { mutableStateOf(ToolGroup.Root) }
@@ -82,6 +85,7 @@ fun EditorRoute(
     // §4: system back closes the level before it leaves the screen.
     BackHandler(enabled = toolLevel != ToolGroup.Root) { toolLevel = ToolGroup.Root }
 
+    val pointTaps = pointTaps(state, viewModel)
     Box(modifier = modifier.fillMaxSize()) {
         EditorScreen(
             preview = shownPreview(state),
@@ -100,12 +104,8 @@ fun EditorRoute(
             overlayTransform = overlayTransform(state),
             disabledTools = disabledTools(state),
             toolLevel = ToolLevelState(toolLevel) { toolLevel = it },
-            gestureMode = if (pointTaps(state, viewModel) != null) {
-                CanvasGestureMode.SelectPoint
-            } else {
-                CanvasGestureMode.Pan
-            },
-            pointTaps = pointTaps(state, viewModel),
+            gestureMode = if (pointTaps != null) CanvasGestureMode.SelectPoint else CanvasGestureMode.Pan,
+            pointTaps = pointTaps,
             // specs/selection_tool.md §5: while `busy` the previous mask stays; only the
             // one-off `open` earns the overlay.
             busy = isBusy(state),
@@ -414,12 +414,6 @@ private fun overlayTransform(state: EditorUiState): OverlayTransform = when (sta
     else -> OverlayTransform.None
 }
 
-/** The bare source's shape: what outpaint.md §6's ratio readout is measured against. */
-private fun sourceAspect(state: EditorUiState): Float {
-    val source = state.source
-    return if (source == null || source.height <= 0) 1f else source.width.toFloat() / source.height
-}
-
 /**
  * specs/generative_fill.md §6: the bar supplies the noun and the IME Done key does what 적용
  * does, so submitting from the keyboard commits rather than only dismissing it.
@@ -462,22 +456,9 @@ private fun ExpandToolSheet(state: EditorUiState, viewModel: EditorViewModel) {
  */
 @Composable
 private fun StyleToolSheet(state: EditorUiState, viewModel: EditorViewModel) {
-    val context = LocalContext.current
     val picker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia(),
-    ) { uri ->
-        uri?.let { chosen ->
-            // The controller is called straight from here: `EditorViewModel` is at detekt's
-            // function ceiling (T65, T78), and this reads the same state the route already holds.
-            decodeReference(context, chosen)?.let { reference ->
-                viewModel.style.matchReference(
-                    reference = reference,
-                    image = state.preview?.asAndroidBitmap(),
-                    document = state.document,
-                )
-            } ?: viewModel.style.showFailure()
-        }
-    }
+    ) { uri -> uri?.let(viewModel.matchStyleReference) }
     StyleSheet(
         state = state.style,
         onSelect = viewModel.style::select,
@@ -492,18 +473,6 @@ private fun StyleToolSheet(state: EditorUiState, viewModel: EditorViewModel) {
         onApply = viewModel::applySheet,
     )
 }
-
-/**
- * Decoded here rather than in the ViewModel: it is one `ContentResolver` read of a `Uri` the
- * picker just handed this composable, and routing it through the graph would add a dependency for
- * a bitmap that lives for one call (§10).
- */
-private fun decodeReference(context: android.content.Context, uri: android.net.Uri) =
-    runCatching {
-        context.contentResolver.openInputStream(uri).use {
-            android.graphics.BitmapFactory.decodeStream(it)
-        }
-    }.getOrNull()
 
 @Composable
 private fun SettingsSheet(state: EditorUiState, viewModel: EditorViewModel) {

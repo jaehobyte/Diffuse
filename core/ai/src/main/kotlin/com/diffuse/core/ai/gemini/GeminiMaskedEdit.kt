@@ -79,6 +79,7 @@ internal class GeminiMaskedEdit(
         is Result.Success -> if (
             StillWhite.fills(result.value) { x, y -> (mask.getPixel(x, y) ushr ALPHA_SHIFT) != 0 }
         ) {
+            result.value.recycle()
             Result.Failure(AppError.Unavailable)
         } else {
             result

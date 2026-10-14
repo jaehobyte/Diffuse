@@ -252,7 +252,8 @@ class CpuRenderer(
         return if (mask == null || result == null) {
             input
         } else {
-            MaskBlend.blend(input, scaleTo(result, input), mask)
+            val scaled = scaleTo(result, input)
+            MaskBlend.blend(input, scaled, mask).also { if (scaled !== result) scaled.recycle() }
         }
     }
 
@@ -293,6 +294,7 @@ class CpuRenderer(
             if (shot.placement.opacity <= 0f) return@forEach
             val subject = decodeShot(shot.subjectRef, targetLongEdgePx) ?: throw MissingShotException()
             MultiShotOp.draw(output, shot, subject)
+            if (targetLongEdgePx >= MAX_LONG_EDGE_PX && transients[shot.subjectRef] !== subject) subject.recycle()
         }
         val hero = multiShot.timeline?.hero?.takeIf { multiShot.mode == MultiShotMode.Timeline } ?: return output
         coroutineContext.ensureActive()
@@ -356,17 +358,13 @@ class CpuRenderer(
      * pixels the user approved rather than generating new ones.
      */
     private fun scaleTo(source: Bitmap, like: Bitmap): Bitmap =
-        if (source.width == like.width && source.height == like.height) {
-            source
-        } else {
-            Bitmap.createScaledBitmap(source, like.width, like.height, true)
-        }
+        source.scaledTo(like.width, like.height, filter = true)
 
     private suspend fun decodeResult(ref: ImageRef): Bitmap? {
         (transients[ref] ?: resultCache[ref])?.let { return it }
         return withContext(dispatchers.io) {
             BitmapFactory.decodeFile(ref.path)
-                ?.copy(Bitmap.Config.ARGB_8888, false)
+                ?.toArgb()
                 ?.also { resultCache.put(ref, it) }
         }
     }

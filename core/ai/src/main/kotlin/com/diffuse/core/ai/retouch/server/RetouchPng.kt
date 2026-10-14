@@ -63,7 +63,7 @@ internal object RetouchPng {
         var ended = false
         while (offset + CHUNK_OVERHEAD <= bytes.size && !ended) {
             val length = readInt(bytes, offset)
-            if (length < 0 || offset + CHUNK_OVERHEAD + length > bytes.size) return null
+            if (length < 0 || length > bytes.size - offset - CHUNK_OVERHEAD) return null
             val type = String(bytes, offset + LENGTH_BYTES, TYPE_BYTES, Charsets.US_ASCII)
             val dataStart = offset + LENGTH_BYTES + TYPE_BYTES
             val crc = CRC32().apply { update(bytes, offset + LENGTH_BYTES, TYPE_BYTES + length) }

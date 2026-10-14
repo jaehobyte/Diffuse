@@ -34,36 +34,18 @@ class GeminiMatchStyleProvider @Inject internal constructor(
 
     /** §5: the key, with **no probe** — generative_erase.md §7's argument, unchanged. */
     override val availability: StateFlow<Availability> = settings.config
-        .map(::availabilityFor)
-        .stateIn(scope, SharingStarted.Eagerly, availabilityFor(settings.config.value))
+        .map(::geminiAvailability)
+        .stateIn(scope, SharingStarted.Eagerly, geminiAvailability(settings.config.value))
 
     override suspend fun match(
         image: Bitmap,
         reference: Bitmap,
     ): Result<Map<AdjustKind, Float>> = withContext(dispatchers.io) {
-        val photo = encode(image) ?: return@withContext Result.Failure(AppError.TooLarge)
+        val photo = GeminiImageCodec.encodeScaled(image) ?: return@withContext Result.Failure(AppError.TooLarge)
         coroutineContext.ensureActive()
-        val look = encode(reference) ?: return@withContext Result.Failure(AppError.TooLarge)
+        val look = GeminiImageCodec.encodeScaled(reference) ?: return@withContext Result.Failure(AppError.TooLarge)
         coroutineContext.ensureActive()
 
         client.match(photo, look)
-    }
-
-    private fun encode(image: Bitmap): ByteArray? {
-        val scaled = GeminiImageCodec.downscale(image)
-        return try {
-            GeminiImageCodec.encode(scaled)
-        } finally {
-            if (scaled !== image) scaled.recycle()
-        }
-    }
-
-    private companion object {
-        fun availabilityFor(config: GeminiConfig): Availability =
-            if (config.isConfigured) {
-                Availability.Ready
-            } else {
-                Availability.Unavailable(AppError.Invalid("no api key"))
-            }
     }
 }

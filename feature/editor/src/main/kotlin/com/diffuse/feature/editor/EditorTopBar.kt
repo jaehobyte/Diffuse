@@ -128,8 +128,12 @@ private fun CompareButton(enabled: Boolean, onCompareChange: (Boolean) -> Unit) 
                 detectTapGestures(
                     onPress = {
                         onCompareChange(true)
-                        tryAwaitRelease()
-                        onCompareChange(false)
+                        // `enabled` flipping restarts this block and cancels the wait; release anyway.
+                        try {
+                            tryAwaitRelease()
+                        } finally {
+                            onCompareChange(false)
+                        }
                     },
                 )
             },

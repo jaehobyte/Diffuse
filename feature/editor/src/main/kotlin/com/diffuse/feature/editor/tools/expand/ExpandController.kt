@@ -12,6 +12,7 @@ import com.diffuse.core.imaging.model.ImageRef
 import com.diffuse.core.imaging.model.Margins
 import com.diffuse.feature.editor.R
 import com.diffuse.feature.editor.tools.ToolTap
+import com.diffuse.feature.editor.tools.isSafetyBlock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -155,20 +156,15 @@ class ExpandController(
     }
 
     /**
-     * §6's last two rows. A safety block is an `Invalid` with a recognizable prefix (duplicated
-     * for the reason `EraseController` gives: the client is `internal` to `core:ai`). The
-     * still-white guard's `Unavailable` and the aspect guard's `Unsupported` say the same thing
+     * §6's last two rows. A safety block is an `Invalid` with a recognizable prefix
+     * (`isSafetyBlock`). The still-white guard's `Unavailable` and the aspect guard's `Unsupported` say the same thing
      * to the user — the border did not get painted — so they share one line.
      */
     @StringRes
     private fun messageFor(error: AppError): Int =
-        if (error is AppError.Invalid && error.detail.startsWith(BLOCKED_PREFIX)) {
+        if (error.isSafetyBlock()) {
             R.string.expand_blocked
         } else {
             R.string.expand_failed
         }
-
-    private companion object {
-        const val BLOCKED_PREFIX = "blocked:"
-    }
 }

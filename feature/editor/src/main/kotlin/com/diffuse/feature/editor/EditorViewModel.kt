@@ -146,6 +146,9 @@ class EditorViewModel @Inject constructor(
     /** specs/editor_shell.md: a sheet snapshots the document so Cancel can restore it. */
     private var sheetBaseline: EditDocument? = null
 
+    /** specs/imaging.md: a picked or produced photo opens EXIF-upright at the working size. */
+    private val loader = ImageLoader(context.contentResolver, dispatchers)
+
     /** §16, §19: what a Topaz run would be given for [EditDocument] — its key, size and alpha. */
     private val topazCapability: suspend (EditDocument) -> TopazCapability = { document ->
         withContext(dispatchers.io) { topazCapabilityOf(ai.topaz.config.value.isConfigured, document) }
@@ -161,13 +164,11 @@ class EditorViewModel @Inject constructor(
         provider = ai.topaz,
         workspace = topazStorage.workspace,
         host = object : TopazHost {
-            private val loader = ImageLoader(context.contentResolver, dispatchers)
-
             override suspend fun renderInput(document: EditDocument): Bitmap? =
                 (renderer.full(document) as? Result.Success)?.value
 
             override suspend fun renderBefore(document: EditDocument): Bitmap? =
-                (renderer.preview(document, PREVIEW_LONG_EDGE_PX) as? Result.Success)?.value
+                renderer.previewOf(document)
 
             override suspend fun saveToGallery(file: File, mimeType: String, width: Int, height: Int) =
                 topazStorage.saver.save(file, mimeType, width, height)
@@ -280,7 +281,7 @@ class EditorViewModel @Inject constructor(
                 document = document,
                 notes = notes,
                 styles = styleEffectsOf(style.presets()),
-                topaz = withContext(dispatchers.io) { topazCapabilityOf(ai.topaz.config.value.isConfigured, document) },
+                topaz = topazCapability(document),
                 imageWidth = frame.width,
                 imageHeight = frame.height,
             )
@@ -301,13 +302,12 @@ class EditorViewModel @Inject constructor(
 
             override fun commit(document: EditDocument) {
                 history?.push(document)
-                history?.commitCoalesce()
             }
 
             override suspend fun releaseSession() = selection.release()
 
             override suspend fun render(document: EditDocument): Bitmap? =
-                (renderer.preview(document, PREVIEW_LONG_EDGE_PX) as? Result.Success)?.value
+                renderer.previewOf(document)
 
             override suspend fun resolveMask(document: EditDocument, maskId: String): Bitmap? =
                 renderer.resolveMask(document, maskId)
@@ -341,8 +341,6 @@ class EditorViewModel @Inject constructor(
         settingsChanges = ai.sam3Settings.config,
         serverHost = ai.sam3Settings.config.map { it.baseUrl },
         host = object : MultiShotHost {
-            private val loader = ImageLoader(context.contentResolver, dispatchers)
-
             override suspend fun loadPhoto(uri: Uri): Result<Bitmap> = when (val loaded = loader.load(uri)) {
                 is Result.Failure -> loaded
                 is Result.Success -> Result.Success(loaded.value.bitmap)
@@ -361,7 +359,7 @@ class EditorViewModel @Inject constructor(
             override suspend fun releaseSelection() = selection.release()
 
             override suspend fun renderBase(document: EditDocument): Bitmap? =
-                (renderer.preview(document, PREVIEW_LONG_EDGE_PX) as? Result.Success)?.value
+                renderer.previewOf(document)
 
             override fun currentDocument(): EditDocument? = history?.current?.value
 
@@ -695,7 +693,6 @@ class EditorViewModel @Inject constructor(
         val stack = history
         if (baseline != null && stack != null && stack.current.value != baseline) {
             stack.push(baseline)
-            stack.commitCoalesce()
         }
         sheetBaseline = null
         selection.closeSheet()
@@ -779,9 +776,8 @@ class EditorViewModel @Inject constructor(
      * specs/selection_tool.md §6: the mask becomes a file and one history entry. Writing it
      * first means a failed write leaves the sheet open with the selection intact, rather than
      * a document pointing at a file that is not there.
-     */
-    /**
-     * specs/selection_tool.md §8.2: `cutOut = true` applies the mask *and* the cut-out as one
+     *
+     * §8.2: `cutOut = true` applies the mask *and* the cut-out as one
      * history entry. Public rather than wrapped in an `applyCutOut()`, because that wrapper was
      * one line hiding a default argument and `EditorViewModel` is at detekt's function ceiling.
      */
@@ -794,7 +790,6 @@ class EditorViewModel @Inject constructor(
                 is Result.Success -> {
                     val applied = stack.current.value.withMask(saved.value, maskId)
                     stack.push(if (cutOut) applied.withCutOut(maskId) else applied)
-                    stack.commitCoalesce()
                     sheetBaseline = null
                     selection.closeSheet()
                     _uiState.value = _uiState.value.copy(selectedTool = null)
@@ -833,6 +828,21 @@ class EditorViewModel @Inject constructor(
         if (!autosave.discardIfUntouched(document)) autosave.saveNow(document)
     }
 
+    /**
+     * specs/style_match.md §5: the reference is read the way an added photo is (EXIF-upright,
+     * working size, off the main thread), and the model is shown the document without the style
+     * the sheet is trying on — the numbers it returns are applied to that document, not on top of
+     * the selected tile. A property, not a function: this class is at detekt's function ceiling.
+     */
+    val matchStyleReference: (Uri) -> Unit = { uri ->
+        viewModelScope.launch {
+            val reference = (loader.load(uri) as? Result.Success)?.value?.bitmap
+                ?: return@launch style.showFailure()
+            val document = _uiState.value.document
+            style.matchReference(reference, document?.let { renderer.previewOf(it) }, document)
+        }
+    }
+
     fun onStop() {
         viewModelScope.launch { history?.current?.value?.let { autosave.saveNow(it) } }
     }
@@ -845,6 +855,10 @@ class EditorViewModel @Inject constructor(
         const val PREVIEW_LONG_EDGE_PX = 1080
     }
 }
+
+/** The document at preview size, or null when the render failed. */
+private suspend fun Renderer.previewOf(document: EditDocument): Bitmap? =
+    (preview(document, EditorViewModel.PREVIEW_LONG_EDGE_PX) as? Result.Success)?.value
 
 /** specs/multishot.md §2: a stored subject, subsampled for a 48dp thumbnail. */
 private fun decodeThumbnail(ref: ImageRef, longEdgePx: Int): Bitmap? {
@@ -863,7 +877,7 @@ private fun decodeThumbnail(ref: ImageRef, longEdgePx: Int): Bitmap? {
  * File-level rather than a member: `EditorViewModel` is at detekt's function ceiling, and this
  * reads only its argument.
  */
-private fun sourceAspect(state: EditorUiState): Float {
+internal fun sourceAspect(state: EditorUiState): Float {
     val source = state.source
     return if (source == null || source.height <= 0) {
         1f

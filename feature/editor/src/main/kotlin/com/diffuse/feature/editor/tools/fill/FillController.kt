@@ -9,6 +9,7 @@ import com.diffuse.core.common.Result
 import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.feature.editor.R
 import com.diffuse.feature.editor.tools.ToolTap
+import com.diffuse.feature.editor.tools.isSafetyBlock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -155,18 +156,13 @@ class FillController(
 
     /**
      * specs/generative_fill.md §6's last three rows. A safety block is an `Invalid` with a
-     * recognizable prefix (duplicated for the reason `EraseController` gives: the client is
-     * `internal` to `core:ai`). `Unavailable` is the still-white guard's answer — the one
-     * failure this tool can tell the user something useful about.
+     * recognizable prefix (`isSafetyBlock`). `Unavailable` is the still-white guard's answer —
+     * the one failure this tool can tell the user something useful about.
      */
     @StringRes
     private fun messageFor(error: AppError): Int = when {
-        error is AppError.Invalid && error.detail.startsWith(BLOCKED_PREFIX) -> R.string.fill_blocked
+        error.isSafetyBlock() -> R.string.fill_blocked
         error == AppError.Unavailable -> R.string.fill_empty
         else -> R.string.fill_failed
-    }
-
-    private companion object {
-        const val BLOCKED_PREFIX = "blocked:"
     }
 }

@@ -47,6 +47,16 @@ internal object GeminiImageCodec {
         compress(image, QUALITY)?.takeIf { it.size <= MAX_UPLOAD_BYTES }
             ?: compress(image, FALLBACK_QUALITY)?.takeIf { it.size <= MAX_UPLOAD_BYTES }
 
+    /** [encode] after [downscale], with no mask involved: what 지시 and 스타일 upload. */
+    fun encodeScaled(image: Bitmap): ByteArray? {
+        val scaled = downscale(image)
+        return try {
+            encode(scaled)
+        } finally {
+            if (scaled !== image) scaled.recycle()
+        }
+    }
+
     private fun compress(image: Bitmap, quality: Int): ByteArray? {
         val out = ByteArrayOutputStream()
         if (!image.compress(Bitmap.CompressFormat.JPEG, quality, out)) return null

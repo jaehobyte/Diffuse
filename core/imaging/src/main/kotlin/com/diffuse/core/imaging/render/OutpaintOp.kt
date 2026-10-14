@@ -2,6 +2,7 @@ package com.diffuse.core.imaging.render
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Paint
 import android.graphics.Rect
 import com.diffuse.core.imaging.model.Margins
 import kotlin.math.min
@@ -42,7 +43,7 @@ internal object OutpaintOp {
 
         val out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(out)
-        canvas.drawBitmap(result, null, Rect(0, 0, width, height), null)
+        canvas.drawBitmap(result, null, Rect(0, 0, width, height), Paint(Paint.FILTER_BITMAP_FLAG))
         val ramped = ramped(source, blendPx(width, height, result))
         canvas.drawBitmap(ramped, left.toFloat(), top.toFloat(), null)
         if (ramped !== source) ramped.recycle()
