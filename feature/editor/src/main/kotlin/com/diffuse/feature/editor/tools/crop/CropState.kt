@@ -32,9 +32,15 @@ data class CropState(
     fun rotated(quarters: Int): CropState =
         copy(quarterTurns = Math.floorMod(quarterTurns + quarters, TURNS_PER_CIRCLE))
 
-    /** Straightening shrinks the rect so it stays inside the rotated image. */
+    /**
+     * Straightening shrinks the rect so it stays inside the rotated image.
+     *
+     * +45° and the next quarter turn's −45° are one stored `angleDeg`, which [from] and `CropOp`
+     * both read as the latter — a rect normalised against the other canvas. So the top of the
+     * slider stops a hundredth of a degree short, and what is previewed is what renders.
+     */
     fun straightened(degrees: Float): CropState {
-        val clamped = degrees.coerceIn(STRAIGHTEN_MIN_DEG, STRAIGHTEN_MAX_DEG)
+        val clamped = degrees.coerceIn(STRAIGHTEN_MIN_DEG, STRAIGHTEN_MAX_DEG - STRAIGHTEN_TOP_MARGIN_DEG)
         return copy(
             straightenDeg = clamped,
             rect = CropGeometry.shrinkToFit(rect, clamped, imageAspect),
@@ -56,6 +62,9 @@ data class CropState(
         private const val QUARTER = 90f
         private const val TURNS_PER_CIRCLE = 4
         private const val FULL_TURN = 360f
+
+        /** Far above a float's step at 315°, far below the slider's one decimal. */
+        private const val STRAIGHTEN_TOP_MARGIN_DEG = 0.01f
 
         /** Re-opening the tool shows the existing crop (specs/crop.md). */
         fun from(document: EditDocument, sourceAspect: Float): CropState {

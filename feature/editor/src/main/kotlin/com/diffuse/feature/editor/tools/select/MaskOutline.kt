@@ -34,11 +34,12 @@ object MaskOutline {
         return region.boundaryPath.asComposePath()
     }
 
+    /** An all-zero alpha is no selection at all. Read a row at a time, not a pixel at a time. */
     fun isEmpty(alpha: Bitmap): Boolean {
+        val row = IntArray(alpha.width)
         for (y in 0 until alpha.height) {
-            for (x in 0 until alpha.width) {
-                if ((alpha.getPixel(x, y) ushr ALPHA_SHIFT) != 0) return false
-            }
+            alpha.getPixels(row, 0, alpha.width, 0, y, alpha.width, 1)
+            if (row.any { (it ushr ALPHA_SHIFT) != 0 }) return false
         }
         return true
     }

@@ -9,6 +9,7 @@ import com.diffuse.core.common.Result
 import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.feature.editor.R
 import com.diffuse.feature.editor.tools.ToolTap
+import com.diffuse.feature.editor.tools.isSafetyBlock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -128,14 +129,10 @@ class EraseController(
 
     /**
      * specs/generative_erase.md §9: a safety block is an `Invalid` with a recognizable prefix,
-     * not its own `AppError`, so this is where the two are told apart.
-     *
-     * The prefix is duplicated from `GeminiEraseClient` rather than imported: that class is
-     * `internal` to `core:ai`, which is the boundary working as intended — the feature knows the
-     * contract, not the client.
+     * not its own `AppError`, so this is where the two are told apart (`isSafetyBlock`).
      */
     private fun messageFor(error: AppError): Int =
-        if (error is AppError.Invalid && error.detail.startsWith(BLOCKED_PREFIX)) {
+        if (error.isSafetyBlock()) {
             R.string.erase_blocked
         } else {
             R.string.erase_failed
@@ -153,9 +150,5 @@ class EraseController(
 
     fun onMessageShown() {
         _state.value = _state.value.copy(message = null)
-    }
-
-    private companion object {
-        const val BLOCKED_PREFIX = "blocked:"
     }
 }

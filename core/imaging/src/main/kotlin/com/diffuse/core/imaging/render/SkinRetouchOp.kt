@@ -22,8 +22,8 @@ internal object SkinRetouchOp {
     fun apply(input: Bitmap, result: Bitmap, support: Bitmap): Bitmap {
         val width = input.width
         val height = input.height
-        val scaledResult = scaled(result, width, height, filter = true)
-        val scaledSupport = scaled(support, width, height, filter = false)
+        val scaledResult = result.scaledTo(width, height, filter = true)
+        val scaledSupport = support.scaledTo(width, height, filter = false)
         val out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
 
         val inputRow = IntArray(width)
@@ -44,11 +44,4 @@ internal object SkinRetouchOp {
         if (scaledSupport !== support) scaledSupport.recycle()
         return out
     }
-
-    private fun scaled(bitmap: Bitmap, width: Int, height: Int, filter: Boolean): Bitmap =
-        if (bitmap.width == width && bitmap.height == height) {
-            bitmap
-        } else {
-            Bitmap.createScaledBitmap(bitmap, width, height, filter)
-        }
 }

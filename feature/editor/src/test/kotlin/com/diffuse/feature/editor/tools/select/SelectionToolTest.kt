@@ -216,6 +216,26 @@ class SelectionToolTest {
         )
     }
 
+    /** A ticket, not a flag: re-opening must not make the abandoned upload's session wanted again. */
+    @Test
+    fun `an open given up on and started again keeps only the newer session`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val slow = FakeSegmentationProvider(openDelayMs = 5_000)
+        val viewModel = viewModel(slow)
+        advanceUntilIdle()
+        val preview = Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888)
+
+        viewModel.selection.open(preview)
+        advanceTimeBy(1_000)
+        viewModel.selection.cancelWork()
+        viewModel.selection.open(preview)
+        advanceUntilIdle()
+
+        val session = viewModel.uiState.value.selection.session
+        assertNotNull(session)
+        assertEquals("a session was left behind on the server", listOf(session), slow.openSessions)
+    }
+
     @Test
     fun `leaving the editor releases the session`() = runTest {
         val viewModel = viewModel()
@@ -328,6 +348,43 @@ class SelectionToolTest {
 
         assertEquals(1f - original, inverted, 0.001f)
         assertEquals(original, MaskBitmaps.coverage(viewModel.uiState.value.selection.mask!!), 0f)
+    }
+
+    @Test
+    fun `a phrase typed while a tap is segmenting survives its answer`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val viewModel = viewModel()
+        advanceUntilIdle()
+        viewModel.onToolClick(Tool.Select)
+        advanceUntilIdle()
+
+        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
+        viewModel.selection.setPhrase("하늘")
+        advanceUntilIdle()
+
+        val selection = viewModel.uiState.value.selection
+        assertNotNull(selection.mask)
+        assertEquals("하늘", selection.phrase)
+    }
+
+    @Test
+    fun `invert ends the run a tap in flight was for, so its answer cannot undo the flip`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val viewModel = viewModel()
+        advanceUntilIdle()
+        viewModel.onToolClick(Tool.Select)
+        advanceUntilIdle()
+        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
+        advanceUntilIdle()
+        val before = MaskBitmaps.coverage(viewModel.uiState.value.selection.mask!!)
+
+        viewModel.selection.addPoint(0.2f, 0.2f, foreground = true)
+        viewModel.selection.invert()
+        advanceUntilIdle()
+
+        val selection = viewModel.uiState.value.selection
+        assertFalse(selection.busy)
+        assertEquals(1f - before, MaskBitmaps.coverage(selection.mask!!), 0.001f)
     }
 
     @Test

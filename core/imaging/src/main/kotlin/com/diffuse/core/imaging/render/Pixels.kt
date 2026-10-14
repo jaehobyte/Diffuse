@@ -27,6 +27,14 @@ internal fun smoothstep(edge0: Float, edge1: Float, x: Float): Float {
     return t * t * (SMOOTHSTEP_A - SMOOTHSTEP_B * t)
 }
 
+/** [this] at [width]×[height], or [this] itself when it is already that size. */
+internal fun Bitmap.scaledTo(width: Int, height: Int, filter: Boolean): Bitmap =
+    if (this.width == width && this.height == height) {
+        this
+    } else {
+        Bitmap.createScaledBitmap(this, width, height, filter)
+    }
+
 internal fun exposureGain(stops: Float): Float = 2f.pow(stops)
 
 /**

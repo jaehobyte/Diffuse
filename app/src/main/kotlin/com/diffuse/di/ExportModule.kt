@@ -30,7 +30,8 @@ object ExportModule {
     fun imageStore(
         resolver: ContentResolver,
         @ApplicationContext context: Context,
-    ): ImageStore = MediaStoreImageStore(resolver, context.getString(R.string.app_name))
+        dispatchers: DispatcherProvider,
+    ): ImageStore = MediaStoreImageStore(resolver, context.getString(R.string.app_name), dispatchers)
 
     @Provides
     @Singleton

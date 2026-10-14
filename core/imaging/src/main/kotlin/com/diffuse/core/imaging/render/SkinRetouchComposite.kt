@@ -46,15 +46,17 @@ object SkinRetouchComposite {
         val out = IntArray(width * height)
         base.getPixels(out, 0, width, 0, 0, width, height)
         val active = layers.filter { it.strength > 0f }
-        if (active.isNotEmpty()) {
+        val pixels = if (active.isEmpty()) {
+            out
+        } else {
             compositePixels(
                 base = out,
                 candidates = active.map { it.candidate.pixels() },
                 supports = active.map { it.support.pixels() },
                 strengths = FloatArray(active.size) { active[it].strength },
-            ).copyInto(out)
+            )
         }
-        return bitmapOf(out, width, height, Bitmap.Config.ARGB_8888)
+        return bitmapOf(pixels, width, height, Bitmap.Config.ARGB_8888)
     }
 
     /**

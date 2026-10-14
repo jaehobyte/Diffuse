@@ -36,6 +36,7 @@ import com.diffuse.feature.editor.tools.enhance.TopazResult
 import com.diffuse.feature.editor.tools.enhance.blockerFor
 import com.diffuse.feature.editor.tools.enhance.messageFor
 import com.diffuse.feature.editor.tools.enhance.phase
+import com.diffuse.feature.editor.tools.isSafetyBlock
 import com.diffuse.feature.editor.tools.select.MaskOps
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -51,6 +52,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.coroutines.ContinuationInterceptor
+import kotlin.coroutines.EmptyCoroutineContext
 
 /**
  * specs/vibe_edit.md §10. What tapping the tool should do, returned rather than acted on: the
@@ -348,7 +351,7 @@ class DirectController(
         showMessage(
             when {
                 error is AppError.Unauthorized -> R.string.direct_needs_key
-                error is AppError.Invalid && error.detail.startsWith(BLOCKED_PREFIX) -> R.string.direct_blocked
+                error.isSafetyBlock() -> R.string.direct_blocked
                 mode == PlanMode.Recommend -> R.string.direct_recommend_failed
                 else -> R.string.direct_failed
             },
@@ -550,6 +553,9 @@ class DirectController(
         val steps = plan.steps.size + if (_state.value.topazStep != null) 1 else 0
         setCandidate(CandidateState(CandidatePhase.Running, steps = steps, chosen = chosen))
         run = scope.launch {
+            // The runner works on IO; the overlay's question touches this controller's state, so it
+            // is asked back on the dispatcher this run was launched on.
+            val ui = coroutineContext[ContinuationInterceptor] ?: EmptyCoroutineContext
             if (!offline && plan.steps.any { it is PlanStep.Select }) host.releaseSession()
             var built = canvas.document
             var error: AppError? = null
@@ -561,7 +567,7 @@ class DirectController(
                 preview = canvas.preview,
                 activeMask = canvas.activeMask,
                 sourceAspect = canvas.sourceAspect,
-                confirm = ::confirm,
+                confirm = { check -> withContext(ui) { confirm(check) } },
                 confirmed = confirmedIds + notes.keys + runChecks.map { it.maskId },
                 cache = cache,
                 offline = offline,
@@ -1086,16 +1092,13 @@ class DirectController(
     /** §6: a safety block is an `Invalid` with a recognizable prefix, not its own case. */
     @StringRes
     private fun messageFor(error: AppError): Int =
-        if (error is AppError.Invalid && error.detail.startsWith(BLOCKED_PREFIX)) {
+        if (error.isSafetyBlock()) {
             R.string.direct_blocked
         } else {
             R.string.direct_failed
         }
 
     private companion object {
-        /** Duplicated from `core:ai` for the reason `EraseController` gives: it is internal. */
-        const val BLOCKED_PREFIX = "blocked:"
-
         /** The selection's edge, 1/50 of its width, is not "outside" — masks are feathered. */
         const val EDGE_MARGIN_DIVISOR = 50
 

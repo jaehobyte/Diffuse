@@ -39,8 +39,8 @@ class GeminiPlanProvider @Inject internal constructor(
      * the cheapest useful call to Gemini is a real one, billed to the user's key.
      */
     override val availability: StateFlow<Availability> = settings.config
-        .map(::availabilityFor)
-        .stateIn(scope, SharingStarted.Eagerly, availabilityFor(settings.config.value))
+        .map(::geminiAvailability)
+        .stateIn(scope, SharingStarted.Eagerly, geminiAvailability(settings.config.value))
 
     /** §14: only a sent 지시 needs words; 보정 추천 may ask about the photo alone. */
     override suspend fun plan(image: Bitmap, request: PlanRequest): Result<PlanProposal> =
@@ -48,28 +48,9 @@ class GeminiPlanProvider @Inject internal constructor(
             if (request.mode == PlanMode.Direct && request.text.isBlank()) {
                 return@withContext Result.Failure(AppError.Invalid("empty request"))
             }
-            val jpeg = encode(image) ?: return@withContext Result.Failure(AppError.TooLarge)
+            val jpeg = GeminiImageCodec.encodeScaled(image) ?: return@withContext Result.Failure(AppError.TooLarge)
             coroutineContext.ensureActive()
 
             client.plan(jpeg, request)
         }
-
-    /** §8 step 2: `GeminiImageCodec` unchanged and reused. No mask is involved. */
-    private fun encode(image: Bitmap): ByteArray? {
-        val scaled = GeminiImageCodec.downscale(image)
-        return try {
-            GeminiImageCodec.encode(scaled)
-        } finally {
-            if (scaled !== image) scaled.recycle()
-        }
-    }
-
-    private companion object {
-        fun availabilityFor(config: GeminiConfig): Availability =
-            if (config.isConfigured) {
-                Availability.Ready
-            } else {
-                Availability.Unavailable(AppError.Invalid("no api key"))
-            }
-    }
 }

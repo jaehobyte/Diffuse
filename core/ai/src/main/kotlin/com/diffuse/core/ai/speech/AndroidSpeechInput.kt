@@ -48,6 +48,8 @@ class AndroidSpeechInput @Inject constructor(
             destroy()
         }
         recognizer = null
+        // A destroyed recognizer never calls back, so nothing else would leave Listening.
+        if (_state.value is SpeechState.Listening) _state.value = SpeechState.Idle
     }
 
     override fun reset() {

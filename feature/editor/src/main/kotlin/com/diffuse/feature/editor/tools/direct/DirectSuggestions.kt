@@ -424,7 +424,7 @@ class DirectProposals internal constructor(
         PlanSnapshot(document, text, mode, settings, notes())
 
     private companion object {
-        /** Duplicated from `core:ai` for the reason `BLOCKED_PREFIX` is: it is internal there. */
+        /** Duplicated from `core:ai` for the reason `isSafetyBlock`'s prefix is: it is internal there. */
         const val UNPLANNABLE_PREFIX = "unplannable:"
     }
 }

@@ -60,42 +60,40 @@ class DefaultProjectRepository(
         }
 
     private suspend fun createFiles(id: String, now: Long, source: SourceImage): Result<String> =
-        withContext(dispatchers.io) {
-            runCatchingIo {
-                val extension = if (source.hasAlpha) "png" else "jpg"
-                val sourceFile = files.sourceFile(id, extension)
-                sourceFile.parentFile?.mkdirs()
-                val written = sourceFile.outputStream().use { stream ->
-                    val format =
-                        if (source.hasAlpha) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG
-                    source.bitmap.compress(format, JPEG_QUALITY, stream)
-                }
-                if (!written) throw IOException("could not encode the source of $id")
-                val document = EditDocument(
+        runCatchingIo {
+            val extension = if (source.hasAlpha) "png" else "jpg"
+            val sourceFile = files.sourceFile(id, extension)
+            sourceFile.parentFile?.mkdirs()
+            val written = sourceFile.outputStream().use { stream ->
+                val format =
+                    if (source.hasAlpha) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG
+                source.bitmap.compress(format, JPEG_QUALITY, stream)
+            }
+            if (!written) throw IOException("could not encode the source of $id")
+            val document = EditDocument(
+                id = id,
+                source = ImageRef(sourceFile.absolutePath),
+                createdAt = now,
+                updatedAt = now,
+            )
+            writeDocument(document)
+            dao.upsert(
+                ProjectEntity(
                     id = id,
-                    source = ImageRef(sourceFile.absolutePath),
                     createdAt = now,
                     updatedAt = now,
-                )
-                writeDocument(document)
-                dao.upsert(
-                    ProjectEntity(
-                        id = id,
-                        createdAt = now,
-                        updatedAt = now,
-                        width = source.widthPx,
-                        height = source.heightPx,
-                        thumbPath = files.thumbFile(id).absolutePath,
-                    ),
-                )
-                id
-            }
+                    width = source.widthPx,
+                    height = source.heightPx,
+                    thumbPath = files.thumbFile(id).absolutePath,
+                ),
+            )
+            id
         }
 
     override suspend fun load(id: String): Result<EditDocument> = withContext(dispatchers.io) {
         val file = files.documentFile(id)
         if (!file.isFile) return@withContext Result.Failure(AppError.MissingSource)
-        when (val decoded = runCatchingIo { EditDocumentJson.decode(file.readText(), logger) }) {
+        when (val decoded = runCatchingIo { decodeDocument(logger, file.readText()) }) {
             is Result.Failure -> decoded
             // specs/edit_model.md: a dangling mask reference is not something to load past —
             // dropping it silently would drop the user's selection without telling them.
@@ -171,12 +169,7 @@ class DefaultProjectRepository(
         eraseId: String,
         bitmap: Bitmap,
     ): Result<ImageRef> = withContext(dispatchers.io) {
-        runCatchingIo {
-            val file = files.eraseFile(projectId, eraseId)
-            file.parentFile?.mkdirs()
-            file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, PNG_QUALITY, it) }
-            ImageRef(file.absolutePath)
-        }
+        runCatchingIo { files.writePng(files.eraseFile(projectId, eraseId), bitmap) }
     }
 
     override suspend fun saveFillResult(
@@ -184,12 +177,7 @@ class DefaultProjectRepository(
         fillId: String,
         bitmap: Bitmap,
     ): Result<ImageRef> = withContext(dispatchers.io) {
-        runCatchingIo {
-            val file = files.fillFile(projectId, fillId)
-            file.parentFile?.mkdirs()
-            file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, PNG_QUALITY, it) }
-            ImageRef(file.absolutePath)
-        }
+        runCatchingIo { files.writePng(files.fillFile(projectId, fillId), bitmap) }
     }
 
     override suspend fun saveOutpaintResult(
@@ -197,12 +185,7 @@ class DefaultProjectRepository(
         outpaintId: String,
         bitmap: Bitmap,
     ): Result<ImageRef> = withContext(dispatchers.io) {
-        runCatchingIo {
-            val file = files.outpaintFile(projectId, outpaintId)
-            file.parentFile?.mkdirs()
-            file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, PNG_QUALITY, it) }
-            ImageRef(file.absolutePath)
-        }
+        runCatchingIo { files.writePng(files.outpaintFile(projectId, outpaintId), bitmap) }
     }
 
     /**
@@ -253,14 +236,8 @@ class DefaultProjectRepository(
         retouchId: String,
         maskId: String,
     ): Result<Unit> = withContext(dispatchers.io) {
-        val documentFile = files.documentFile(projectId)
-        val referenced = if (documentFile.isFile) {
-            val document = runCatching { EditDocumentJson.decode(documentFile.readText(), logger) }
-                .getOrElse { return@withContext Result.Failure(AppError.Unsupported) }
-            document.referencedPaths()
-        } else {
-            emptySet()
-        }
+        val referenced = files.referencedOnDisk(projectId, logger)
+            ?: return@withContext Result.Failure(AppError.Unsupported)
         listOf(files.retouchFile(projectId, retouchId), files.maskFile(projectId, maskId))
             .filterNot { it.absolutePath in referenced }
             .forEach { it.delete() }
@@ -296,14 +273,8 @@ class DefaultProjectRepository(
         projectId: String,
         fileIds: List<String>,
     ): Result<Unit> = withContext(dispatchers.io) {
-        val documentFile = files.documentFile(projectId)
-        val referenced = if (documentFile.isFile) {
-            val document = runCatching { EditDocumentJson.decode(documentFile.readText(), logger) }
-                .getOrElse { return@withContext Result.Failure(AppError.Unsupported) }
-            document.referencedPaths()
-        } else {
-            emptySet()
-        }
+        val referenced = files.referencedOnDisk(projectId, logger)
+            ?: return@withContext Result.Failure(AppError.Unsupported)
         fileIds.map { files.shotFile(projectId, it) }
             .filterNot { it.absolutePath in referenced }
             .forEach { it.delete() }
@@ -313,14 +284,8 @@ class DefaultProjectRepository(
     /** Only the on-disk document is consulted, as in [discardShotSubjects]. */
     override suspend fun discardFiles(projectId: String, paths: Set<String>): Result<Unit> =
         withContext(dispatchers.io) {
-            val documentFile = files.documentFile(projectId)
-            val referenced = if (documentFile.isFile) {
-                val document = runCatching { EditDocumentJson.decode(documentFile.readText(), logger) }
-                    .getOrElse { return@withContext Result.Failure(AppError.Unsupported) }
-                document.referencedPaths()
-            } else {
-                emptySet()
-            }
+            val referenced = files.referencedOnDisk(projectId, logger)
+            ?: return@withContext Result.Failure(AppError.Unsupported)
             val dir = files.projectDir(projectId).canonicalFile
             paths.map(::File)
                 .filter { file ->
@@ -335,15 +300,21 @@ class DefaultProjectRepository(
     override suspend fun duplicate(id: String): Result<String> = withContext(dispatchers.io) {
         val original = dao.findById(id) ?: return@withContext Result.Failure(AppError.MissingSource)
         val copyId = newId()
-        runCatchingIo {
-            files.projectDir(id).copyRecursively(files.projectDir(copyId), overwrite = true)
-            val document = EditDocumentJson.decode(files.documentFile(copyId).readText(), logger)
-                .withPathsMoved(from = files.projectDir(id), to = files.projectDir(copyId))
-            val now = clock()
-            writeDocument(document.copy(id = copyId, createdAt = now, updatedAt = now))
-            dao.upsert(original.copy(id = copyId, createdAt = now, updatedAt = now,
-                thumbPath = files.thumbFile(copyId).absolutePath))
-            copyId
+        var complete = false
+        try {
+            runCatchingIo {
+                files.projectDir(id).copyRecursively(files.projectDir(copyId), overwrite = true)
+                val document = decodeDocument(logger, files.documentFile(copyId).readText())
+                    .withPathsMoved(from = files.projectDir(id), to = files.projectDir(copyId))
+                val now = clock()
+                writeDocument(document.copy(id = copyId, createdAt = now, updatedAt = now))
+                dao.upsert(original.copy(id = copyId, createdAt = now, updatedAt = now,
+                    thumbPath = files.thumbFile(copyId).absolutePath))
+                copyId
+            }.also { complete = it is Result.Success }
+        } finally {
+            // As in [create]: the row is written last, so a folder is all there is to remove.
+            if (!complete) files.projectDir(copyId).deleteRecursively()
         }
     }
 
@@ -380,9 +351,12 @@ class DefaultProjectRepository(
 
     private inline fun <T> runCatchingIo(block: () -> T): Result<T> = try {
         Result.Success(block())
+    } catch (_: UnsupportedDocumentException) {
+        Result.Failure(AppError.Unsupported)
     } catch (e: IOException) {
         Result.Failure(AppError.Io(e))
     }
+
 }
 
 private fun EditDocument.skinRetouchFilesExist(): Boolean = skinRetouches().all { retouch ->
@@ -467,3 +441,32 @@ private fun ProjectEntity.toSummary() = ProjectSummary(
     thumbPath = thumbPath,
 )
 
+/** Every path the on-disk document references; null when it will not parse. */
+private fun ProjectFiles.referencedOnDisk(projectId: String, logger: Logger?): Set<String>? {
+    val documentFile = documentFile(projectId)
+    if (!documentFile.isFile) return emptySet()
+    return runCatching { EditDocumentJson.decode(documentFile.readText(), logger) }
+        .getOrNull()?.referencedPaths()
+}
+
+/** A document.json that will not parse is unsupported, not a crash. */
+private class UnsupportedDocumentException(cause: Throwable) : Exception(cause)
+
+private fun decodeDocument(logger: Logger?, text: String): EditDocument = try {
+    EditDocumentJson.decode(text, logger)
+} catch (e: IllegalArgumentException) {
+    throw UnsupportedDocumentException(e)
+} catch (e: NoSuchElementException) {
+    throw UnsupportedDocumentException(e)
+}
+
+/** The result files are written whole or not at all, like a shot subject. */
+private fun ProjectFiles.writePng(file: File, bitmap: Bitmap): ImageRef {
+    writeAtomically(file) { temporary ->
+        val compressed = temporary.outputStream().use {
+            bitmap.compress(Bitmap.CompressFormat.PNG, PNG_QUALITY, it)
+        }
+        if (!compressed) throw IOException("could not encode ${file.name}")
+    }
+    return ImageRef(file.absolutePath)
+}

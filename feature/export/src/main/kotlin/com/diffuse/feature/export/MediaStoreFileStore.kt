@@ -4,7 +4,6 @@ import android.content.ContentResolver
 import android.content.ContentValues
 import android.graphics.BitmapFactory
 import android.net.Uri
-import android.os.Environment
 import android.provider.MediaStore
 import com.diffuse.core.common.AppError
 import com.diffuse.core.common.DispatcherProvider
@@ -13,9 +12,6 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import kotlin.coroutines.coroutineContext
 
 /**
@@ -42,14 +38,7 @@ class MediaStoreFileStore(
             val extension = extensionOf(mimeType)
                 ?: return@withContext Result.Failure(AppError.Unsupported)
             if (!file.isFile) return@withContext Result.Failure(AppError.MissingSource)
-            val name = SimpleDateFormat(FILENAME_PATTERN, Locale.US).format(Date(clock()))
-            val values = ContentValues().apply {
-                put(MediaStore.Images.Media.DISPLAY_NAME, "$name.$extension")
-                put(MediaStore.Images.Media.MIME_TYPE, mimeType)
-                put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/$albumName")
-                put(MediaStore.Images.Media.IS_PENDING, 1)
-            }
-            val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+            val uri = resolver.insertPending(albumName, "${exportName(clock())}.$extension", mimeType)
                 ?: return@withContext Result.Failure(AppError.Io(IOException("MediaStore refused the insert")))
 
             var complete = false
@@ -75,14 +64,10 @@ class MediaStoreFileStore(
         return bounds.outWidth == width && bounds.outHeight == height
     }
 
-    private fun extensionOf(mimeType: String): String? = when (mimeType) {
-        "image/jpeg" -> "jpg"
-        "image/png" -> "png"
-        else -> null
-    }
+    private fun extensionOf(mimeType: String): String? =
+        ExportFormat.entries.firstOrNull { it.mimeType() == mimeType }?.extension()
 
     private companion object {
-        const val FILENAME_PATTERN = "'IMG_'yyyyMMdd_HHmmss"
         const val BUFFER_BYTES = 64 * 1024
     }
 }

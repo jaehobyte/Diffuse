@@ -49,7 +49,8 @@ internal suspend fun Call.await(): Response = suspendCancellableCoroutine { cont
             if (!continuation.isCancelled) continuation.resumeWithException(e)
         }
 
-        override fun onResponse(call: Call, response: Response) = continuation.resume(response)
+        override fun onResponse(call: Call, response: Response) =
+            continuation.resume(response) { _, value, _ -> value.close() }
     })
 }
 

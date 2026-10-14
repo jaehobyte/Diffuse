@@ -59,13 +59,11 @@ internal object DetailOps {
         radius: Int,
         crossinline amountAt: (luma: Float) -> Float,
     ): Bitmap {
-        val blurred = boxBlur(bitmap, radius)
         val width = bitmap.width
         val height = bitmap.height
         val original = IntArray(width * height)
-        val blur = IntArray(width * height)
         bitmap.getPixels(original, 0, width, 0, 0, width, height)
-        blurred.getPixels(blur, 0, width, 0, 0, width, height)
+        val blur = boxBlur(original, width, height, radius)
 
         val output = IntArray(width * height)
         for (index in original.indices) {
@@ -101,7 +99,7 @@ internal object DetailOps {
             for (x in 0 until width) {
                 val index = y * width + x
                 val argb = pixels[index]
-                val distance = hypot(x - centerX, y - centerY) / cornerDistance
+                val distance = hypot(x - centerX, y - centerY) / cornerDistance.coerceAtLeast(1f)
                 val weight = smoothstep(VIGNETTE_EDGE0, VIGNETTE_EDGE1, distance)
                 val gain = exposureGain(-value * VIGNETTE_STOPS * weight)
                 pixels[index] = (argb and ALPHA_ONLY) or packRgb(
@@ -123,18 +121,12 @@ internal object DetailOps {
     }
 
     /** Separable box blur; the two passes are what keep sharpen affordable at full res. */
-    private fun boxBlur(bitmap: Bitmap, radius: Int): Bitmap {
-        val width = bitmap.width
-        val height = bitmap.height
-        val source = IntArray(width * height)
-        bitmap.getPixels(source, 0, width, 0, 0, width, height)
+    private fun boxBlur(source: IntArray, width: Int, height: Int, radius: Int): IntArray {
         val horizontal = IntArray(width * height)
         blurAxis(source, horizontal, Axis(width, height, radius, horizontal = true))
         val vertical = IntArray(width * height)
         blurAxis(horizontal, vertical, Axis(width, height, radius, horizontal = false))
-        return Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also {
-            it.setPixels(vertical, 0, width, 0, 0, width, height)
-        }
+        return vertical
     }
 
     private class Axis(

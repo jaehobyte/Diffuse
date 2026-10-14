@@ -99,11 +99,12 @@ object MaskOps {
     }
 
     /** Union of several instance masks, which is how a text prompt becomes one selection (§4). */
-    fun union(masks: List<Bitmap>): Bitmap? {
-        if (masks.isEmpty()) return null
-        return masks.drop(1).fold(copyOf(masks.first())) { acc, next ->
-            merged(acc, next, MergeMode.Add)
-        }
+    fun union(masks: List<Bitmap>): Bitmap? = when (masks.size) {
+        0 -> null
+        // Still a copy: the answer is binary ALPHA_8 and never the caller's own bitmap.
+        1 -> copyOf(masks.single())
+        // `merged` only reads its inputs, so the first mask needs no copy of its own.
+        else -> masks.reduce { acc, next -> merged(acc, next, MergeMode.Add) }
     }
 
     /** Public since T67: `FillMask` walks a mask to find its bounding box. */

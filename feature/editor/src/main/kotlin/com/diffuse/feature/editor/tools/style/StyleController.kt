@@ -84,11 +84,12 @@ data class StyleState(
             ?: emptyMap()
     }
 
-    fun appliedTo(document: EditDocument): EditDocument =
-        scaled().entries.fold(document) { acc, (kind, value) ->
-            acc.withAdjust(kind, value, maskId = null)
-        }
+    fun appliedTo(document: EditDocument): EditDocument = document.withGlobalAdjusts(scaled())
 }
+
+/** A style's numbers as ordinary global `Adjust` ops — what 적용 and a 지시 style step commit. */
+internal fun EditDocument.withGlobalAdjusts(params: Map<AdjustKind, Float>): EditDocument =
+    params.entries.fold(this) { acc, (kind, value) -> acc.withAdjust(kind, value, maskId = null) }
 
 /**
  * specs/style_match.md §4. 스타일 calls nothing: it opens on the catalog, renders a tile of the
@@ -109,14 +110,17 @@ class StyleController(
 
     private var job: Job? = null
 
+    /** [open]'s tile renders, apart from [job] so a 컬러 매칭 does not leave them as placeholders. */
+    private var tilesJob: Job? = null
+
     /**
      * §7: one decode, twelve tiles, in catalog order and appearing as they finish. Every tile is
      * the user's own photograph — a swatch of someone else's is a lie about what the style will do.
      */
     fun open(document: EditDocument?) {
         if (document == null) return
-        job?.cancel()
-        job = scope.launch {
+        tilesJob?.cancel()
+        tilesJob = scope.launch {
             val presets = presets()
             renderTile(STYLE_NONE_ID, document)
             presets.forEach { preset ->
@@ -212,7 +216,7 @@ class StyleController(
                         variant = null,
                         intensity = STYLE_INTENSITY_MAX,
                     )
-                    document?.let { renderTile(STYLE_REFERENCE_ID, applied(answer.value, it)) }
+                    document?.let { renderTile(STYLE_REFERENCE_ID, it.withGlobalAdjusts(answer.value)) }
                 }
                 is Result.Failure -> _state.value = _state.value.copy(
                     matching = false,
@@ -221,11 +225,6 @@ class StyleController(
             }
         }
     }
-
-    private fun applied(params: Map<AdjustKind, Float>, document: EditDocument): EditDocument =
-        params.entries.fold(document) { acc, (kind, value) ->
-            acc.withAdjust(kind, value, maskId = null)
-        }
 
     /** §5: generative_erase.md §6 row for row — a missing key is the one the user can fix. */
     @StringRes
@@ -248,6 +247,7 @@ class StyleController(
     /** 취소, or a commit: the selection dies with the sheet. The catalog and its tiles do not. */
     fun close() {
         job?.cancel()
+        tilesJob?.cancel()
         _state.value = _state.value.copy(
             selected = null,
             variant = null,
