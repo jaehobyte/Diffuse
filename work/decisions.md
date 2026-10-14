@@ -8,6 +8,21 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+## D103 - Browse laid out like the Galaxy Gallery: day headers over a 4-column square grid
+
+Status: Accepted (2026-10-14, interactive follow-up to D102 "처음에 이미지 배열하는 것도 삼성 갤럭시처럼").
+
+- **Square 4-column grid with 1dp gaps** replaces the 2-column masonry; tiles lose their corner
+  radius and the relative-time caption. The aspect ratio in `ProjectSummary` is no longer used for
+  layout (the thumbnail is centre-cropped), so `BrowseTile` dropped `nowMillis`.
+- **Day sections** group by the calendar day of `updatedAt` in the device zone: 오늘 / 어제 / `M월 d일`
+  / `yyyy년 M월 d일` (`DayLabel`). `RelativeTime` stays for its tests and strings; the grid no longer
+  reads it.
+- **The CTA is the Gallery's floating pill** (`surfaceRaised`, `+` and 새 프로젝트) rather than a filled
+  blue primary; the empty state uses the same pill. Tag and enabled semantics are unchanged.
+- `specs/browse.md`'s layout prose (masonry, 16dp corners, caption, primary pill) is superseded by
+  DESIGN.md §4 Browse; the spec is a protected file and was not edited.
+
 ## D102 - Galaxy Photo Editor look: one black palette, yellow selection, circle-row adjust sheets
 
 Status: Accepted (2026-10-14, interactive request "갤럭시 포토에디터와 유사하게"). DESIGN.md was rewritten

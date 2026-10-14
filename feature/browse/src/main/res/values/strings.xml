@@ -17,6 +17,10 @@
     <string name="browse_time_yesterday">어제</string>
     <string name="browse_time_days">%d일 전</string>
 
+    <string name="browse_section_today">오늘</string>
+    <string name="browse_section_date">%1$d월 %2$d일</string>
+    <string name="browse_section_date_year">%1$d년 %2$d월 %3$d일</string>
+
     <string name="browse_importing">사진을 여는 중</string>
     <string name="error_unsupported">지원하지 않는 형식이에요</string>
     <string name="error_too_large">사진이 너무 커요</string>

@@ -15,7 +15,8 @@
 - 채워진 버튼은 드물다. 포토 에디터의 편집 화면에는 하나도 없고(`저장`도 글자 버튼), 대화상자의 주 버튼만
   One UI 블루다. 이 앱에서도 편집 화면의 적용·취소는 글자 버튼이고, 채워진 블루는 Browse CTA와 시트 밖의
   주 액션에만 쓴다.
-- Browse와 편집은 같은 팔레트를 쓴다. 두 모드의 차이는 없다.
+- Browse와 편집은 같은 팔레트를 쓴다. 두 모드의 차이는 없다. Browse는 Galaxy 갤러리의 사진 탭처럼
+  날짜 헤더 아래 정사각 썸네일을 1dp 간격으로 빽빽하게 배열한다.
 - 포토 어시스트처럼 AI 진입점만 블루→보라 그라데이션 원이다. 그 외 장식 그라데이션은 없다.
 - 설명은 짧고 담백한 한국어로 쓴다. 포토 에디터의 로고·Galaxy AI 문구·스티커·그리기 기능은 가져오지 않는다.
 
@@ -164,8 +165,18 @@
 
 - `OptionChip`: 비선택 `surfaceRaised` + `ink` `bodyMd`; 선택 `selectionFill` + `selectionInk` `bodyStrong`.
   테두리 없음. 터치 48dp.
-- 카드·썸네일 모서리 16dp, 로딩은 평평한 `surfaceRaised`. 선택된 썸네일은 2dp `selectionFill` 테두리.
-- Browse 길게 누르기의 복제·삭제 iconCircle과 삭제 확인은 기존대로.
+- 편집 시트 안의 카드·썸네일 모서리 16dp, 로딩은 평평한 `surfaceRaised`. 선택된 썸네일은 2dp `selectionFill` 테두리.
+
+### Browse (갤러리 사진 탭)
+
+- 상단바 56dp, 검정, 왼쪽 `headingLg` 앱 마크.
+- 그리드는 `LazyVerticalGrid` 4열(600dp 이상 6열), 정사각 타일, 간격 1dp, 좌우 8dp. 타일은 모서리 없이
+  `surfaceRaised` 위에 가운데 크롭 썸네일. 타일 아래 글자 없음.
+- 마지막 편집일 기준 날짜 섹션: `오늘`, `어제`, 같은 해는 `M월 d일`, 다른 해는 `yyyy년 M월 d일`.
+  헤더는 `headingLg`/`ink`, 위 20dp·아래 8dp, 최신 날짜가 위.
+- 하단 가운데 플로팅 pill: `surfaceRaised` 92%, 최소 56dp, `+` 아이콘과 `새 프로젝트` `bodyStrong`/`ink`.
+  내비게이션 바 위 20dp. 빈 화면도 같은 pill을 쓴다.
+- 길게 누르기의 복제·삭제 iconCircle과 삭제 확인은 기존대로.
 
 ### Prompt bar
 
@@ -182,7 +193,7 @@
 ## 5. Layout Principles
 
 - 여백은 4 / 8 / 12 / 16 / 24 / 32dp.
-- Browse는 2열 masonry, 열 간격 8dp, 좌우 16dp. 600dp 이상에서는 3열.
+- Browse는 4열 정사각 그리드, 간격 1dp, 좌우 8dp. 600dp 이상에서는 6열.
 - Edit는 상단바 56dp / 캔버스 / 하단 툴스트립 72dp. 사진 주위에 최소 16dp의 검정 여백.
 - 터치 영역은 최소 48×48dp. 접근성 라벨을 제거하지 않는다.
 
@@ -209,7 +220,7 @@ Don’t
 ## 8. Responsive & Gesture
 
 - v1은 세로 모드 고정(`specs/editor_shell.md`).
-- 600dp+에서 Browse는 3열.
+- 600dp+에서 Browse는 6열.
 - 캔버스 zoom·pan·fit, 도구별 한 손가락 소유권은 `specs/canvas.md` 및 도구별 스펙을 따른다.
 - 상태바·내비게이션 바는 투명하고 아이콘은 밝은색이다. edge-to-edge 및 IME/system inset을 처리한다.
 
@@ -231,9 +242,10 @@ system sans-serif · body 14/21sp · title 17/24sp · ruler slider, no track
 | 세로로 쌓인 슬라이더 + 트랙·thumb | 원 한 줄 + 눈금자 슬라이더 하나 |
 | 상단바 ←·내보내기 pill | ↶ ↷ ◐ / `원본 복원` · `저장` 글자 버튼 |
 | 툴스트립 블루 밑줄·점 배지 | 노랑 아이콘, 그라데이션 AI 원 |
+| Browse 2열 masonry, 16dp 라운드 타일, 타일 아래 상대 시간, 블루 CTA pill | 날짜 헤더 + 4열 정사각 1dp 그리드, 하단 플로팅 pill |
 
-`specs/editor_shell.md`, `specs/prompt_input.md`, `specs/tool_groups.md`의 스타일 서술(밝은 상단바,
-블루 인디케이터, 흰 입력창)은 이 문서가 우선한다. 동작 계약은 그대로다.
+`specs/editor_shell.md`, `specs/prompt_input.md`, `specs/tool_groups.md`, `specs/browse.md`의 스타일
+서술(밝은 상단바, 블루 인디케이터, 흰 입력창, 2열 masonry와 상대 시간)은 이 문서가 우선한다. 동작 계약은 그대로다.
 
 ### 구현 시 준수 사항
 
