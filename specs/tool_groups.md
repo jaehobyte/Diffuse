@@ -21,8 +21,12 @@ committing any tool, comes back.
 
 ```
 rest      [라이트][색상][혼합][자르기][디테일][ AI ]
-AI open   [  ←  ][선택][지우기][채우기][확대][스타일][멀티샷][지시]
+AI open   [  ←  ][선택][지우기][채우기][확대][화질 개선][스타일][멀티샷][지시]
 ```
+
+화질 개선 (topaz_enhancement.md §1) sits after 확대; every other tool keeps its relative order. It
+opens the shared Topaz sheet, whose actions differ from the [취소 | 적용] contract: its result becomes
+a gallery file or a new edit copy, never an undo step in this document (work/decisions.md D098).
 
 자동 (auto_enhance.md) is no longer in this list (work/decisions.md D097): no item, greyed item or
 placeholder takes its place, and every other tool keeps its relative order.
@@ -120,7 +124,7 @@ like a textbook.
 - **No badge counts, no "new" markers.**
 
 ## 9. Open decisions — a human answers these
-1. **Which tools are AI.** This spec puts 선택 · 지우기 · 채우기 · 확대 · 스타일 · 멀티샷 · 지시
+1. **Which tools are AI.** This spec puts 선택 · 지우기 · 채우기 · 확대 · 화질 개선 · 스타일 · 멀티샷 · 지시
    at the AI level (자동 was removed by D097) and leaves the five adjust-and-crop tools at the root. 선택 is the arguable one: it
    calls SAM 3, so it is AI by mechanism, but it is a *prerequisite* for three of the others, and
    burying it one level down is what makes 지우기's "먼저 영역을 선택해주세요" a longer trip. The

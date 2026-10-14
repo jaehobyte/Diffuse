@@ -10,6 +10,7 @@ import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.BurstMode
 import androidx.compose.material.icons.rounded.Colorize
 import androidx.compose.material.icons.rounded.Crop
+import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.HighlightAlt
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.OpenInFull
@@ -48,6 +49,12 @@ enum class Tool(
 
     /** specs/outpaint.md §6: the one tool that makes the canvas bigger, after the two that fill. */
     Expand(R.string.editor_tool_expand, Icons.Rounded.OpenInFull, ToolGroup.Ai),
+
+    /**
+     * specs/topaz_enhancement.md §1: 화질 개선, after 확대 — the one that adds pixels to the same
+     * frame, beside the one that adds frame. Every existing tool keeps its relative order.
+     */
+    Enhance(R.string.editor_tool_enhance, Icons.Rounded.HighQuality, ToolGroup.Ai),
 
     /**
      * specs/tool_groups.md §2 puts 스타일 at the AI level and §9's open decision 2 says why: the

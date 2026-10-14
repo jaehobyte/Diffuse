@@ -67,6 +67,8 @@ fun EditSheet(
     applyLabel: String? = null,
     /** specs/selection_tool.md §6: Apply is disabled until there is something to apply. */
     applyEnabled: Boolean = true,
+    /** specs/topaz_enhancement.md §2: a result's sheet closes with "닫기" rather than "취소". */
+    cancelLabel: String? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val colors = LocalAppColors.current
@@ -105,7 +107,7 @@ fun EditSheet(
             verticalArrangement = Arrangement.spacedBy(SectionSpacing),
             content = content,
         )
-        ActionRow(onCancel, onApply, applyLabel, applyEnabled)
+        ActionRow(onCancel, onApply, applyLabel, applyEnabled, cancelLabel)
     }
 }
 
@@ -126,12 +128,13 @@ private fun ActionRow(
     onApply: () -> Unit,
     applyLabel: String?,
     applyEnabled: Boolean,
+    cancelLabel: String?,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TertiaryPill(text = stringResource(R.string.sheet_cancel), onClick = onCancel)
+        TertiaryPill(text = cancelLabel ?: stringResource(R.string.sheet_cancel), onClick = onCancel)
         Spacer(modifier = Modifier.weight(1f))
         PrimaryPill(
             text = applyLabel ?: stringResource(R.string.sheet_apply),

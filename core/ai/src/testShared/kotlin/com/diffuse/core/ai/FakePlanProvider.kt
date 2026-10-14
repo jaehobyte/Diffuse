@@ -78,14 +78,25 @@ class FakePlanProvider : EditPlanProvider {
     companion object {
         val DEFAULT_PLAN = EditPlan(
             listOf(
-                PlanStep.Select("나무"),
-                PlanStep.Adjust(AdjustKind.Saturation, 0.3f, masked = true),
+                PlanStep.Select("나무", "n1"),
+                PlanStep.Adjust(AdjustKind.Saturation, 0.3f, PlanTarget.New("n1")),
             ),
+        )
+
+        /** §15: the one objective a ready proposal carries. */
+        val DEFAULT_DIRECTION = PlanDirection(
+            subject = "나무와 주변 풍경",
+            strengths = listOf("자연스러운 빛"),
+            preserve = listOf("주변 색"),
+            objective = "나무를 더 푸르게",
+            success = "주변 색은 그대로이고 나무만 더 푸르게 보인다",
+            source = GoalSource.User,
         )
 
         /** Observation and goal kept apart, the way §14 asks the model to answer. */
         val DEFAULT_PROPOSAL = PlanProposal(
             outcome = PlanOutcome.Ready,
+            direction = DEFAULT_DIRECTION,
             observations = listOf(
                 Observation("o1", "나무", "잎의 초록이 주변보다 흐릿해 보여요", Confidence.Medium),
             ),
@@ -104,6 +115,7 @@ class FakePlanProvider : EditPlanProvider {
 
         fun ready(plan: EditPlan): PlanProposal = PlanProposal(
             outcome = PlanOutcome.Ready,
+            direction = DEFAULT_DIRECTION.copy(objective = "요청한 보정"),
             goals = listOf(PlanGoal("g1", "요청한 보정", GoalSource.User, GoalScope.Global)),
             workflow = plan.steps.map { WorkflowStep(it, "g1") },
         )

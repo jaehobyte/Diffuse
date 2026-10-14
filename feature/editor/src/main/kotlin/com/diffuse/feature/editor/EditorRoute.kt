@@ -12,6 +12,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.res.stringResource
@@ -28,8 +29,12 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalContext
 import com.diffuse.feature.editor.tools.style.StyleSheet
+import com.diffuse.feature.editor.tools.enhance.TopazActions
+import com.diffuse.feature.editor.tools.enhance.TopazCompareLabel
+import com.diffuse.feature.editor.tools.enhance.TopazSheet
 import com.diffuse.feature.editor.tools.crop.CropSheet
 import com.diffuse.feature.editor.tools.crop.STRAIGHTEN_MAX_DEG
+import com.diffuse.feature.editor.tools.direct.CandidatePhase
 import com.diffuse.feature.editor.tools.direct.DirectSheet
 import com.diffuse.feature.editor.tools.direct.DirectSuggestionArea
 import com.diffuse.feature.editor.tools.expand.ExpandOverlay
@@ -56,10 +61,14 @@ fun EditorRoute(
     onExport: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: EditorViewModel = hiltViewModel(),
+    /** specs/topaz_enhancement.md §5: the nav graph opens a new edit copy; this module cannot. */
+    onOpenProject: (String) -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val document = state.document
+
+    OpenedCopies(state, viewModel, onOpenProject)
 
     // specs/tool_groups.md §3: the open level is UI state, not document state, and it resets to
     // `Root` on every entry to the screen — a user coming back to a photo sees the whole app.
@@ -120,11 +129,55 @@ fun EditorRoute(
 }
 
 /**
- * specs/multishot.md §2: while an added photo is still a photo, the canvas shows it rather than
- * the composite.
+ * specs/topaz_enhancement.md §5: one navigation per created copy — the 화질 개선 sheet's and, since
+ * specs/vibe_edit.md §19, a plan workflow's. The id is consumed once it has been handed over.
  */
-private fun shownPreview(state: EditorUiState) =
-    state.multiShot.photo?.takeIf { state.selectedTool == Tool.MultiShot } ?: state.preview
+@Composable
+private fun OpenedCopies(state: EditorUiState, viewModel: EditorViewModel, onOpenProject: (String) -> Unit) {
+    val openedProjectId = state.topaz.openedProjectId
+    LaunchedEffect(openedProjectId) {
+        if (openedProjectId != null) {
+            onOpenProject(openedProjectId)
+            viewModel.topaz.onNavigated()
+        }
+    }
+    val directCopyId = state.direct.openedProjectId
+    LaunchedEffect(directCopyId) {
+        if (directCopyId != null) {
+            onOpenProject(directCopyId)
+            viewModel.direct.onNavigated()
+        }
+    }
+}
+
+/**
+ * specs/multishot.md §2: while an added photo is still a photo, the canvas shows it rather than
+ * the composite. Internal so the route test can read the frame the canvas is actually handed.
+ */
+internal fun shownPreview(state: EditorUiState) =
+    state.multiShot.photo?.takeIf { state.selectedTool == Tool.MultiShot }
+        ?: topazFrame(state)
+        ?: directFrame(state)
+        ?: state.preview
+
+/**
+ * specs/vibe_edit.md §18, §19: while the whole result is held for compare, the canvas shows the
+ * workflow's input; released, the Topaz result when the choice has one (sampled at preview size,
+ * at its own shape), else the local candidate the preview already renders.
+ */
+private fun directFrame(state: EditorUiState) = state.direct.candidate
+    ?.takeIf { state.selectedTool == Tool.Direct && state.direct.complete }
+    ?.let { candidate ->
+        if (candidate.comparing) candidate.before?.asImageBitmap() else candidate.topaz?.after
+    }
+
+/**
+ * specs/topaz_enhancement.md §2: while a result is on the sheet the canvas shows it — and, held,
+ * this run's input snapshot. Both are the same size, so zoom and pan carry across.
+ */
+private fun topazFrame(state: EditorUiState) = state.topaz.result
+    ?.takeIf { state.selectedTool == Tool.Enhance }
+    ?.let { result -> if (state.topaz.comparing) state.topaz.input?.before else result.after }
 
 /**
  * specs/selection_tool.md §2 and multishot.md §2: the tools that claim a single-finger tap on the
@@ -151,6 +204,7 @@ private fun cancelWork(viewModel: EditorViewModel) {
     viewModel.expand.cancel()
     viewModel.direct.cancelWork()
     viewModel.multiShot.cancelWork()
+    viewModel.topaz.cancelWork()
 }
 
 /** One snackbar, so the one that was shown is cleared wherever it came from. */
@@ -162,12 +216,13 @@ private fun clearMessages(viewModel: EditorViewModel) {
     viewModel.style.onMessageShown()
     viewModel.direct.onMessageShown()
     viewModel.multiShot.onMessageShown()
+    viewModel.topaz.onMessageShown()
 }
 
 /** DESIGN.md §7: every AI call shows progress and a way out, so they share one flag. */
 private fun isBusy(state: EditorUiState): Boolean =
     state.selection.working || state.erase.busy || state.fill.busy || state.expand.busy ||
-        state.style.matching || state.direct.working || state.multiShot.working
+        state.style.matching || state.direct.working || state.multiShot.working || state.topaz.working
 
 /** specs/selection_tool.md §1 and generative_erase.md §5: a tool that cannot work is greyed. */
 private fun disabledTools(state: EditorUiState): Set<Tool> = buildSet {
@@ -184,8 +239,10 @@ private fun disabledTools(state: EditorUiState): Set<Tool> = buildSet {
 /** DESIGN.md §4 State display: the overlay says what is actually happening. */
 private fun busyLabel(state: EditorUiState): Int = when {
     state.multiShot.working && state.multiShot.workLabel != null -> state.multiShot.workLabel
+    state.topaz.working -> state.topaz.phase.labelRes
     state.direct.planning -> R.string.direct_planning
-    state.direct.running -> R.string.direct_running
+    // specs/vibe_edit.md §19: the Topaz step, a save or a copy says its own stage.
+    state.direct.working -> state.direct.candidate?.topazPhase?.labelRes ?: R.string.direct_running
     state.erase.busy -> R.string.erase_working
     state.expand.busy -> R.string.expand_working
     state.fill.busy -> R.string.fill_working
@@ -207,7 +264,7 @@ private fun message(state: EditorUiState): String? {
         else -> (
             state.selection.message ?: state.erase.message ?: state.fill.message
                 ?: state.expand.message ?: state.style.message
-                ?: state.multiShot.message
+                ?: state.multiShot.message ?: state.topaz.message
             )?.let { stringResource(it) }
     }
 }
@@ -232,6 +289,10 @@ private fun canvasOverlay(
     // `OverlayTransform.margins`; the overlay itself is the four handles.
     // specs/multishot.md §2: the added photo's selection while it is a photo, the drag once placed.
     Tool.MultiShot -> multiShotOverlay(state, viewModel)
+    // specs/topaz_enhancement.md §2: which of the two frames the canvas is showing, in words.
+    Tool.Enhance -> state.topaz.result?.let { { TopazCompareLabel(comparing = state.topaz.comparing) } }
+    // specs/vibe_edit.md §18: the selection being confirmed, then 전/후 on the candidate.
+    Tool.Direct -> directOverlay(state)
     Tool.Expand -> {
         {
             ExpandOverlay(
@@ -246,6 +307,23 @@ private fun canvasOverlay(
     else -> state.activeMask
         ?.takeIf { state.maskedAdjust }
         ?.let { selectionOverlaySlot(mask = it, points = emptyList(), labels = emptyList()) }
+}
+
+@Composable
+private fun directOverlay(state: EditorUiState): (@Composable androidx.compose.foundation.layout.BoxScope.() -> Unit)? {
+    val candidate = state.direct.candidate ?: return null
+    return when (candidate.phase) {
+        CandidatePhase.Confirming -> candidate.check?.let {
+            selectionOverlaySlot(mask = it.mask, points = emptyList(), labels = emptyList())
+        }
+        // §19: 전/후 only over a complete result; a pending Topaz step has no 후.
+        CandidatePhase.Review -> if (state.direct.complete) {
+            { TopazCompareLabel(comparing = candidate.comparing) }
+        } else {
+            null
+        }
+        CandidatePhase.Running, CandidatePhase.Checking, CandidatePhase.Stale -> null
+    }
 }
 
 /**
@@ -289,6 +367,7 @@ private fun sheetFor(
                 Tool.Style -> StyleToolSheet(state = state, viewModel = viewModel)
                 Tool.Direct -> DirectToolSheet(state = state, viewModel = viewModel)
                 Tool.MultiShot -> MultiShotToolSheet(state = state, viewModel = viewModel)
+                Tool.Enhance -> TopazToolSheet(state = state, viewModel = viewModel)
                 else -> ToolSheetHost(
                     maskOption = MaskOption(
                         available = doc.activeMaskId != null,
@@ -301,10 +380,34 @@ private fun sheetFor(
                     onValueChangeFinished = viewModel::onAdjustFinished,
                     onCancel = viewModel::cancelSheet,
                     onApply = viewModel::applySheet,
+                    onAiShortcut = { group -> viewModel.openTopaz(group) },
                 )
             }
         }
     }
+}
+
+/** specs/topaz_enhancement.md §2. The controller is called straight from here, as 멀티샷's is. */
+@Composable
+private fun TopazToolSheet(state: EditorUiState, viewModel: EditorViewModel) {
+    val topaz = viewModel.topaz
+    TopazSheet(
+        state = state.topaz,
+        hasSelection = state.document?.activeMaskId != null,
+        actions = TopazActions(
+            onPurpose = topaz::selectPurpose,
+            onScale = topaz::setScale,
+            onFaceRecovery = topaz::setFaceRecovery,
+            onSharpenStrength = topaz::setSharpenStrength,
+            onEstimate = topaz::checkEstimate,
+            onRun = topaz::run,
+            onSave = topaz::save,
+            onOpenCopy = topaz::openCopy,
+            onCompare = topaz::setComparing,
+            onOpenSettings = { viewModel.selection.setSettingsVisible(true) },
+            onClose = viewModel::cancelSheet,
+        ),
+    )
 }
 
 /**
@@ -416,6 +519,7 @@ private fun SettingsSheet(state: EditorUiState, viewModel: EditorViewModel) {
     Sam3SettingsSheet(
         config = state.selection.config,
         geminiApiKey = state.selection.geminiApiKey,
+        topazApiKey = state.selection.topazApiKey,
         onSave = viewModel.selection::saveSettings,
         onCancel = { viewModel.selection.setSettingsVisible(false) },
     )
@@ -519,8 +623,15 @@ private fun MultiShotToolSheet(state: EditorUiState, viewModel: EditorViewModel)
 private fun DirectToolSheet(state: EditorUiState, viewModel: EditorViewModel) {
     DirectSheet(
         state = state.direct,
-        onCancel = viewModel::cancelSheet,
+        // §18: with a candidate, the secondary is 되돌리기 / 중단 and the sheet stays open.
+        onCancel = {
+            if (state.direct.candidate != null) viewModel.direct.discardCandidate() else viewModel.cancelSheet()
+        },
         onApply = viewModel::applySheet,
+        onCompare = viewModel.direct::setComparing,
+        onReduce = viewModel.direct::reduce,
+        onToggle = viewModel.direct::toggle,
+        onSave = viewModel.direct::save,
         promptBar = {
             VoicePromptBar(
                 value = state.direct.request,

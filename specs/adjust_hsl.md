@@ -213,6 +213,13 @@ adjust_color_range(
 )
 ```
 
+> **Superseded for plans by vibe_edit.md §15 (2026-10-13, D099).** `adjust_color_range` is
+> whole-photo only: it has no `masked` and no `target`, and `masked=true` refuses the proposal.
+> Every channel is a **final** value; a channel left out keeps its current value; an explicit 0
+> resets it (and is no step when it is already 0). One of several same-coloured things is a
+> `select_region` plus `adjust` with that target. Stored masked HSL ops and the manual 혼합 sheet
+> are unchanged. The text below is kept as history.
+
 **`masked` defaults to `false` here, unlike `adjust`.** This section first said "default true, as
 `adjust`", and implementing it showed that to be wrong: `PlanRunner.validate` rejects an
 `Adjust(masked = true)` with no `Select` before it and no `activeMaskId` (vibe_edit.md §9.1), so

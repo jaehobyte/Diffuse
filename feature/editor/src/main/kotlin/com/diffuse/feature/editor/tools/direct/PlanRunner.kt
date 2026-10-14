@@ -5,6 +5,7 @@ import com.diffuse.core.ai.EditPlan
 import com.diffuse.core.ai.EraseProvider
 import com.diffuse.core.ai.FillProvider
 import com.diffuse.core.ai.PlanStep
+import com.diffuse.core.ai.PlanTarget
 import com.diffuse.core.ai.SegSession
 import com.diffuse.core.ai.SegmentationProvider
 import com.diffuse.core.ai.StyleId
@@ -28,18 +29,30 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 
-/** specs/vibe_edit.md §9. One event per thing the caller has to react to. */
+/**
+ * specs/vibe_edit.md §9, §18. One event per thing the caller has to react to. A run builds a
+ * **candidate**: [Committed] is a step added to it, not a history entry — the caller commits the
+ * reviewed candidate once, or discards it.
+ */
 sealed interface RunEvent {
 
     data class Started(val index: Int) : RunEvent
 
-    /** [document] is the result of every step up to and including [index]. */
+    /** [document] is the candidate after every step up to and including [index]. */
     data class Committed(val index: Int, val document: EditDocument) : RunEvent
 
     data class Stopped(val index: Int, val error: AppError) : RunEvent
 
     data object Completed : RunEvent
 }
+
+/**
+ * specs/vibe_edit.md §15, §18, §19. A selection a step is about to use and what it means: a new one
+ * the segmenter found for the plan's [phrase] — used straight away and reported, never asked about —
+ * or an existing one whose meaning this session does not know ([phrase] null), which the user is
+ * asked to confirm on an overlay first.
+ */
+data class TargetCheck(val phrase: String?, val mask: Bitmap, val maskId: String)
 
 /**
  * specs/vibe_edit.md §9. Runs a plan against the providers the manual tools use. It adds no
@@ -49,7 +62,8 @@ sealed interface RunEvent {
  * `EditorViewModel`'s `SavedStateHandle`, the shape `EraseController` already uses. And it emits
  * events rather than pushing history, because only `EditorViewModel` holds the `HistoryStack`.
  */
-// The seventh parameter is specs/vibe_edit.md §9's own signature: three providers, a dispatcher
+// The eighth parameter is §18's overlay mask; the seventh is specs/vibe_edit.md §9's own
+// signature: three providers, a dispatcher
 // and one writer per thing a step can produce. Grouping the writers would hide which step writes
 // what, which is the only reason this class takes lambdas rather than the repository.
 @Suppress("LongParameterList")
@@ -79,21 +93,39 @@ class PlanRunner(
      * lambda — the shape every other thing `PlanRunner` cannot know already takes.
      */
     private val styleParams: suspend (StyleId, Int) -> Map<AdjustKind, Float>,
+    /**
+     * §18: an existing selection's mask at preview size, to show on the confirmation overlay —
+     * `Renderer.resolveMask`, bound by the ViewModel.
+     */
+    private val resolveMask: suspend (EditDocument, String) -> Bitmap? = { _, _ -> null },
 ) {
 
     /**
-     * §9.1: a step that consumes a selection must have one, from an earlier `Select` in the same
-     * plan or from the document. Checked when the plan arrives, so a plan that cannot work is
-     * never shown as if it could.
+     * §9.1, §15: every target a step names must exist when it runs — an existing one in
+     * [document], a new one declared by an earlier `Select` — and erase, cut-out and fill act on
+     * the selection made right before them. Checked when the plan arrives, so a plan that cannot
+     * work is never shown as if it could. A `Topaz` step is never run here (§16), and is valid.
      *
      * @return the first step that cannot run, or null.
      */
     fun validate(plan: EditPlan, document: EditDocument): PlanStep? {
-        var selected = document.activeMaskId != null
+        val declared = mutableSetOf<String>()
+        var current: String? = null
         return plan.steps.firstOrNull { step ->
-            val missing = step.consumesSelection && !selected
-            if (step is PlanStep.Select) selected = true
-            missing
+            val invalid = when (step) {
+                is PlanStep.Select -> !declared.add(step.label)
+                is PlanStep.Adjust -> when (val target = step.target) {
+                    null -> false
+                    is PlanTarget.Existing -> document.mask(target.maskId) == null
+                    is PlanTarget.New -> target.label !in declared
+                }
+                is PlanStep.Erase -> step.target != current
+                is PlanStep.CutOut -> step.target != current
+                is PlanStep.Fill -> step.target != current
+                is PlanStep.Crop, is PlanStep.Style, is PlanStep.Topaz -> false
+            }
+            if (step is PlanStep.Select) current = step.label
+            invalid
         }
     }
 
@@ -109,14 +141,36 @@ class PlanRunner(
      * step's rect is normalised against (specs/crop.md). The preview cannot supply it: once the
      * document carries a crop, the preview is the cropped shape.
      */
+    // The run's inputs are the canvas's five facts plus §18's confirmation gate and §19's report.
+    @Suppress("LongParameterList")
     fun run(
         plan: EditPlan,
         document: EditDocument,
         preview: Bitmap,
         activeMask: Bitmap?,
         sourceAspect: Float,
+        /**
+         * §18: an existing selection of unknown meaning shown on an overlay; false stops the run
+         * before anything uses it. Not asked for one in [confirmed].
+         */
+        confirm: suspend (TargetCheck) -> Boolean = { true },
+        /** Mask ids whose meaning this session knows — confirmed or found for a phrase (§15). */
+        confirmed: Set<String> = emptySet(),
+        /** §19: this proposal session's selections and generated results, reused. */
+        cache: PlanCache? = null,
+        /**
+         * §19: a rebuild after a toggle. Nothing remote is called: a selection or a generated
+         * result the [cache] does not hold stops the run with [NEEDS_PREVIEW] instead.
+         */
+        offline: Boolean = false,
+        /**
+         * §19: a new selection the segmenter found for its phrase and the checks passed, stored and
+         * about to be used without asking — so the caller can say so and record it as found, not
+         * as confirmed.
+         */
+        onResolved: (TargetCheck) -> Unit = {},
     ): Flow<RunEvent> = flow {
-        val run = Run(preview, activeMask, sourceAspect)
+        val run = Run(preview, activeMask, sourceAspect, confirm, confirmed, cache, offline, onResolved)
         var current = document
         var stopped = false
         try {
@@ -141,11 +195,21 @@ class PlanRunner(
         }
     }.flowOn(dispatchers.io)
 
-    /** One run's mutable parts: the session it opened and the mask the steps share. */
+    /**
+     * One run's mutable parts: the session it opened, the selections its `Select` steps made by
+     * label, and the existing selections the user confirmed during it.
+     */
+    // The run's own state is what the steps share; each field is one of §15's facts.
+    @Suppress("LongParameterList")
     private inner class Run(
         private val preview: Bitmap,
         private var mask: Bitmap?,
         private val sourceAspect: Float,
+        private val confirm: suspend (TargetCheck) -> Boolean,
+        confirmed: Set<String>,
+        private val cache: PlanCache?,
+        private val offline: Boolean,
+        private val onResolved: (TargetCheck) -> Unit,
     ) {
 
         private var session: SegSession? = null
@@ -153,25 +217,60 @@ class PlanRunner(
         /** T51: what the last `Select` was looking for, so the eraser can be told what is gone. */
         private var phrase: String? = null
 
+        /** §15: label → the mask id its `Select` stored. */
+        private val labels = mutableMapOf<String, String>()
+        private val confirmedIds = confirmed.toMutableSet()
+
         suspend fun apply(step: PlanStep, document: EditDocument): Result<EditDocument> =
             when (step) {
                 is PlanStep.Select -> {
                     phrase = step.phrase
-                    select(step.phrase, document)
+                    select(step, document)
                 }
-                is PlanStep.Adjust -> Result.Success(
-                    document.withAdjust(
-                        step.kind,
-                        step.value,
-                        if (step.masked) document.activeMaskId else null,
-                    ),
-                )
-                PlanStep.Erase -> eraseSelection(document)
-                is PlanStep.Fill -> fillSelection(step.prompt, document)
-                PlanStep.CutOut -> cutOut(document)
+                is PlanStep.Adjust -> adjust(step, document)
+                // §15: these act on the selection made right before them, by name — never on
+                // whatever else happens to be active.
+                is PlanStep.Erase -> if (isCurrent(step.target, document)) {
+                    generated(step, document) { eraseSelection(document) }
+                } else {
+                    missing()
+                }
+                is PlanStep.Fill -> if (isCurrent(step.target, document)) {
+                    generated(step, document) { fillSelection(step.prompt, document) }
+                } else {
+                    missing()
+                }
+                is PlanStep.CutOut -> if (isCurrent(step.target, document)) cutOut(document) else missing()
                 is PlanStep.Crop -> Result.Success(crop(step, document))
                 is PlanStep.Style -> Result.Success(style(step, document))
+                // §16: a Topaz step opens its sheet; it is never run here.
+                is PlanStep.Topaz -> Result.Failure(AppError.Unsupported)
             }
+
+        private fun isCurrent(label: String, document: EditDocument): Boolean =
+            labels[label] != null && labels[label] == document.activeMaskId
+
+        /**
+         * §15: the target is the one the step names — an existing selection's own mask id (its
+         * setting updated in place), or the mask a `Select` in this run stored for the label.
+         * An existing selection whose meaning was never confirmed is shown first (§18).
+         */
+        private suspend fun adjust(step: PlanStep.Adjust, document: EditDocument): Result<EditDocument> {
+            val maskId = when (val target = step.target) {
+                null -> null
+                is PlanTarget.New -> labels[target.label] ?: return missing()
+                is PlanTarget.Existing -> target.maskId
+            }
+            val confirmed = maskId == null || maskId in confirmedIds || maskId in labels.values ||
+                confirmExisting(document, maskId)
+            return if (confirmed) Result.Success(document.withAdjust(step.kind, step.value, maskId)) else rejected()
+        }
+
+        /** §18: an existing selection's meaning, asked once per run on the overlay. */
+        private suspend fun confirmExisting(document: EditDocument, maskId: String): Boolean {
+            val shown = resolveMask(document, maskId) ?: return false
+            return confirm(TargetCheck(null, shown, maskId)).also { if (it) confirmedIds += maskId }
+        }
 
         /** §9.2: the session is opened once, on the current preview, and closed with the run. */
         suspend fun close() {
@@ -179,11 +278,46 @@ class PlanRunner(
             session = null
         }
 
-        private suspend fun select(phrase: String, document: EditDocument): Result<EditDocument> =
-            when (val opened = session()) {
-                is Result.Failure -> opened
-                is Result.Success -> segment(opened.value, phrase, document)
+        /**
+         * §19: a selection this proposal session already made is reused — same frame, same
+         * phrase — with no segmenter call.
+         */
+        // A hit, an offline miss and a segmenter call are three different answers.
+        @Suppress("ReturnCount")
+        private suspend fun select(step: PlanStep.Select, document: EditDocument): Result<EditDocument> {
+            val hit = cache?.selection(step)
+            if (hit != null) {
+                mask = hit.mask
+                labels[step.label] = hit.maskId
+                return Result.Success(document.withMask(hit.ref, hit.maskId))
             }
+            if (offline) return needsPreview()
+            return when (val opened = session()) {
+                is Result.Failure -> opened
+                is Result.Success -> segment(opened.value, step, document)
+            }
+        }
+
+        /**
+         * §19: a generated patch is reused only for exactly the input it was made from — the
+         * frame without its adjustments (what the provider was shown), the selection it consumed
+         * and the step's own options. Anything else is a new paid call, which an offline rebuild
+         * never makes.
+         */
+        // A hit, an offline miss and a call are three different answers.
+        @Suppress("ReturnCount")
+        private suspend fun generated(
+            step: PlanStep,
+            document: EditDocument,
+            call: suspend () -> Result<EditDocument>,
+        ): Result<EditDocument> {
+            val key = PlanCache.Key(step, phrase, document)
+            cache?.generated(key)?.let { added -> return Result.Success(PlanCache.reapply(document, added)) }
+            if (offline) return needsPreview()
+            return call().also { result ->
+                if (result is Result.Success) cache?.putGenerated(key, PlanCache.added(document, result.value))
+            }
+        }
 
         private suspend fun session(): Result<SegSession> {
             val existing = session
@@ -197,37 +331,50 @@ class PlanRunner(
         }
 
         /**
-         * §9.2: a phrase's instances union into one mask, as in the manual tool. An empty result
-         * **stops the run** — the steps after it were written for a selection that does not
-         * exist — and names the phrase that failed.
+         * §9.2, §18, §19: what the segmenter answered is checked before anything uses it. No
+         * instance with any pixel set **stops the run** and names the phrase; a mask that is not
+         * the preview's size stops it too. Several instances union only when the step asked for
+         * several things — one person is never silently everyone found. A selection that passes
+         * is the plan's explicit target resolved: it is stored and used without an overlay, and
+         * reported through `onResolved` so the review can name it.
          */
         private suspend fun segment(
             session: SegSession,
-            phrase: String,
+            step: PlanStep.Select,
             document: EditDocument,
-        ): Result<EditDocument> = when (val found = segmentation.byText(session, phrase)) {
-            is Result.Failure -> found
-            is Result.Success -> {
-                val union = MaskOps.union(found.value.map { it.alpha })
-                if (union == null) {
-                    Result.Failure(AppError.Invalid("$NOT_FOUND_PREFIX$phrase"))
-                } else {
-                    storeMask(union, document)
+        ): Result<EditDocument> {
+            val found = when (val answered = segmentation.byText(session, step.phrase)) {
+                is Result.Failure -> return answered
+                is Result.Success -> answered.value.map { it.alpha }.filter(::anySet)
+            }
+            return when {
+                found.isEmpty() -> Result.Failure(AppError.Invalid("$NOT_FOUND_PREFIX${step.phrase}"))
+                found.any { it.width != preview.width || it.height != preview.height } ->
+                    Result.Failure(AppError.Invalid(MASK_SIZE))
+                found.size > 1 && !step.multiple -> Result.Failure(AppError.Invalid("$AMBIGUOUS_PREFIX${step.phrase}"))
+                else -> {
+                    val union = requireNotNull(MaskOps.union(found))
+                    val maskId = newId()
+                    storeMask(union, maskId, document).also { stored ->
+                        if (stored is Result.Success) {
+                            labels[step.label] = maskId
+                            stored.value.mask(maskId)?.let { cache?.putSelection(step, maskId, it.maskRef, union) }
+                            onResolved(TargetCheck(step.phrase, union, maskId))
+                        }
+                    }
                 }
             }
         }
 
         private suspend fun storeMask(
             union: Bitmap,
+            maskId: String,
             document: EditDocument,
-        ): Result<EditDocument> {
-            val maskId = newId()
-            return when (val saved = saveMask(maskId, union)) {
-                is Result.Failure -> saved
-                is Result.Success -> {
-                    mask = union
-                    Result.Success(document.withMask(saved.value, maskId))
-                }
+        ): Result<EditDocument> = when (val saved = saveMask(maskId, union)) {
+            is Result.Failure -> saved
+            is Result.Success -> {
+                mask = union
+                Result.Success(document.withMask(saved.value, maskId))
             }
         }
 
@@ -299,6 +446,10 @@ class PlanRunner(
          */
         private fun missing(): Result<EditDocument> =
             Result.Failure(AppError.Invalid("no selection"))
+
+        private fun rejected(): Result<EditDocument> = Result.Failure(AppError.Invalid(SELECTION_REJECTED))
+
+        private fun needsPreview(): Result<EditDocument> = Result.Failure(AppError.Invalid(NEEDS_PREVIEW))
     }
 
     companion object {
@@ -307,18 +458,26 @@ class PlanRunner(
          * detail prefix rather than a new `AppError`, the shape `blocked:` already uses.
          */
         const val NOT_FOUND_PREFIX = "not found:"
+
+        /** §18: several instances for a step that asked for one thing; names the phrase. */
+        const val AMBIGUOUS_PREFIX = "ambiguous:"
+
+        /** §18: a segmenter answer whose size is not the frame's. */
+        const val MASK_SIZE = "mask size"
+
+        /** §18: the user said the existing selection on the overlay is not what was meant. */
+        const val SELECTION_REJECTED = "selection rejected"
+
+        /** §19: an offline rebuild reached a step only a remote call can answer. */
+        const val NEEDS_PREVIEW = "needs preview"
     }
 }
 
-/**
- * §9.1: `Select` produces a selection; these three consume one. `Crop` consumes none — §4.1 needed
- * no new rule here, which is the signal the step carries only a ratio.
- */
-private val PlanStep.consumesSelection: Boolean
-    get() = when (this) {
-        // §6: a style consumes no selection either, and needed no new `validate` clause.
-        is PlanStep.Select, is PlanStep.Crop, is PlanStep.Style -> false
-        is PlanStep.Adjust -> masked
-        is PlanStep.Fill -> true
-        PlanStep.Erase, PlanStep.CutOut -> true
-    }
+/** §18: an instance with no pixel set is no selection at all (an all-zero alpha). */
+private fun anySet(mask: Bitmap): Boolean {
+    val pixels = IntArray(mask.width * mask.height)
+    mask.getPixels(pixels, 0, mask.width, 0, 0, mask.width, mask.height)
+    return pixels.any { it ushr ALPHA_SHIFT != 0 }
+}
+
+private const val ALPHA_SHIFT = 24

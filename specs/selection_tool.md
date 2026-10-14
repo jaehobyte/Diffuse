@@ -108,6 +108,12 @@ Non-blocking `bodySm` text under the buttons. Never a snackbar, never a dialog.
 ### 8.3 Generative erase (T38)
 Specified separately in generative_erase.md. It consumes `activeMaskId` and nothing else from here.
 
+### 8.4 Topaz (topaz_enhancement.md)
+An applied selection does **not** scope a Topaz run: Topaz always processes the whole photograph, and
+its sheet says so when a mask is active. The planned 선택 → 배경 제거 / 대상 추출 shortcuts are blocked
+on an unconfirmed wire contract (topaz_enhancement.md §9); this tool, its SAM 3 session and its masks
+are unchanged. A shortcut into Topaz from this sheet is refused while points or a mask are pending.
+
 ## 9. Edge cases
 - **The tool always prepares on the current rendered preview at working resolution**, not on the
   source, so masks align with what the user sees. Re-open the session when the operation list has
@@ -134,3 +140,10 @@ Specified separately in generative_erase.md. It consumes `activeMaskId` and noth
 - Screenshot goldens: `select_sheet_open`, `select_mask_preview`, `select_mask_merged`,
   `select_low_confidence`, `select_prompt_result`.
 - `MaskOutlineTest`: the outline path's bbox equals the mask bbox ± 1px.
+
+## Cross-reference: plans (2026-10-13)
+A plan names selections explicitly (vibe_edit.md §15): an existing mask by an opaque snapshot ref
+(`t1` …, resolved locally to this document's mask id), a new one by the label its `select_region`
+declared. Manual and legacy masks carry no description and are confirmed on the overlay before a
+plan uses them; a plan's new selection is confirmed on the same overlay (§18). Nothing here changes
+the manual tool.

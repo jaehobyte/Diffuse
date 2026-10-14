@@ -2,105 +2,93 @@
 
 ## Goal
 
-앱의 MonetGPT 자동 보정 기능(‘자동’ 도구), 서버 설정과 연동 코드를 제거하고 Gemini 보정 추천·직접 지시 및 기존 편집 문서의 호환성을 유지한다.
+보정 추천/지시의 선택된 워크플로우를 한 번의 실행으로 디노이즈까지 자동 처리하고, 새 편집본을 열지 않아도 현재 편집 화면에서 전체 결과를 미리보고 전후 비교할 수 있게 한다.
 
 ## Background
 
-2026-10-13 사용자 요청: “자동 보정 서버 제거(monetGPT)를 위한 tasks.md”. 범위 확인에 사용자가 동의했다: **앱의 MonetGPT 기능·연동 제거**, Gemini 보정 추천 유지. 외부 서버 저장소·모델·운영 자원 철거는 이번 계약에 포함하지 않는다.
+사용자 요청: “보정 추천에서 워크플로우 나오고 디노이즈를 하면 편집본을 새로 열어야 하는데 이것도 미리보기 볼 수 있게. 자동으로 기능 실행되기까지 하게. 지금은 직접 여러 버튼들을 누르는 것도 있다.”
 
-현재 코드에서 확인한 연결:
-- `core/ai/monet/*`가 `/health`와 `/v1/chat/completions`를 호출한다. `AiModule`이 `MonetSettings`, `MonetClient`, `MonetAutoEnhanceProvider`를 연결한다.
-- `AutoEnhanceProvider` / `AutoStyle` → `EditorAi` → `AutoController` / `AutoState` → AI 그룹의 `Tool.Auto`와 `AutoSheet`로 이어진다.
-- `EditorViewModel`과 `EditorRoute`에 자동 보정의 probe·상태 수집·busy/message·미리보기·적용·취소·문서 변경 처리가 분산되어 있다. 문서 변경 collector에는 멀티샷 처리도 함께 있어 통째로 삭제하면 안 된다.
-- `SelectionController` / `SelectionState` / `Sam3SettingsSheet`가 SAM3·Gemini·Monet 설정을 함께 저장한다. 현재 저장 활성화는 SAM3 또는 Monet 주소에 의존하므로 Monet 필드만 삭제하면 Gemini 키만 사용하는 설정 흐름을 막을 수 있다.
-- `core/ai/build.gradle.kts`는 `MONET_BASE_URL`, `MONET_TOKEN`을 생성하고 `MONET_AUTH_TOKEN`, `monet.baseUrl`, `monet.token` 입력을 읽는다. `scripts/install.sh`에도 Monet 주소 처리가 있다.
-- 자동 보정 결과는 `AutoState.appliedTo`에서 일반 `withAdjust(..., maskId = null)` 연산으로 적용된다. 서버 전용 문서 포맷을 제거하는 작업이 아니다.
-- 기존 RESULT에는 MonetGPT와 SAM3의 GPU 메모리 충돌 후 MonetGPT 추론을 중지한 기록이 있다. 이는 과거 운영 기록이며 현재 서비스 상태를 새로 확인한 것은 아니다.
+현재 작업 트리를 확인한 결과:
+- `DirectController.preview()`는 로컬 단계만 실행하고, Topaz만 선택된 경우 `host.openTopaz()`로 별도 시트를 연다. 로컬+Topaz는 `adopt()`에서 로컬 문서를 먼저 commit한 뒤 `TopazHandOff`로 넘긴다.
+- `PlanRunner`는 선택 영역마다 `confirm` 응답을 기다린다. crop 후보 자체는 기존 `CropState`로 만들지만 `EditorViewModel.onFinished()`가 다시 자르기 시트를 열어 확정을 요구한다. Topaz는 runner에서 Unsupported이며 별도 시트의 실행 버튼을 눌러야 제출된다.
+- Topaz 미리보기 자체는 이미 있다. `TopazResult.after`와 `TopazInput.before`, `EditorRoute.topazFrame()`이 전후 비교를 제공하지만 `Tool.Enhance`에서만 표시된다. 새 편집본 생성은 `openCopy()`의 별도 저장/탐색 동작이다. 따라서 “Topaz에는 미리보기가 없다”라고 가정하지 말고 실제 추천 경로의 표시·상태 소유권·화면 전환을 검증한다.
+- 기존 D098은 결과를 현재 문서의 Operation으로 넣지 않고 파일 저장 또는 새 편집본으로 채택한다. 이 저장 경계는 유지하면서 **미리보기에는 새 프로젝트가 필요 없도록** 한다.
 
-이번 요청은 `specs/auto_enhance.md`의 자동 도구 제공 계약과 `specs/tool_groups.md`의 메뉴 계약을 명시적으로 변경한다. D081의 연결 복구 및 D082의 외부 테스트 접근은 제거된 앱 기능의 과거 결정으로 남기고, 서버 자원 철거 완료로 해석하지 않는다.
+이번 요청은 D099의 매 선택 확인 및 도구 인계, D100과 `specs/vibe_edit.md` §19의 로컬 선확정→Topaz 별도 실행 정책을 변경한다. 계획 도착만으로 유료 호출을 시작하는 것으로 해석하지 않는다. **계획/토글 검토 → 한 번의 `선택한 보정 실행` → 필요한 기능 자동 실행 → 현재 화면의 최종 미리보기 → 사용자가 채택/저장**이 이번 계약이다. 중간 실행 버튼을 없애되 최종 결과 선택권은 유지한다.
+
+관련 미커밋 구현과 문서가 다수 있다. 현재 작업 트리를 기반으로 확장하고 원복하지 않는다. 이전 미해결 인계는 Notes에 보존한다.
 
 ## Scope
 
 ### Modify
 
-- 제거: `core/ai/src/main/kotlin/com/diffuse/core/ai/monet/`, `AutoEnhanceProvider.kt` 및 전용 테스트·`testShared/FakeAutoEnhanceProvider.kt`.
-- 제거: `feature/editor/.../tools/auto/` 및 전용 테스트·골든. 공용 fixture나 다른 기능의 근거는 보존한다.
-- 정리: `AiModule.kt`, `EditorAi.kt`, `EditorViewModel.kt`, `EditorRoute.kt`, 실제 `EditorUiState` 정의, `Tool.kt`, `ToolSheetHost.kt` 및 관련 도구 동작 분기.
-- 정리: `tools/select/{SelectionController,SelectionState,Sam3SettingsSheet}.kt`, 전용 문자열·test tag 및 설정 테스트.
-- 정리: `core/ai/build.gradle.kts`, `scripts/install.sh`, 추적 중인 설정 예제·현재 기능 안내. 실제 비밀값을 열람·출력할 필요는 없다.
-- 갱신: `EditorAi`를 생성하는 feature/editor와 app 테스트 fixture, 메뉴·설정·Back·회귀 테스트 및 영향받은 UI 골든.
-- 갱신: `specs/auto_enhance.md`, `specs/tool_groups.md`, `architecture/projetoverview.md` 및 현재 기능을 잘못 설명하는 직접 관련 문서/주석. `work/decisions.md`에 제거 결정, `work/RESULT.md`에 구현·검증 인계.
+- `feature/editor/.../tools/direct/{DirectController,DirectCandidate,DirectSheet,PlanRunner,PlanCache,TopazHandOff}.kt`: 단일 실행, 단계 진행, 선택 확인 정책, 통합 후보/결과 수명.
+- `feature/editor/.../tools/enhance/{TopazController,TopazState,TopazSheet,TopazStorage}.kt`: 기존 처리·다운로드·미리보기·저장 기능의 재사용 및 워크플로우 입력 지원.
+- `EditorViewModel.kt`, `EditorRoute.kt`, 필요한 `tools/ToolSheetHost.kt` 연결, `strings.xml`과 관련 테스트/fake/골든.
+- 필요한 최소 `core/data/TopazWorkspace.kt` 파일 소유권 연결. 기존 repository, renderer, provider 인터페이스는 필요한 범위에서만 확장한다.
+- `specs/vibe_edit.md`, `specs/topaz_enhancement.md`, `DESIGN.md`의 해당 동작, `work/decisions.md`, `work/RESULT.md`.
 
 ### Do not modify
 
-- Gemini 추천·직접 지시의 프롬프트, 함수 스키마, 추천 규칙, 스타일 프리셋 및 참조 스타일 매칭 동작. 자동 도구를 Gemini 호출로 대체하지 않는다.
-- 기존 미커밋 Gemini 3.8 Flash 변경과 `prompt.txt`. 관련 파일을 만질 때 해당 변경을 유지한다.
-- SAM3 선택/멀티샷, 피부 서버, 생성 지우기·채우기·확대의 기능·주소·인증·운영 상태.
-- `AdjustKind`(Blacks, Whites, Fade, SCurve, Clarity 및 HSL 포함), 렌더 수학, JSON/DB 스키마, 기존 프로젝트·사용자 사진.
-- 외부 `/home/jaeho/monetGPT` 저장소, 모델 가중치·캐시, systemd 서비스·Caddy·포트·방화벽·GPU 프로세스. 중단/삭제/재배포 명령을 수행하지 않는다.
-- 이전 REVIEW 수정, 자동 commit/push, 별도 task/result 사본, 관련 없는 리팩터링·의존성 교체.
+- DB/문서 직렬화 포맷, Operation 종류, 렌더 엔진, 4096px 편집 한계, 고해상도 원본 결과 저장 정책.
+- Topaz 모델/endpoint/키 저장/요금 정책, 여러 Topaz purpose의 연속 합성, 미지원 T4, 새 공급자/의존성.
+- 추천 품질 정책·항목별 토글 폐기, 자동 품질 평가/반복 재생성, 계획 수신만으로 자동 유료 제출, 자동 저장/새 프로젝트 이동.
+- 일반 수동 도구를 열자마자 실행하는 전역 정책. 자동 실행은 사용자가 시작한 추천/지시 워크플로우에 한정한다.
+- 무관한 구현/사진/프로젝트 삭제, 미커밋 변경 원복, 별도 task/result/review 복사본, 자동 커밋, 구현자의 REVIEW 승인 처리.
 
 ## Requirements
 
-1. **앱 기능 및 실행 경로 제거**
-   - AI 도구 목록에서 ‘자동’을 제거한다. 비활성 메뉴, 준비 중 메시지, 빈 시트 또는 대체 서버 경로를 남기지 않는다. 나머지 메뉴의 상대 순서를 유지한다.
-   - `AutoController` 생성, DI binding, 상태/Flow 수집, probe 및 재시도, 설정 저장 구독, 실행·취소·적용·미리보기·busy/message 연결을 함께 제거한다.
-   - 앱 진입·사진 열기·서버 설정 저장·다른 AI 도구 사용으로 Monet health 또는 추론 요청이 발생할 경로가 없어야 한다.
-   - 공용 취소/Back/문서 변경 collector에서 자동 보정 부분만 제거한다. 멀티샷의 취소·문서 전환 무효화, 나머지 도구의 preview/busy/message 처리를 보존한다.
+1. **한 번 시작하면 끝까지 실행.** 보정별 토글과 기능·대상·예상 효과 설명을 유지한다. 실행 가능한 항목은 기존 기본 선택 정책을 따르고 모두 off이면 실행 불가다. 주 버튼 `선택한 보정 실행` 한 번으로 선택된 로컬 보정, 필요한 선택/생성 처리, crop, 마지막 Topaz 한 단계를 순서대로 수행한다. 로컬 적용, 화질 개선에서 확인, Topaz 실행 같은 중간 버튼은 요구하지 않는다. 보정 추천과 텍스트 지시가 같은 실행 경로를 사용한다. 실행 전 선택된 원격/유료 처리와 크레딧 사용을 기존 시트 안에서 알 수 있게 한다. 시작 전 토글/계획 검토는 submit 0회다.
 
-2. **설정과 빌드 구성 정리**
-   - 공용 서버 설정에서 Monet 주소·토큰·안내·검증·callback 인자·상태를 제거한다. 남은 필드는 SAM3 주소/토큰과 Gemini API 키이며 기존 DESIGN 컴포넌트를 사용한다.
-   - SAM3 주소 없이 Gemini 키만 입력·수정·저장할 수 있어야 한다. 반대로 Gemini 키 없이 SAM3 설정만 저장할 수 있어야 한다. 기존 값을 비우고 저장하는 동작도 막지 않는다. 제거된 Monet 설정은 저장 가능 여부에 영향을 주지 않는다.
-   - 남은 설정을 다른 서비스에 복사하거나 삭제하지 않는다. 취소 시 입력 변경을 저장하지 않고 Gemini 키 마스킹을 유지한다.
-   - Monet BuildConfig 필드와 환경변수/local.properties 소비, 설치 스크립트의 Monet 처리와 현행 설정 예제를 제거한다. 로컬 credential 빌드 옵션과 다른 서버 설정 로딩은 유지한다.
-   - 업그레이드 후 남는 `monet_settings` 전용 SharedPreferences는 읽거나 사용하지 않고 그대로 무시한다. 이번 제거만을 위한 마이그레이션/앱 데이터 초기화는 추가하지 않는다. 이 잔여 저장 데이터 정책을 RESULT에 명시한다.
+2. **자동화 가능한 선택·crop은 중간 대기 제거.** 계획의 명시적 대상이 유효한 mask로 해결되고 기존 구조/제약 검사를 통과하면 매번 `이 영역이 맞나요`를 누르게 하지 않는다. 알 수 없는 기존 mask의 의미, 찾지 못한 대상, 유효하지 않은 선택 등 실제 판단이 필요한 경우에만 해당 이유와 수정/해제 수단을 표시하고 멈춘다. 임의의 다른 대상이나 전체 사진으로 대체하지 않는다. 자동으로 해결된 선택을 “사용자가 확인함”으로 위조하지 않도록 세션 target 메타데이터를 구분한다. crop은 기존 비율/프레이밍 계산 결과를 후보에 포함하고 자동으로 다음 단계에 진행한다. crop 수동 시트를 필수로 열지 않는다. 결과가 마음에 들지 않으면 항목을 끄고 다시 실행할 수 있어야 한다. 일반 수동 선택/자르기 UX는 유지한다.
 
-3. **편집 데이터와 공용 코드 보존**
-   - 이전 자동 보정으로 저장한 일반 Adjust 연산을 그대로 역직렬화·렌더·재편집·재저장·내보내기할 수 있어야 한다. 제거를 이유로 보정값을 초기화하거나 프로젝트를 마이그레이션하지 않는다.
-   - Monet 연동에 쓰였다는 이유로 공용 tone/HSL 연산, 스타일 프리셋, 이미지 코덱·HTTP/availability 유틸을 지우지 않는다. 실제 참조를 확인해 Monet 전용 구현만 제거한다.
-   - 피부 서버의 주석 등에 있는 과거 Monet 구현 참조는 필요하면 현재 동작 설명으로 고친다. 기능 구현을 재설계하지 않는다.
+3. **미확정 로컬 후보를 Topaz 입력으로 연결.** 로컬 보정과 crop을 모두 반영한 후보를 기존 full renderer로 렌더해 Topaz에 전달한다. 현재 history의 문서나 화면 축소본으로 잘못 대체하지 않는다. 크기/alpha/목적/옵션/키를 실제 입력으로 검사하고 준비가 끝난 후 정확히 한 번 제출한다. `open()` 직후 아직 Preparing인 상태에서 `run()`을 호출해 실행이 유실되는 연결은 금지한다. 이를 위해 로컬 후보를 먼저 commit하거나 임시 프로젝트를 만들지 않는다. 기존 provider의 업로드·poll·취소·다운로드 검증을 재사용한다.
 
-4. **테스트와 문서**
-   - Monet 전용 테스트는 기능과 함께 제거하고 공용 테스트 fixture에서 제거된 생성자 인자를 정리한다. 나머지 행동 assertion을 약화하거나 테스트 전체를 삭제해 컴파일만 맞추지 않는다.
-   - AI 메뉴의 정확한 남은 항목·순서와 ‘자동’ 부재를 확인한다. `Tool.entries`와 동등하다는 자기참조 검사만으로 끝내지 않는다.
-   - 설정 테스트에 Gemini 단독 저장, SAM3 단독 저장, 기존 값 비우기·취소 및 남은 설정 보존을 포함한다.
-   - 기존 일반 Adjust 저장/복원 검사를 확인하고 Blacks/Whites와 HSL을 포함한 이전 자동 보정 결과의 호환성에 빈틈이 있으면 최소 회귀 사례를 보강한다. 기존 의미 있는 검사가 충분하면 중복 테스트를 만들지 않는다.
-   - 실제 변경된 메뉴·설정 골든만 육안 확인 후 갱신한다. Monet 전용 골든/등록 항목을 함께 제거하며 전체 골든을 재기록하거나 허용 오차를 넓히지 않는다.
-   - `specs/auto_enhance.md`는 삭제 대신 상단에 기능 제거 상태와 보존된 Adjust 데이터 계약을 명시하고, 아래 종전 계약이 역사적 참고임을 분명히 한다. 현재 메뉴·제품 안내에서 MonetGPT를 사용 가능한 기능으로 안내하지 않는다.
-   - D081/D082 등 과거 결정과 과거 릴리스 기록은 역사로 보존한다. 새 결정으로 앱 연동 폐기 범위를 명시하며 외부 서버까지 철거했다고 쓰지 않는다.
+4. **같은 화면에서 최종 결과 미리보기.** 디노이즈 단독 및 로컬+디노이즈 모두 완료 즉시 현재 추천/지시 화면의 캔버스에 최종 결과를 표시한다. 새 편집본 생성, 저장, 탐색 없이 전후 비교가 가능해야 한다. 기본 비교의 전은 워크플로우 진입 시 입력, 후는 선택한 전체 보정+Topaz 결과다. 로컬+Topaz에서 로컬 보정까지만 된 사진을 전체 결과로 표시하지 않는다. crop/해상도 변경 시 각 이미지의 올바른 종횡비를 유지하고 비교 레이블과 실제 프레임을 일치시킨다. 기존 HoldPill/TalkBack 비교 동작을 재사용하며 비교는 호출을 만들지 않는다. 대형 Topaz 파일은 기존 sampled preview로 표시하고 전체 크기 bitmap을 메모리에 올리지 않는다.
+
+5. **결과 확인과 저장 경계.** 실행/미리보기/취소 중 원래 문서·history·autosave·Browse 프로젝트 목록은 변하지 않는다. Topaz 없는 후보는 기존 `적용`으로 한 번 commit하고 Undo/Redo를 유지한다. Topaz 포함 결과는 현재 화면에서 검토한 뒤 기존 `고해상도 저장` 또는 `새 편집본으로 열기`를 선택한다. 새 편집본은 결과를 본 후 계속 편집하려는 선택이며 미리보기의 선행 조건이 아니다. 원본 프로젝트는 변경하지 않는다. 로컬 효과는 이미 최종 파일에 포함되므로 복사본에 Operation을 재적용하지 않는다. 4096px 재편집 한계·고해상도 파일 저장을 유지하고 자동 탐색/자동 저장하지 않는다. 채택 전 전체 취소는 진입 전 상태로 돌아간다.
+
+6. **토글 수정과 재실행.** 실행 중 토글은 잠그고 취소를 제공한다. 완료 후 선택을 바꾸면 최초 입력에서 선택한 효과만 만든 후보로 갱신한다. 로컬 후보/기존 생성 캐시를 재사용하되 Topaz 캐시는 실제 렌더 입력, crop, 목적/옵션, 공급자 설정 세대가 같은 경우에만 재사용한다. 로컬 Adjust도 Topaz 입력을 바꾸므로 기존 생성용 캐시 키를 그대로 복제하지 않는다. Topaz off는 로컬 결과를 보여주고 새 호출이 없다. 같은 입력의 off→on은 유효 결과를 재사용한다. 새 원격 처리가 필요하면 오래된 결과를 최신 결과처럼 표시하거나 저장/채택하지 못하게 하고 `선택한 보정 다시 실행`으로 한 번에 재생성한다. 토글·전후 비교·재구성·화면 재구성만으로 재과금하지 않는다. 강도 줄이기가 Topaz 입력을 바꾸는 경우에도 같은 무효화 규칙을 적용한다.
+
+7. **실패와 진행 상태.** 선택된 단계 기준으로 현재 작업과 진행 상태를 표시하고 준비→업로드→처리→다운로드가 자동으로 이어진다. 실제 퍼센트가 없으면 수치를 만들지 않는다. 키 없음/지원하지 않는 입력은 실행 전 가능한 범위에서 표시하고 해당 항목을 끄면 나머지 작업이 가능해야 한다. 중간 실패는 실패 단계와 이유를 알리고 후속 단계를 실행하지 않는다. 전체 성공으로 표시하거나 일부를 몰래 commit하지 않는다. Topaz 실패 시 로컬 후보를 보존해 Topaz off 후 검토/적용할 수 있다. 재시도는 사용자 동작으로만 실행하고 유효한 이전 단계는 재사용한다. SubmitUnknown 등 제출 성공 여부가 불명확한 경우 기존 안내를 유지하고 자동 중복 제출하지 않는다. 저장/새 편집본 생성만 실패한 경우 처리 결과를 재사용하며 Topaz를 다시 호출하지 않는다.
+
+8. **상태·취소·파일 소유권.** 전체 실행에 입력 snapshot·선택 revision·설정 세대·실행 식별자를 연결한다. 닫기/Back/취소/프로젝트 변경/문서 변경/키 변경/다른 도구 전환은 진행 중 실행과 준비를 무효화한다. 취소를 무시한 provider나 지연 완료가 뒤늦게 다음 단계 실행·시트 열기·결과 채택·저장·이동을 일으키지 않게 한다. 정상적인 내부 단계 진행을 사용자 이탈로 오인하지 않는다. 중복 클릭과 재구성은 submit/commit/create 중복을 만들지 않는다. configuration change는 유효한 ViewModel 세션을 유지하고 프로세스 재시작은 확정 문서로 복구하며 유료 작업을 자동 재개하지 않는다. 파일 소유권을 현재 워크플로우 세션으로 명확히 하고 reader/저장/복사본 생성 중 파일을 삭제하지 않는다. 취소·무효화·세션 종료 시 불필요한 후보 및 Topaz 파일을 정리하되 채택된 프로젝트 파일은 보존한다.
+
+9. **기존 구조와 UI 재사용.** DirectController가 워크플로우를 조정하고 TopazController/provider의 처리 기능을 재사용한다. 두 컨트롤러가 서로의 화면을 강제로 열거나 UI 버튼 클릭을 흉내 내는 방식으로 연결하지 않는다. 필요한 최소 실행 진입점/완료 계약을 명시하고 범용 실행 엔진이나 중복 Topaz 클라이언트를 만들지 않는다. 기존 스크롤 시트·고정 주 버튼·진행 overlay·취소·디자인 토큰·문자열 리소스를 사용한다. 긴 단계/큰 글자에서도 진행/취소/결과 확인이 가려지지 않아야 한다. 단독 화질 개선 시트의 명시적 실행 및 결과 비교도 회귀 없이 유지한다.
+
+10. **명세 동기화.** D099의 매 선택 확인, D100의 로컬 선확정/Topaz 인계, vibe_edit §4.1/§18/§19 및 topaz_enhancement §1/§5/§7의 관련 제한을 이번 계약에 맞게 갱신한다. D098의 별도 결과 저장 경계는 유지하고 워크플로우에서는 미확정 후보가 Topaz 입력이 될 수 있음을 명시한다. 기존 요구와 충돌하는 테스트는 새 동작의 회귀 검사로 교체하며 단순 삭제하지 않는다.
 
 ## Acceptance Criteria
 
-- [ ] 앱에서 자동 메뉴·시트·Monet 설정이 사라지고 Monet provider/DI/네트워크 실행 경로가 제거됐다.
-- [ ] SAM3와 Gemini를 독립적으로 저장·사용할 수 있고 기존 설정 및 취소/Back 동작이 보존된다.
-- [ ] Monet BuildConfig·환경변수 소비·설치 스크립트 연결과 전용 테스트/골든이 정리됐다.
-- [ ] Gemini 추천·직접 지시·스타일 매칭, SAM3·멀티샷 등 다른 기능에 회귀가 없다.
-- [ ] 기존 자동 보정 결과의 Adjust 데이터·tone/HSL 렌더·저장 호환성이 유지된다.
-- [ ] 관련 테스트·APK 빌드·저장소 전체 검사가 통과하거나 미실행/환경 차단/기존 실패가 구분되어 보고됐다.
-- [ ] 명세·제품 안내·결정 로그가 제거 범위와 일치하고 외부 서버/사용자 데이터는 변경하지 않았다.
+- [ ] 디노이즈만 선택 → 실행 1회 → Topaz submit 1회 → 현재 캔버스 결과/전후 비교. 그동안 프로젝트 create·navigation·history commit은 0회다.
+- [ ] 노출/색상+crop+디노이즈 → 실행 1회로 끝까지 진행한다. 실제 Topaz 입력이 crop/로컬 보정을 반영한 full 렌더인지 확인한다. 중간 시트/실행/적용 클릭은 0회다.
+- [ ] 유효한 새 선택+지우기/부분 보정은 확인 클릭 없이 완료한다. 알 수 없는 기존 대상·빈 mask·선택 실패는 잘못된 후속 실행 없이 이유를 표시한다.
+- [ ] Topaz off·모두 off·키 없음·투명 입력·옵션/크기 제한·crop 없는 로컬 전용 계획이 올바르게 동작한다.
+- [ ] 후보 선택 수정/강도 변경은 실제 입력을 기준으로 결과를 무효화한다. 같은 입력 off→on/비교는 submit 0회, 변경된 입력은 명시적 재실행 시에만 1회다.
+- [ ] 준비 중 취소, 지연 검사 중 도구/설정 변경, 실행 A 취소 후 B 시작, 취소 무시 provider, 중복 클릭, configuration change에서 오래된 결과나 중복 호출이 없다.
+- [ ] 중간 실패/Topaz 실패/제출 불명확/저장 실패/복사본 생성 실패 각각의 상태·재시도·파일 정리를 검사한다. Topaz 실패 후 off로 로컬 후보 적용이 가능하다.
+- [ ] 로컬 최종 적용은 history 1회 및 Undo/Redo/재로드 일치. Topaz 채택은 원본 불변, 복사본의 효과 중복 없음, 고해상도 저장 바이트 보존을 확인한다.
+- [ ] 실제 EditorRoute Compose 터치로 계획 → 단일 실행 → 최종 캔버스 → hold 전후 비교를 검사한다. 서로 다른 fake 결과 픽셀로 실제 표시 프레임을 검증하고 캔버스/버튼 회귀 골든을 갱신한다.
+- [ ] 단독 화질 개선 시트·일반 수동 자르기·선택 UX 회귀 없음. 관련 검사와 canonical 검사 결과, 실기기/실 API 검증 한계를 RESULT에 구분한다.
 
 ## Validation
 
+먼저 관련 행동 테스트를 추가/갱신하고 좁은 검사 후 canonical 검사를 실행한다. 신규 테스트가 아래 필터에 포함되지 않으면 필터를 보완한다.
+
 ```bash
-# 변경 모듈과 소비자의 컴파일 및 행동 회귀
-./gradlew --offline --quiet :core:ai:testDebugUnitTest :feature:editor:testDebugUnitTest :app:testDebugUnitTest
-./gradlew --offline --quiet :core:data:testDebugUnitTest :core:imaging:testDebugUnitTest
-./gradlew --offline --quiet :app:assembleDebug
+./gradlew --offline --quiet :feature:editor:testDebugUnitTest --tests '*tools.direct*' --tests '*tools.enhance*' --tests '*CropApply*'
+./gradlew --offline --quiet :core:ai:testDebugUnitTest --tests '*GeminiPlan*' --tests '*GeminiProposal*' --tests '*Topaz*'
+./gradlew --offline --quiet :core:data:testDebugUnitTest --tests '*TopazWorkspace*' --tests '*ProjectPersistence*'
 scripts/check.sh
 git diff --check
-
-# 삭제된 연결의 잔존 확인 (일치 항목은 현행 코드/역사적 기록을 구분해 설명)
-rg -n 'Monet|MONET_|monet\.|AutoEnhanceProvider|AutoStyle|Tool\.Auto|tools\.auto' core feature app scripts --glob '!**/build/**'
 ```
 
-개발 중에는 `ToolStripLevelTest`, `Sam3SettingsSheetTest`, `SelectionToolTest`, `EditorBackTest`, 직접 지시·스타일·멀티샷 테스트 등 관련 필터부터 실행할 수 있다. 최종 검증은 수정된 공용 fixture의 모든 소비자를 포함한다. 관련 없는 서버 검사를 새로 요구하지 않는다.
-
-기기가 가능하면 기존 앱 데이터 유지 업데이트 후 AI 메뉴·서버 설정·Gemini 단독 설정 저장, 보정 추천 진입, SAM3 선택/멀티샷 진입, 기존 보정 프로젝트 재열기·내보내기를 확인한다. 실제 API를 호출하지 못하면 fake/MockWebServer 통과와 분리해 기록한다. 외부 서버가 이미 중지됐다는 이유만으로 앱 요청 경로 제거 검증을 대신하지 않는다.
+실기기에서는 디노이즈 단독, 로컬+crop+디노이즈, 선택+지우기, Topaz off, 처리 중 Back/취소를 확인한다. 시작 이후 중간 필수 탭 수, 새 편집본 없이 결과 표시 여부, 전후 차이, 원본 프로젝트 보존, 고해상도 저장/복사본 채택을 기록한다. 가능하면 기존 허용 테스트 사진 중 노이즈 사진(`testsets/specialized_v1/images/35_denoise.png`)을 사용한다. fake 호출 횟수/상태 검증과 실 API 품질 검증을 구분하고 환경·키 등으로 미실행한 검사는 통과로 기록하지 않는다. 키·사진 데이터·서명 URL은 로그에 남기지 않는다.
 
 ## Notes
 
-- 이번 요청은 **작업서 작성**이며 이 파일 작성만으로 구현 완료를 뜻하지 않는다. Claude Code가 구현·검증 후 canonical `work/RESULT.md`를 갱신한다. Codex 리뷰는 별도다.
-- 현재 작업 트리에 Gemini 3.8 Flash 전환(두 client의 경로/주석, endpoint 테스트, `prompt.txt`, 관련 명세, D096)이 미커밋 상태다. 이 변경은 보존하고 제거 작업의 diff와 구분해 보고한다. D096 다음 결정 번호는 작성 시 중복을 확인한다.
-- 이전 보정 추천 REVIEW는 CHANGES_REQUESTED이며 R1(활성 선택과 goal 불일치), R2(배경 보존 중 CutOut 허용), R3(관련 회귀 검사)가 미해결이다. 이 제거 작업에서 수정하거나 해소됐다고 보고하지 않는다. 12종 fixture·각 3회·6축 품질 평가도 미완료다.
-- 이전 멀티샷 작업은 추가 5장/추출 대상 구현 및 자동 검사 완료 보고가 있으나 3장 제한 원인·picker/5장 전체·실제 dog/car 검증이 미완료다. 이후 설치·SAM3 truck 단일 추출 성공을 전체 시나리오 완료로 확대하지 않는다.
-- 기존 디자인/Back의 독립 실기기·IME/음성/TalkBack, 서버 멀티샷 ASGI 취소/큰 정수 metadata, 사진 품질/offline/12MP·PSS, Jev, 피부 D084 지원 0개와 서버 평가의 남은 사항은 유지한다. 상세는 기존 RESULT/REVIEW와 `work/retouch_evaluation.md`를 참조한다. 새 RESULT 작성 시 이 미해결 정보와 유효한 근거 링크를 이어 적고 별도 사본을 만들지 않는다.
+- 기준: `architecture/architecture.md`, `DESIGN.md` §4/§7, `specs/vibe_edit.md`, `specs/topaz_enhancement.md`, `specs/history.md`, `specs/persistence.md`, D098–D100. 이번 task는 구현 계약이며 앱 구현 완료/리뷰 승인을 뜻하지 않는다.
+- 최신 REVIEW는 **CHANGES_REQUESTED**이며 Topaz 인계 검사 중 무효화 R1/R2를 지적한다. 최신 RESULT는 해당 수정과 회귀 테스트·canonical 통과를 보고하지만 **재리뷰 미완료**다. `TopazHandOff.checking/cancel/ensureActive` 수정의 취지를 자동 실행 경로에도 보존하고 실제 ViewModel/Route 통합 검사를 포함한다.
+- 이전 crop R1/R2는 최신 REVIEW에서 수정/관련 검사 및 일부 실기기 동작이 확인됐다. export·자유 드래그·기울기·강제 종료는 해당 리뷰에서 재실행하지 않았다. 예전 RESULT의 재리뷰 미완료 문구와 최신 REVIEW의 범위를 구분한다.
+- 이전 추천/Topaz 작업의 PARTIAL 범위(실모델 12종×3회×6축, Topaz 전체 목적 실사진 품질, 생성 캐시/선택 실기기, TalkBack 등)는 남아 있다. 최신 REVIEW에서 로컬 토글·후보·Undo/Redo·crop 일부는 실기기 확인했으므로 전부 미검증으로 되돌리지 않는다. T4는 BLOCKED이며 이전 키 교체 권고도 해결 확인되지 않았다.
+- `work/RESULT.md`에 이번 구현·검증·남은 한계를 최신 인계로 기록하고 필요한 이전 미해결 정보를 보존한다. `work/REVIEW.md`와 증거 파일을 임의로 승인 처리하거나 삭제하지 않는다.

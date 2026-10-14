@@ -8,7 +8,11 @@ import com.diffuse.feature.export.ExportPipeline
 import com.diffuse.feature.export.ExportSettingsStore
 import com.diffuse.feature.export.Exporter
 import com.diffuse.feature.export.ImageStore
+import com.diffuse.feature.export.MediaStoreFileStore
 import com.diffuse.feature.export.MediaStoreImageStore
+import com.diffuse.core.common.DispatcherProvider
+import com.diffuse.core.common.Result
+import com.diffuse.feature.editor.tools.enhance.ResultFileSaver
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -32,6 +36,26 @@ object ExportModule {
     @Singleton
     fun exporter(renderer: Renderer, store: ImageStore): Exporter =
         Exporter(ExportPipeline(renderer), store)
+
+    /**
+     * specs/export.md §고해상도 결과 저장: the editor's Topaz result goes to the same album, byte
+     * for byte. The editor sees only `ResultFileSaver` (architecture.md §4.1).
+     */
+    @Provides
+    @Singleton
+    fun resultFileSaver(
+        resolver: ContentResolver,
+        @ApplicationContext context: Context,
+        dispatchers: DispatcherProvider,
+    ): ResultFileSaver {
+        val store = MediaStoreFileStore(resolver, context.getString(R.string.app_name), dispatchers)
+        return ResultFileSaver { file, mimeType, width, height ->
+            when (val copied = store.copy(file, mimeType, width, height)) {
+                is Result.Success -> Result.Success(Unit)
+                is Result.Failure -> copied
+            }
+        }
+    }
 
     @Provides
     @Singleton

@@ -31,8 +31,20 @@ While exporting: sheet closes, the editor shows the progress overlay (40% scrim,
 - Never write to `Environment.getExternalStoragePublicDirectory` directly; MediaStore only.
 - Never request `WRITE_EXTERNAL_STORAGE`.
 
+## 고해상도 결과 저장 (topaz_enhancement.md §5)
+The one exception to the pipeline above. A Topaz result is a finished file at up to 256 MP; running it
+through `Renderer.full` would cut it to the 4096px working size. `MediaStoreFileStore.copy` instead:
+1. Inserts a `Pictures/<AppName>/IMG_<yyyyMMdd_HHmmss>.<ext>` row with `IS_PENDING = 1`.
+2. Copies the file's bytes unchanged (no decode, no re-encode, no EXIF edit).
+3. Reads the stored image's bounds back; anything but the expected W×H deletes the row and fails.
+4. Clears `IS_PENDING`. Failure or cancellation at any step deletes the row.
+The editor reaches it only through `ResultFileSaver`, bound in `app` (architecture.md §4.1). The
+normal export sheet, its sizes and its 4096px bound are unchanged.
+
 ## Tests
 - Robolectric: export 4:5 preset at 1080 → file exists in MediaStore with 864×1080; JPEG when no alpha, PNG when `hasAlpha`.
 - Cancel mid-render → no MediaStore row remains.
 - Settings round-trip through DataStore.
 - Goldens: `export_sheet`, `export_progress_overlay`.
+- `MediaStoreFileStoreTest`: a 6000px-wide file is stored byte for byte at its size; a size
+  mismatch or a missing file leaves no row.

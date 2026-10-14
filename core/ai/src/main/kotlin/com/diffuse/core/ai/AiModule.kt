@@ -16,6 +16,9 @@ import com.diffuse.core.ai.sam3.Sam3SegmentationProvider
 import com.diffuse.core.ai.sam3.Sam3Settings
 import com.diffuse.core.ai.speech.AndroidSpeechInput
 import com.diffuse.core.ai.speech.SpeechInput
+import com.diffuse.core.ai.topaz.TopazClient
+import com.diffuse.core.ai.topaz.TopazHttpProvider
+import com.diffuse.core.ai.topaz.TopazProvider
 import com.diffuse.core.common.DispatcherProvider
 import dagger.Binds
 import dagger.Module
@@ -56,6 +59,9 @@ internal abstract class AiModule {
 
     @Binds
     abstract fun matchStyle(impl: GeminiMatchStyleProvider): MatchStyleProvider
+
+    @Binds
+    abstract fun topaz(impl: TopazHttpProvider): TopazProvider
 
     companion object {
         @Provides
@@ -105,5 +111,17 @@ internal abstract class AiModule {
             okHttp: OkHttpClient,
             logger: com.diffuse.core.common.Logger,
         ): GeminiMatchStyleClient = GeminiMatchStyleClient(config, dispatchers, okHttp, logger)
+
+        /**
+         * specs/topaz_enhancement.md §4. Provided for the same reason the other clients are; it
+         * takes no config source because every call is handed the config its run started with.
+         */
+        @Provides
+        @Singleton
+        fun topazClient(
+            dispatchers: DispatcherProvider,
+            okHttp: OkHttpClient,
+            logger: com.diffuse.core.common.Logger,
+        ): TopazClient = TopazClient(dispatchers, okHttp, logger)
     }
 }

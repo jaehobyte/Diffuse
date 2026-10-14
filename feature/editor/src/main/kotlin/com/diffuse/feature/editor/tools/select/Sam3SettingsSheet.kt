@@ -25,28 +25,31 @@ const val Sam3SettingsSheetTestTag = "Sam3SettingsSheet"
 const val Sam3BaseUrlFieldTestTag = "Sam3BaseUrl"
 const val Sam3TokenFieldTestTag = "Sam3Token"
 const val GeminiKeyFieldTestTag = "GeminiKey"
+const val TopazKeyFieldTestTag = "TopazKey"
 
 /**
  * specs/segmentation.md §6 and generative_erase.md §8. One 서버 설정 sheet for every provider
  * that needs configuring: the app has no settings screen, and a sheet per field would be worse
- * than one sheet with three. It opens from whichever tool needs it.
+ * than one sheet with four. It opens from whichever tool needs it.
  */
 @Composable
 fun Sam3SettingsSheet(
     config: Sam3Config,
     geminiApiKey: String,
-    onSave: (baseUrl: String, token: String, geminiApiKey: String) -> Unit,
+    onSave: (baseUrl: String, token: String, geminiApiKey: String, topazApiKey: String) -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
+    topazApiKey: String = "",
 ) {
     var baseUrl by remember(config) { mutableStateOf(config.baseUrl) }
     var token by remember(config) { mutableStateOf(config.token) }
     var apiKey by remember(geminiApiKey) { mutableStateOf(geminiApiKey) }
+    var topazKey by remember(topazApiKey) { mutableStateOf(topazApiKey) }
 
     EditSheet(
         title = stringResource(R.string.sam3_settings_title),
         onCancel = onCancel,
-        onApply = { onSave(baseUrl, token, apiKey) },
+        onApply = { onSave(baseUrl, token, apiKey, topazKey) },
         applyLabel = stringResource(R.string.sam3_settings_save),
         // Always enabled: Gemini is usable without SAM 3 and SAM 3 without Gemini, so gating on
         // either field would lock the other out — and clearing a value is a save too.
@@ -68,6 +71,15 @@ fun Sam3SettingsSheet(
             singleLine = true,
             visualTransformation = PasswordVisualTransformation(),
             modifier = Modifier.testTag(GeminiKeyFieldTestTag).fillMaxWidth(),
+        )
+        // specs/topaz_enhancement.md §4: the user's own key, masked like Gemini's.
+        OutlinedTextField(
+            value = topazKey,
+            onValueChange = { topazKey = it },
+            label = { Text(stringResource(R.string.topaz_settings_api_key)) },
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            modifier = Modifier.testTag(TopazKeyFieldTestTag).fillMaxWidth(),
         )
     }
 }

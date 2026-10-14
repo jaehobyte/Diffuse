@@ -1,5 +1,342 @@
 # Result
 
+## 단일 실행 워크플로우 — REVIEW R1/R2/N1 반영 (2026-10-14, work/tasks.md)
+
+### Status
+
+DONE — R1 수정, R2 회귀 테스트 추가, N1 테스트 문구 정합화. `scripts/check.sh` **exit 0**. 실기기 재검증은 미실행. 아래 절의 미검증 범위(실모델·Topaz 실사진 품질·TalkBack 등)와 이전 미해결 상태는 그대로다.
+
+### Changed
+
+- **R1 (`DirectController`):** `새 편집본으로 열기`마다 `copySeq`를 올리고, overlay 취소(`cancelWork()`의 keeping 분기)도 올린다. create 완료는 `runSeq`·`copySeq`·`Opening`이 모두 자기 것일 때만 채택하고, 아니면 만든 프로젝트를 삭제한다(실패면 아무 상태도 건드리지 않음). 취소된 A가 B보다 먼저/나중에 성공·실패해도 B의 진행 상태·탐색에 영향이 없다. 재시도는 같은 결과 파일로 create하며 Topaz를 다시 호출하지 않는다.
+- **Reader 수명:** 단일 `reader: Job?`를 `readers` 목록으로 바꿨다(`read {}`로 실행·추적). 저장 취소·후보 폐기는 모두 취소하고(create는 `NonCancellable`이라 끝까지 가서 삭제됨), 세션 종료는 **모든** reader를 `cancelAndJoin`한 뒤 Topaz 폴더를 지운다.
+- **N1:** `GeminiPlanSelectionTest`의 옛 문구(`Propose erasing a specific distraction you can see`)를 현재 catalog의 같은 정책 문구(`a separate default goal even if the user did not ask for removal` — 보이는 방해 요소를 요청 없이도 select+erase 기본 목표로 제안)로 교체. 프롬프트는 변경하지 않았다.
+
+### Files
+
+- `feature/editor/src/main/kotlin/com/diffuse/feature/editor/tools/direct/DirectController.kt`
+- `feature/editor/src/test/kotlin/com/diffuse/feature/editor/tools/direct/DirectWorkflowTest.kt` (+4)
+- `core/ai/src/test/kotlin/com/diffuse/core/ai/gemini/GeminiPlanSelectionTest.kt` (1줄)
+- `work/RESULT.md`
+
+### Validation
+
+- `:feature:editor:testDebugUnitTest --tests '*tools.direct*' --tests '*tools.enhance*' --tests '*CropApply*'`: **289 tests / 0 failures** (285 + 신규 4)
+- 신규 테스트의 유효성: `copy == copySeq` 검사를 임시로 빼면 `DirectWorkflowTest` 2건 실패(A 먼저 성공, A 늦은 실패) 확인 후 원복
+- `scripts/check.sh`: **exit 0**, 전체 unit XML 집계 **1,552 tests / 0 failures / 0 errors / 2 skipped**
+- `git diff --check`: 통과
+- 실기기: 미실행
+
+### Review Notes
+
+- R2 테스트 4건: A 먼저 완료(A 삭제·B 대기 유지→B 탐색), B 먼저 완료(B 탐색 유지·A 삭제·메시지 없음), A 늦은 실패(B 상태 유지, B 실패는 B의 메시지), 시트 닫기 중 A·B 동시 진행(마지막 reader까지 폴더 보존, 둘 다 삭제).
+- N1은 테스트 문구만 정합화했다. 정책 의도 판단이 다르면 프롬프트 쪽 수정이 필요하다.
+
+### Known Issues
+
+- 실기기에서 취소→재시도 경합은 재현하지 않았다(fake gate 기반 검증만).
+
+---
+
+## 보정 추천/지시 단일 실행 + 현재 화면 최종 미리보기 (2026-10-14, work/tasks.md)
+
+### Status
+
+PARTIAL — 요구 1–10의 코드·테스트·명세 구현 완료. canonical 검사의 작업 관련 부분은 모두 통과했으나 `scripts/check.sh`는 **exit 1**: 이번 작업과 무관한 `core:ai` `GeminiPlanSelectionTest`(세션 시작 전 15:10에 수정된 `GeminiPlanCatalog.kt` 프롬프트에 "Propose erasing a specific distraction you can see" 문구가 없음) 1건 실패. 실기기·실 API 검증은 **미실행**. `work/REVIEW.md` 판정과 아래 이전 절의 미해결 상태(추천·Topaz PARTIAL, 실모델/Topaz 실사진 품질·TalkBack 미검증, T4 BLOCKED, 키 교체 권고 미해결)는 그대로다. 직전 절의 `TopazHandOff` R1/R2 수정은 이번 작업으로 코드가 대체되었고, 그 취지(검사·지연 완료 무효화)는 실행 시퀀스(`runSeq`)로 이어졌다.
+
+### Changed
+
+- **단일 실행 (`DirectController`):** 주 버튼 `선택한 보정 실행` 한 번으로 로컬 단계 → 자동 선택/생성 → crop → 마지막 Topaz 단계까지 진행. 중간 `선택 확인`(새 선택)·자르기 시트·`화질 개선에서 확인`·Topaz 실행·`보정 적용 후 화질 개선` 제거. 계획 도착·토글은 submit 0. 시트에 Topaz 자동 진행·크레딧 사용 안내(`direct_run_topaz_note`)와 항목별 비용 문구.
+- **선택 자동화 (`PlanRunner`):** 계획 phrase로 찾은 유효 mask는 확인 없이 사용하고 `onResolved`로 보고 → 리뷰에 `AI가 찾은 대상: …`, 다음 스냅샷엔 신규 `TargetSource.Resolved`("found … not confirmed by the user"). 의미를 모르는 기존 mask만 overlay에서 멈춤(이유·끄고 다시 실행 안내). 못 찾음/여러 개/크기 불일치는 기존처럼 중단.
+- **Topaz 입력 = 미확정 후보의 full 렌더:** `TopazProcessor`(render full → JPEG → `enhance` 1회 → sampled decode)를 `TopazController`에서 추출해 시트와 워크플로우가 공유. 실제 입력의 크기/alpha/옵션(`TopazJob.problem()`)·키 검사 후 1회 제출. commit·임시 프로젝트 없음.
+- **같은 화면 미리보기 (`EditorRoute`/`EditorViewModel`):** 완성된 결과만 캔버스에 `후`로 표시(Topaz 결과는 preview 크기 sampled, 자체 종횡비), hold 시 워크플로우 입력. 로컬+Topaz에서 Topaz 없는 상태는 입력을 보여주고 `후`/비교/보관 없음.
+- **보관:** Topaz 없음 → `적용` 1회 commit. Topaz 포함 → 결과 영역 `고해상도 저장`(바이트 복사, 재시도 시 Topaz 호출 없음), 주 버튼 `새 편집본으로 열기`(create 1회, 원클릭 중복 방지, 원하지 않게 된 create는 삭제). 원본 문서·history·autosave 불변, 자동 저장/이동 없음.
+- **토글·재실행:** 세션 Topaz 캐시 키 = source + 재발급 id를 뺀 렌더 연산 + 항목 + 키 세대. Topaz off→on/같은 입력 재사용, 로컬 변경·강도 줄이기는 결과 무효 → `선택한 보정 다시 실행`(1회 제출).
+- **실패/진행/수명:** 진행은 `보정을 적용하는 중 (n/m)` / `화질 개선 · <단계> (n/m)`(API 퍼센트만). Topaz 실패·SubmitUnknown은 로컬 후보 보존+이유, 자동 재시도 없음. 하나의 `runSeq`가 로컬·Topaz·저장·복사본을 묶어 취소/Back/도구 전환/문서·설정 변경 후 늦은 결과를 무시하고, 취소를 무시한 provider의 결과 파일은 `TopazProcessor`가 삭제. Topaz 폴더는 제안 세션 소유, 저장 취소·create 완료 후 폐기. Back(`onLeave`)에서 워크플로우 종료.
+- **제거:** `TopazHandOff`(+`onFinished(cropRatio, topaz)`, 계획 후 자르기 자동 열기), 관련 문자열.
+- 명세/결정: `vibe_edit.md` §4.1/§16/§18/§19, `topaz_enhancement.md` §1/§5/§7, `DESIGN.md` 상태 표시, `work/decisions.md` **D101**.
+
+### Files
+
+- core:ai: `EditPlanProvider.kt`(`TargetSource.Resolved`), `gemini/GeminiPlanClient.kt`(설명 문구); testShared `FakeTopazProvider`(`ignoreCancel`); test `GeminiPlanClientTest`(+1)
+- feature:editor main: `tools/direct/{DirectController,DirectCandidate,DirectSheet,DirectSuggestions,PlanRunner,PlanCache}.kt`, `tools/enhance/{TopazController,TopazState}.kt`, `EditorViewModel.kt`, `EditorRoute.kt`, `res/values/strings.xml`; **삭제** `tools/direct/TopazHandOff.kt`
+- feature:editor test: 신규 `DirectWorkflowTest`(29), `DirectWorkflowScreenTest`(2, EditorRoute 실제 터치); **삭제·교체** `DirectHandOffTest`, `TopazHandOffTest`(새 동작 회귀 검사로 이전); 갱신 `DirectCandidateTest`, `DirectCandidateSheetTest`(+4), `DirectCandidateMathTest`, `DirectToolTest`, `DirectSheetTest`, `DirectChoiceScreenTest`, `DirectGoldenTest`(+1), `DirectTestFixtures`
+- 골든: 신규 `direct_workflow_canvas.png`, `direct_candidate_topaz_result.png`; 갱신 `direct_candidate_confirm.png`, `direct_plan_toggles.png`(나머지는 원복)
+- 문서: `specs/vibe_edit.md`, `specs/topaz_enhancement.md`, `DESIGN.md`, `work/decisions.md`, `work/RESULT.md`
+- `core/data/TopazWorkspace.kt`는 변경 불필요(기존 세션 폴더 API로 소유권 연결)
+
+### Validation
+
+- `:feature:editor:testDebugUnitTest --tests '*tools.direct*' --tests '*tools.enhance*' --tests '*CropApply*'`: 통과
+- `:core:ai` / `:core:data` 테스트: canonical 실행에 포함. core:data 통과, core:ai는 위 무관 1건 실패(`GeminiPlanClientTest` 신규 포함 나머지 통과)
+- `scripts/check.sh`: **exit 1**(위 1건). 같은 태스크를 `--continue`로 재실행: lint·detekt·전 모듈 `testDebugUnitTest`(core:ai 1건 제외)·`verifyRoborazziDebug`·`dependencyGuard` 통과
+- `git diff --check`: 통과
+- 실기기(35_denoise.png 등)·실 Topaz/Gemini API: **미실행** — fake 호출 횟수/상태 검증만 있음
+
+### Review Notes
+
+- 계획 Topaz 단계가 이제 지시 시트 주 버튼에서 별도 확인 없이 유료 제출된다(행 비용 문구 + 실행 안내만). 의도한 계약이지만 UX 검토 대상.
+- 화면 프레임 검증은 Robolectric `captureToImage` 제약으로 `shownPreview`를 `internal`로 열어 실제 캔버스에 넘기는 프레임의 픽셀을 검사했다. 골든은 Roborazzi.
+- configuration change는 ViewModel 상태 보존과 재구성 시 submit 증가 없음으로만 확인(실제 회전 테스트 없음).
+- `EditorViewModel.openTopaz`의 `options` 매개변수는 호출자가 없어졌지만 기존 API로 남겼다.
+
+### Known Issues
+
+- `GeminiPlanSelectionTest` 실패(무관, 프롬프트 사용자 수정과 테스트 불일치) — 별도 결정 필요.
+- 실기기 시나리오(디노이즈 단독, 로컬+crop+디노이즈, 선택+지우기, Topaz off, 처리 중 Back/취소)의 탭 수·전후 차이·저장/복사본 확인 미실행.
+- 실 Topaz 대용량 결과의 sampled 미리보기 메모리/시간, 실 API 취소 동작은 미검증.
+
+---
+
+## Topaz 인계 검사 중 무효화 — REVIEW R1/R2 반영 (2026-10-14, work/tasks.md)
+
+### Status
+
+DONE — R1 수정, R2 회귀 테스트 추가, `scripts/check.sh` **exit 0**. 실기기 재검증은 미실행. 아래 절의 PARTIAL 범위(실기기·실모델·Topaz 실사진 품질)와 이전 미해결 상태는 그대로 유지한다.
+
+### Changed
+
+- **R1 (`TopazHandOff`):** 재검사 coroutine을 `checking` Job으로 보관하고 `cancel()`로 취소·무효화한다. 늦은 완료는 `ensureActive()`로 막아 취소를 무시한 검사도 시트를 열지 않는다. 새 `now()`는 이전 검사를 취소한다. 시트를 열기 전에 `checking`을 비워 시트 전환이 일으킨 도구 변경이 자신을 취소하지 않게 했다. 즉시 인계, crop 적용 후, crop 취소 후 인계가 모두 같은 경로(`now()`)를 탄다.
+- **경계 (`EditorViewModel`):** 도구 collector는 기존대로 Crop이 아니면 대기 항목을 `drop()`하고, **도구가 열릴 때(non-null)** 검사 중 인계를 `cancel()`한다. 인계 자신의 시트 닫기(도구 없음 = null)는 검사를 취소하지 않는다. 설정 collector는 `drop()`+`cancel()` 모두 호출한다. 문서 변경은 기존의 완료 시 `current() != document` 검사로 처리한다. 무효화돼도 이미 commit한 로컬 편집은 건드리지 않는다(`direct_handoff_dropped` 안내만).
+
+### Files
+
+- `feature/editor/.../tools/direct/TopazHandOff.kt`, `feature/editor/.../EditorViewModel.kt`
+- 신규 테스트 `feature/editor/src/test/.../tools/direct/TopazHandOffTest.kt`(7)
+
+### Validation
+
+- `:feature:editor:testDebugUnitTest --tests '*TopazHandOffTest*' --tests '*DirectHandOffTest*'`: 7/7, 9/9 통과
+- `scripts/check.sh`: **exit 0**
+- `git diff --check`: 통과
+- 실기기: 미실행
+
+### Review Notes
+
+- 리뷰어 probe(`work/evidence/toggle_review/TopazHandoffReviewProbeTest.kt`)를 임시로 다시 돌리면 여전히 실패한다(expected 0 / actual 1). probe는 `drop()`이 설정/도구 변경 경로라고 가정하지만, 이번 수정에서 그 경로는 `cancel()`이고 `drop()`은 자르기 대기 항목만 지우는 의미로 남겼다. `drop()`은 시트가 도구 없음(null)으로 닫힐 때도 호출되므로 거기서 검사를 취소하면 정상 인계가 스스로 취소된다. 같은 시나리오는 `TopazHandOffTest`의 `cancelled during the check, the immediate hand-off opens nothing`(cancel 경로)과 `the hand-off's own close does not cancel the check under way`(drop 경로)로 고정했다.
+- R2 테스트는 `TopazHandOff` 단위(지연 gate)로 작성했다. ViewModel 수준의 지연 검사(IO 지연 중 도구 이동·설정 변경)는 harness의 dispatcher가 즉시 실행이라 재현하지 않았다. collector 경계(non-null 도구만 cancel)는 코드 검토 대상이다.
+
+### Known Issues
+
+- 실기기에서 검사 지연 중 도구 이동·설정 변경 시나리오는 확인하지 않았다.
+
+---
+
+## 품질 중심 추천 + 보정 항목별 토글 + 로컬 후 Topaz 인계 (2026-10-14, work/tasks.md)
+
+### Status
+
+PARTIAL — 요구 1–13의 코드·테스트·명세는 구현했고 `scripts/check.sh` **exit 0**. 실기기 확인과 실모델(Gemini) 평가는 **미실행**(아래 Known Issues). 이 작업은 `work/REVIEW.md` 판정을 바꾸지 않으며, 이전 절의 미해결 상태(자르기 R1/R2: 수정 보고·재리뷰 미완료, 추천·Topaz 작업 PARTIAL, 실모델 12종×3회×6축·Topaz 실사진 품질·TalkBack 미검증, T4 BLOCKED, 키 교체 권고 미해결)는 그대로 유지한다.
+
+### Changed
+
+- **추천 정책(프롬프트+검증 동시):** `needsRequest`·`DEFAULT_TOPAZ_PURPOSES`·"Topaz 단독" 제거. default goal도 style·비율 crop·erase·fill·모든 Topaz purpose·얼굴 복원 제안 가능, 출처를 user로 바꾸지 않음. 거부 유지: 알 수 없는 도구/옵션/target, dangling id, goal scope 위반, crop·style·Topaz 2개, cut-out 뒤 Topaz, **명시(explicit=true)** 제약 위반, state simulation. 추정 제약은 거부·적용 차단(ProtectedChanged)에 쓰지 않음. 프롬프트: 품질 우선(최소 단계/작은 값 목표 제거), 특정 가능한 방해 객체 지우기 제안(주인공·이야기 요소 제외), Direct의 추가 제안은 별도 default goal, 독립 효과는 별도 step, Topaz 9개 purpose 각각 설명(로컬 sharpen vs 흐림 복원, crop vs 해상도 확대, 1회=1 purpose).
+- **항목·의존:** decoder가 wire 위치로 step id(`s3`, 색 범위 `s3.1`) 부여, crop/Topaz 재정렬(Topaz는 crop 뒤 맨 끝) 후에도 유지. `PlanProposal.items`(Select 제외 step 각각), `selected(chosen)`(선택 항목+소비하는 Select만, 원래 순서), `selectionProblem(context)`로 재검증 + `PlanRunner.validate`. `topazBlock`(키 없음/입력 불가, 시트가 실제 열 옵션 기준).
+- **세션 선택·후보:** `DirectState.chosen/blocks`, 새 제안마다 실행 가능 항목 기본 on(blocked는 off+이유). 토글은 호출·편집 없음, 실행/확인/검사 중 잠금. 후보는 선택한 step만 같은 입력에서 재실행(삭제 방식 아님). `PlanCache`가 확인된 선택과 생성 결과를 정확한 입력(step+phrase+비-Adjust 연산+active mask) 기준으로 재사용, 원격 호출이 필요하면 `CandidatePhase.Stale`(명시적 `미리보기 다시 만들기`에서만 호출). 후보는 현재 선택과 일치할 때만 적용. 강도 줄이기 후 선택 변경은 원래 강도로 재계산+안내.
+- **파일 수명:** 세션 파일은 되돌리기·실패·취소 후에도 재사용을 위해 유지하고, 세션 종료(적용/무효화/닫기) 시 적용 문서가 참조하지 않는 것 전부 `discardFiles`. 시퀀스 번호로 늦은 run/check 무시.
+- **UI:** `실행 단계`를 행 전체 스위치(≥48dp, Role.Switch, 상태 설명+글자 `적용함/적용 안 함`)로 변경: 보정명(예: `sign 지우기`)·대상·예상/주의·생성/Topaz 유료 표시·AI 추가 제안 표시·막힌 이유. 선택 개수, 모두 off 안내, Stale 안내, 후보에 "Topaz 효과 미포함" 안내. 주 버튼: Topaz만 → `화질 개선에서 확인`(commit 없음), 로컬+Topaz 후보 → `보정 적용 후 화질 개선`.
+- **Topaz 인계(`TopazHandOff`):** 로컬 1회 commit → 실제 문서로 재검사 → 기존 시트 열기(submit 0). 계획 crop이 있으면 자르기 적용 후 그 문서로, 취소 시 마지막 확정 문서로(안내), Undo/다른 도구/설정 변경 시 인계 취소(적용은 유지, 별도 안내). 시트 취소·실패는 로컬 편집을 되돌리지 않음.
+- 명세/결정: `vibe_edit.md` §14/§16/§17 개정 표시 + 신규 §19, `topaz_enhancement.md` §1, `DESIGN.md` 상태 표시 절, `work/decisions.md` **D100**.
+
+### Files
+
+- core:ai: `PlanProposal.kt`(WorkflowStep.id), 신규 `PlanSelection.kt`, `gemini/{GeminiPlanCatalog,GeminiProposal,GeminiPlanClient}.kt`; testShared `FakeSegmentationProvider`(`textCount`)
+- feature:editor: `tools/direct/{DirectController,DirectCandidate,DirectSheet,DirectSuggestions,PlanRunner}.kt`, 신규 `PlanCache.kt`, `TopazHandOff.kt`; `EditorViewModel.kt`, `EditorRoute.kt`, `strings.xml`
+- 테스트: 신규 `GeminiPlanSelectionTest`(6), `DirectChoiceTest`(20), `DirectHandOffTest`(9), `DirectChoiceScreenTest`(2: EditorRoute 실제 터치, CpuRenderer 픽셀); 정책 교체 `PlanScenarioTest`, `GeminiProposalRefusalTest`(금지 테스트 → 허용+명시 제약 거부), `GeminiPlanClientTest`, `GeminiPlanStyleTest`; 형식 갱신 `DirectSheetTest`(+8 토글 UI), `DirectCandidateSheetTest`, `DirectCandidateTest`(되돌리기 파일 삭제 시점), `DirectToolTest`(미사용 Select 픽스처 → 소비자 추가), `DirectTestFixtures`, `DirectGoldenTest`
+- 골든: 신규 `direct_plan_toggles.png`만. 기존 direct 골든은 검증 통과로 미변경.
+- 문서: `specs/vibe_edit.md`, `specs/topaz_enhancement.md`, `DESIGN.md`, `work/decisions.md`
+
+### Validation
+
+- `:core:ai:testDebugUnitTest`(전체): 통과
+- `:feature:editor:testDebugUnitTest --tests '*tools.direct*' --tests '*tools.enhance*' --tests '*CropApply*'`: 통과(신규 포함)
+- `scripts/check.sh`: 첫 실행 detekt 실패(MaxLineLength 13, preview 복잡도, ReturnCount 2) → 수정 후 **exit 0**
+- `git diff --check`: 통과
+- 실기기·실모델: 미실행
+
+### Review Notes
+
+- **의도적 동작 변경:** 되돌리기는 더 이상 후보 파일을 즉시 지우지 않음(세션 종료 시 삭제). Topaz 옵션 유효성은 원래 응답 검사에만 두고 선택 재검사에서는 제외(미지원 옵션은 시트 기본값으로 연다는 topaz §1 유지).
+- 생성 결과 재사용 키가 `generativeInput`(비-Adjust 연산 렌더)과 같다는 가정에 의존한다. 그 함수가 바뀌면 `PlanCache.Key`도 바뀌어야 한다.
+- crop 인계는 자르기 `적용/취소` 전에 대기 항목을 claim한다(push·도구 변경 collector가 즉시 실행되면 stale로 판정되기 때문). 적용 분기에서는 시트를 닫은 뒤 인계한다.
+- 토글은 실행 중 잠금 방식이므로 "실행 중 연속 토글" 경합은 잠금+시퀀스로 처리했다.
+
+### Known Issues
+
+- 실기기 미실행: 풍경 지우기 off/on, 인물 공유 선택, 스타일+노출, crop+Topaz 인계, 모두 off, 취소, Undo/Redo, 재열기, TalkBack 토글 읽기, 큰 글자 스크롤(Robolectric fontScale 2만 확인).
+- 실모델 평가 미실행: 정책 변경 후 Gemini가 객체 제거·Topaz를 적절히(또는 과하게) 제안하는지, 구조 검증 거부율, 선택 후 실제 품질 모두 측정하지 않음. mock 수용 테스트는 모델 선택률을 의미하지 않음. "최고의 결과" 달성은 주장하지 않음.
+- Topaz 실키 제출·결과 품질 미검증(이전과 동일). 프로세스 종료 시 세션 파일 고아화 가능(D099와 같은 부류).
+
+---
+
+## 자르기 적용 결함 수정 — REVIEW R1/R2 반영 (2026-10-14, work/tasks.md)
+
+### Status
+
+DONE — R1 원인 확정·수정, R2 회귀 테스트 추가, `scripts/check.sh` **exit 0**, 실기기(R5KL10GAH3B) 재현 시나리오 통과. 아래 이전 절들의 미해결 상태(보정 추천·지시 PARTIAL, Topaz/실모델 품질 미검증, T4 BLOCKED, 키 교체 권고)는 그대로 유지.
+
+### Changed
+
+- **원인(테스트로 확정):** `applySheet()` 기본 분기가 함수 시작 시 읽은 `state`로 `_uiState.value = state.copy(selectedTool = null)`을 써서, crop `push()` 직후 즉시 실행된 history collector가 반영한 document·Undo를 이전 값으로 덮어썼다. 시트 종료 collector는 덮어쓴 이전 문서로 preview를 요청했다. history/autosave에는 새 crop이 있었지만 `onLeave()`/`onStop()`은 오래된 UI document를 저장해 손실이 생겼다.
+- **수정 (`EditorViewModel.kt`):** 시트 종료 시 `_uiState.value.copy(selectedTool = null)`로 최신 상태를 다시 읽는다. `onLeave()`/`onStop()`은 UI state 대신 `history.current.value`를 저장한다. queued collector에서는 UI state가 history보다 늦게 갱신되므로 적용 직후 종료해도 committed 문서가 저장된다. 새 상태 계층, delay, 렌더 경로 변경은 없다(T69 crop 제외 렌더는 그대로 유지).
+- **테스트 (신규 `tools/crop/CropApplyTest`, 14개):** Crop 없는 문서에 비대칭 rect 적용(document·canUndo·마지막 preview 입력·`renderedDocument`), 기존 Crop 교체(Adjust 순서 보존), 한 번의 Undo/Redo, 재열기 시 새 rect 표시 + 취소 시 유지, 다른 도구 진입 후 유지, 취소 시 초안 폐기, 전체 영역+0도 적용 시 제거, 90도+기울기 각도 반영, queued(StandardTestDispatcher) 적용, 적용 직후(collector 실행 전) 종료 시 저장, 렌더 suspend 중 적용→재열기→취소 후 오래된 결과가 덮어쓰지 않음, autosave(가상 시간)→`onLeave`→`onStop`→새 ViewModel 재로드, 실제 `CpuRenderer`(1200×800 좌적/우청 PNG → 420×480 전부 파랑, preview 비율·저장 문서 full 렌더), `EditorRoute` 실제 버튼(자르기 → 9:16 → 적용 → 시트 닫힘, 문서 픽셀 비율 9:16, 실제 렌더 9:16, Undo 가능).
+
+### Files
+
+- `feature/editor/src/main/kotlin/com/diffuse/feature/editor/EditorViewModel.kt` (crop 적용 분기 1줄, `onLeave`/`onStop` 저장 대상)
+- 신규 `feature/editor/src/test/kotlin/com/diffuse/feature/editor/tools/crop/CropApplyTest.kt`
+- 증거: `work/evidence/crop_apply/fix-{916-applied.png,free-rotate-applied.png,export-916.jpg,after-leave.json}`
+
+### Validation
+
+- 수정 전 `:feature:editor:testDebugUnitTest --tests '*CropApplyTest*'`: **14개 중 11개 실패**. 예: 새 crop 적용 후 `uiState.document` crop 0개, 교체 후 rect left 0.2(이전 값), 실제 렌더 full 폭 1200(기대 420), 버튼 경로 crop 없음, 적용 직후 queued 종료 시 저장값 이전 crop. 통과한 3개는 queued 적용, Undo/Redo, 취소였다(queued 경로에서는 collector가 나중에 실행되어 덮어쓰기가 일어나지 않음).
+- 수정 후 `:feature:editor:testDebugUnitTest --tests '*Crop*'`: exit 0 (CropApplyTest 14, CropPreviewTest 6, CropState 9, CropGeometry 7, CropGolden 4, CropRatioPreset 2. 모두 0 failure).
+- `:core:imaging:testDebugUnitTest --tests '*Crop*' --tests '*HistoryStack*'`: exit 0
+- `scripts/check.sh`: 첫 실행은 신규 테스트의 detekt MaxLineLength 1건으로 실패했고, 수정 후 재실행 **exit 0**(전 모듈 테스트 포함).
+- `git diff --check`: 통과
+- 실기기: SM-S948N/Android 16, `:app:assembleDebug` → `adb install -r`(데이터 유지, APK SHA-256 `7fffa69d…bbb`). 리뷰 검증 프로젝트 `f05f0852…`(1200×800, 저장된 1:1)에서 확인:
+  - 자르기 → 9:16 → 적용: 화면이 세로 9:16, 실행 취소 활성, autosave JSON `left=0.3125,right=0.6875`
+  - 재열기 → 취소: 9:16 유지
+  - 기본 JPEG 내보내기(원본, 프리셋 없음): **450×800**
+  - Undo: JSON이 1:1로 돌아감. Redo: 9:16 복구
+  - 뒤로 종료: JSON 9:16 유지. 재진입 시 화면 9:16
+  - 자유 + 오른쪽 90도 + 모서리 드래그 → 적용: JSON `angleDeg=90, rect 0.3125/0/0.971/0.568`. 화면 비율 ≈0.773은 회전 캔버스 기준 rect와 일치하며 이중 회전 없음. 종료 후 JSON 유지.
+
+### Review Notes
+
+- `onLeave`/`onStop`이 history를 읽도록 바꾼 것은 R1의 "즉시/queued 모두" 요구 때문이다. history가 없으면(로드 실패) UI document도 null이므로 기존 동작과 같다.
+- 다른 도구의 `applySheet` 분기는 이미 `_uiState.value.copy`를 쓰고 있어 변경하지 않았다.
+
+### Known Issues
+
+- 실기기 미실행: 수평(기울기) 슬라이더 드래그, crop 제거(전체 영역) 적용, 강제 프로세스 종료 후 복구, 지연 렌더 경쟁의 계측. 모두 단위 테스트로만 확인했다.
+- 검증 프로젝트 `f05f0852…`는 기기에 남겼다(최종 crop은 90도 자유 영역). 내보낸 `Pictures/Diffuse/IMG_20261014_101914.jpg`도 남아 있다.
+
+---
+
+## 보정 추천·지시 개선 + Topaz 계획 도구 (2026-10-13, work/tasks.md)
+
+### Status
+
+PARTIAL — T1 상태/target·프롬프트·검증, T2 임시 후보/선택 확인·비교·강도 근거, T3 Topaz 계획 도구/시트 인계 구현, `scripts/check.sh` **exit 0**. 실모델(Gemini) 계획 품질·실사진 전후 품질·실기기 터치/TalkBack 검증은 **미실행**(아래 Known Issues). T4 계속 BLOCKED. `work/REVIEW.md`의 판정은 바꾸지 않음(R1/R2·N2는 코드·테스트로 대응, 재검증은 Codex 몫).
+
+### Changed
+
+- **방향 먼저(§15):** `propose_edit`에 `direction{subject,strengths,preserve,objective,success,source}` 추가, ready에 필수, default 출처 구분. system instruction에 중심 문단(강점→하나의 목표→성공 조건, no_change 유효, snapshot·target·순서·실제 preset 효과 사용, 같은 대상 무단 재선택 금지, 결과는 비교 전 가설)을 반영하고 기존 평가 규칙은 유지. 리뷰 최상단 `보정 방향` 섹션.
+- **정확한 snapshot:** `planContextOf`가 Adjust별 `aN` ref·순서·target, 마스크별 `tN`(active, 이번 세션 확인된 설명만, 나머지 unknown), 전체 연산 순서(생성물은 종류만), crop, 미리보기 크기, 스타일 실제 값(`styleEffectsOf` = 카탈로그 params@100), Topaz capability(키 유무만·크기·alpha)를 한 snapshot으로 생성. 마스크 id/경로/키 미전송. Gemini·Topaz 설정 generation과 세션 노트가 snapshot에 포함되어 바뀌면 제안과 후보 폐기.
+- **명시적 target:** `select_region(phrase,target,multiple)`, `adjust(...,target?)`, erase/cut-out/fill(target). `masked` 제거(true면 거부), `adjust_color_range` 전역 전용·생략 채널 유지·명시 0 리셋. 기존 ref는 그 마스크 값 제자리 갱신, 새 label은 새 마스크. erase/fill/cut-out은 직전 선택만 소비, 활성 마스크 fallback 없음 → **N2(g1→g2→g1) 수정**, keep_background/subject_only에서 **CutOut 거부**, crop 허용(keep_frame만 금지).
+- **검증:** `ProposalCheck` 재구성(envelope/Topaz/targets/constraints/`StateSimulation`). 스타일+전역 일괄 금지 대신 실제 값 재생으로 중복·재정의·역행·스타일이 덮어쓸 선행 값·무효 스타일 거부. 색 제약 3단계(keep_hue/keep_colors/keep_exact_colors), keep_frame 추가. intensity 필수, 0.15/0.3·"100 unless" 문구 제거.
+- **도구별 강도 근거:** `PlanStrengthEvidenceTest`(실제 CPU `Ops`, photo_512 + 합성 dark/pastel/night)로 표·contact sheet 생성(`work/evidence/plan_strength/`, README에 관찰·미검증 목록). 프롬프트에는 측정된 도구 범위만, 나머지는 "작게, 추정"으로 지시.
+- **후보 흐름(§18):** 준비된 계획의 주 버튼은 `미리보기`. 러너가 문서/히스토리/autosave 밖에서 후보 생성 → 새 선택마다(그리고 미확인 기존 선택) 오버레이 `선택 확인/중단` → 로컬 검사(crop/생성물/색 규칙+톤, keep_background·subject_only면 crop 제외 렌더로 선택 밖 픽셀 변화 >0.5% 시 적용 차단) → `전후 비교`(HoldPill)·`강도 줄이기`(b+0.5(t−b), 스타일은 값별, 새 마스크 b=0, 서버 호출 없음, 반 단계 미만이면 no change)·`되돌리기` → `적용` 1회 commit(한 번 Undo). 실패/거부/취소/Undo·Redo/설정 변경/닫기는 후보와 그 파일 삭제(`ProjectRepository.discardFiles`, mask_/erase_/fill_만, 저장 문서 참조 제외). SAM: 빈/전부 alpha 0 → 찾지 못함, 크기 불일치 → 실패, 단일 대상에 복수 후보 → 중단(union 안 함), `multiple`일 때만 union.
+- **Topaz(§16):** `topaz_enhance` typed tool 9종(`TopazPurpose` 매핑), 단독 workflow만(혼합·Topaz 2개 거부), 전역 scope, 보존/색 제약·alpha 거부, 옵션은 `TopazJob.problem()`. upscale/restore/creative/colorize/dust_scratch·얼굴 복원은 user 요청 필요. 리뷰 주 버튼 `화질 개선에서 확인` → 문서 재확인 후 기존 시트를 purpose/options 채워 열기(submit 0), 시트의 `실행`이 1회 submit. 미지원 옵션은 기본값으로 열림.
+- **R1 수정:** `core/ui` `HoldPill`(포인터 직접 소유, down=전, up/cancel=후, TalkBack 토글+상태 설명)로 Topaz 비교 버튼 교체, 후보 비교에도 사용.
+- 명세: `vibe_edit.md` §15–§18, `topaz_enhancement.md` §1/§7(+비교 절), `adjust_hsl.md` §8, `style_match.md` §6, `selection_tool.md` 교차 참조. 결정 D099.
+
+### Files
+
+- core:ai: `EditPlanProvider.kt`, `PlanProposal.kt`, `gemini/{GeminiPlanCatalog,GeminiPlanClient,GeminiProposal}.kt`; testShared `FakePlanProvider`, `FakeSegmentationProvider`(opt-in instance 수/blank/size)
+- core:data: `ProjectRepository.kt`(`discardFiles` 기본 no-op), `DefaultProjectRepository.kt`
+- core:ui: 신규 `HoldPill.kt`
+- feature:editor: `tools/direct/{DirectController,DirectSuggestions,DirectSheet,PlanRunner}.kt`, 신규 `DirectCandidate.kt`, `tools/enhance/{TopazController,TopazSheet}.kt`, `EditorViewModel.kt`, `EditorRoute.kt`, `strings.xml`
+- 테스트: 신규 `PlanStateSimulationTest`(3), `DirectCandidateTest`(21), `DirectCandidateMathTest`(8), `DirectCandidateSheetTest`(8), `PlanStrengthEvidenceTest`(3); 확장 `PlanScenarioTest`(15), `GeminiPlanClientTest`, `GeminiProposalRefusalTest`, `GeminiPlanStyleTest`, `PlanRunnerTest`, `StyleIdCatalogTest`, `TopazSheetTest`(+3 실제 포인터); 계약 변경에 맞춘 갱신 `DirectToolTest`, `DirectRecommendTest`, `DirectSheetTest`, `PlanRunnerProposalTest`, `FakePlanProviderTest`, `GeminiPlanProviderTest`
+- 골든: 갱신 `direct_plan_preview`, `direct_recommend_review`(방향 섹션·`미리보기`); 신규 `direct_candidate_{confirm,review}`. Topaz 골든은 HoldPill 후에도 검증 통과로 미변경. 기록 과정에서 재인코딩된 무변경 골든 3개는 원복.
+- 문서/증거: specs 5개, `work/decisions.md`(D099), `work/evidence/plan_strength/`
+
+### Validation
+
+- `scripts/check.sh` (lint, detekt, 전 모듈 testDebugUnitTest, verifyRoborazziDebug, dependencyGuard): **exit 0**
+- `git diff --check`: 통과
+- 개발 중 개별 실행: core:ai `*GeminiPlan* *GeminiProposal* *PlanScenario* *Topaz* *PlanStateSimulation*` 통과; feature:editor `*direct* *enhance* *StyleIdCatalog*` 통과(check에 포함).
+- R2 회귀 검증: 이전 `detectTapGestures`+`SecondaryPill` 구현을 임시 복원하면 신규 포인터 테스트 포함 4건 실패, 수정본에서 통과 확인 후 원복.
+- `DIFFUSE_PLAN_EVIDENCE=true` 증거 생성 1회 실행.
+
+### Review Notes
+
+- 모든 새 선택을 오버레이로 확인하게 한 것은 의도(D099): "의미 확인 필요" 판정을 코드가 할 수 없어서. 탭이 하나 늘어난다.
+- 선택 밖 픽셀 검사는 누출 마스크를 통과시킨다(테스트로 명시). 임계값 0.5%/2단계·가장자리 width/50 팽창은 fake·단위 테스트로만 확인, 실제 마스크 feather와의 상호작용은 실기기 미검증.
+- 기존 `adjust` 대상 마스크에 대해 Gemini가 실제로 `t1`을 재사용하는지는 프롬프트 의존(코드는 ref 유효성만 보장).
+- Topaz capability 크기는 저장된 source 크기×crop 비율 추정(확대 문서는 unknown). 실제 크기는 시트가 렌더 후 재검사.
+- `discardFiles`는 인터페이스 기본 no-op(테스트 fake 18개 무변경); 실제 구현만 삭제.
+- 후보 실행 중 프로세스 종료 시 후보 파일이 고아로 남을 수 있음(원본·히스토리는 무변경).
+
+### Known Issues
+
+- **미실행:** Gemini 실모델 계획 평가(풍선·두 사람, 얼굴 추가 보정, 파랑 HSL, 필름, 실루엣, 배경 보존+스토리 crop, 비슷한 여러 얼굴, 야간 노이즈, 작은/흐린 사진, 흑백 컬러화/손상 복원, 이미 좋은 사진) — 허가된 해당 사진과 실행 환경이 없어 계획 타당성·실제 전후 품질 모두 미검증. 위 테스트는 mock 구조 검증이다. 유료 실호출 없음.
+- 강도 근거는 kodim23 파생 1장 + 합성 변형뿐: 파랑 band·온도·틴트·하이라이트·비네트·hue/luminance·국소(얼굴) 조정·Topaz는 미검증으로 표시.
+- 실기기 터치/TalkBack/큰 글자, 후보 오버레이 UX, 처리 시간 미검증. 기존 12종×3회×6축 품질 평가와 Topaz 전체 목적 실사진 품질 검증은 여전히 미완료.
+- T4(배경 제거/대상 추출) BLOCKED 유지, 플래너에 노출하지 않음.
+- 이전 리뷰의 키 노출 사고 관련 키 교체 권장 유지.
+
+---
+
+## Topaz Labs 사진 API 통합 (2026-10-13, work/tasks.md)
+
+### Status
+
+PARTIAL — T1·T2·T3 구현·기존 자동 검사 완료, **T4 BLOCKED**(공식 wire 계약 미확정). 2026-10-13 Codex 실기기 검증에서 T1 세 목적과 T3 조명 실호출·고해상도 저장·새 편집본 생성 성공. **터치 비교 결함 재현: CHANGES_REQUESTED** (`work/REVIEW.md`). 전체 품질·전체 목적 승인은 아님.
+
+### Codex 실기기 검증 — 2026-10-13 19시 KST
+
+- 사용자 승인에 따라 ADB 서버 `127.0.0.1:15039`, `R5KL10GAH3B` / SM-S948N / Android 16에서 검증. 최신 APK 업데이트 설치 성공, 기존 데이터 유지. `.env`의 Topaz 키를 stdin으로 앱 전용 `topaz_settings`에 설정했고 APK에는 포함하지 않았다.
+- APK SHA-256: `b3d0b5ee77c13f03bb35c2c5fb15f356d81266cc8411101ca8df60a3b93e8372`.
+- 기존 실사진(노트북·모니터·작은 글자)을 사용. 해상도 높이기: 3000×4000 → **6000×8000**, UI 견적 **2크레딧**, 실제 제출/다운로드/결과 표시 성공. 실제 차감량은 조회하지 않았음.
+- 고해상도 저장: `Pictures/Diffuse/IMG_20261013_191324.jpg`, MediaStore ID 46, **6000×8000 / 10,865,364 bytes**. 다운로드 원본과 갤러리 파일 SHA-256이 모두 `9eefbdbf51eb88097931f93d1354ea532e42b06067756fb823b76a080744b22a`: 재압축·축소 없음.
+- 새 편집본: 새 ID `fc87f66a-9d3b-4da8-8a06-ea603ebc4e3f` 하나 생성, operations `[]`, 후속 Topaz 입력 **3072×4096**으로 편집 한도 확인. 기존 7개 프로젝트 파일 해시 모두 유지. 생성 후 이전 Topaz 세션의 임시 파일 정리 확인. Back으로 기존 프로젝트 복귀 확인.
+- 흐림 개선(Standard)과 노이즈 제거(Normal): 새 편집본에서 각각 **3072×4096 → 3072×4096**, 실제 처리·다운로드·결과 표시 성공. 결과를 새 프로젝트에 적용하거나 추가 갤러리 저장하지 않음.
+- 라이트 → AI 조명 보정(Adjust V2): 기존 확정 노출 +20 / 대비 +15가 있는 원래 프로젝트에서 **3000×4000 → 3000×4000** 실호출 성공. 변경 없는 수동 시트의 바로가기 연결 확인.
+- **실패:** 결과의 ‘누르는 동안 이전 보기’를 누르고 있어도 `후` 유지. 12초 hold 중 3초 시점 스크린샷에서 버튼 눌림과 `후`를 동시에 확인. 임시 Compose `performTouchInput { down(center) }` 재현 테스트도 `expected [compare:true], actual []`로 실패. 기존 테스트는 semantics click만 검사. 임시 테스트 추가는 제거하여 원래 파일과 byte 동일함을 확인; 제품 코드 미수정.
+- 기존 `scripts/check.sh` **exit 0**, `:app:assembleDebug` **exit 0**, `git diff --check` 통과. 이후 결함 재현용 임시 테스트 **1건 실패**는 위 실제 결함이며 기존 검사 통과와 구분한다.
+- 증거(임시 로컬): `/tmp/topaz-device-review/`의 UI XML, `result.png`, `compare-long-press.png`, `compare-test-failure.xml`, 프로젝트 해시; `/tmp/topaz-review-check.log`, `/tmp/topaz-compare-repro.log`.
+- 남은 검증: T2 생성형/얼굴 복원, T3 색 균형·컬러화·스크래치, T4 전체, 진행 중 취소/키 변경/회전/프로세스 종료, TalkBack·큰 글자·IME, 미적용 수동값 차단, 사진 종류별 품질 평가. 네 목적의 API 성공을 전체 품질 합격으로 해석하지 않는다. 정확한 처리 시간·실제 총 크레딧은 계측하지 않음.
+- 키 취급 사고: 초기 저장소 검색이 `.env`의 키 행을 도구 출력에 포함했다. 이후 키 값을 출력하지 않았으며 문서/스크린샷/APK에 복사하지 않았다. 노출된 키는 교체 권장; 실제 키 값은 이 문서에 기록하지 않는다.
+
+### Changed
+
+- **T1** AI 메뉴 `선택·지우기·채우기·확대·화질 개선·스타일·멀티샷·지시`. 공용 Topaz 시트/컨트롤러에서 해상도 높이기(Standard V2, 2×/4×)·흐림 개선(Sharpen `Standard`, 자동/직접 강도)·노이즈 제거(Denoise `Normal`, 자동만) → 실행 → 이번 입력 snapshot 대 결과 비교(누르는 동안 이전 보기, 전/후 라벨) → 고해상도 저장(파일 그대로 MediaStore 복사) / 새 편집본(≤4096px, 새 프로젝트로 이동). 디테일 시트 `AI 화질 개선` 바로가기.
+- **T2** 사진 복원(`Wonder`)·창의적 디테일(`Redefine`, Bloom 2는 schema에 없어 미사용)을 명시적 목적으로 분리, 생성형 안내 표시. 얼굴 복원은 지원 모델에서만, 기본 꺼짐(`faceEnhancement=false` 명시 전송).
+- **T3** 라이트 → AI 조명 보정(`Adjust V2`), 색상 → AI 색 균형(`White Balance`)·흑백 컬러화(`Colorize`), 화질 개선 → 먼지·스크래치(`Dust-Scratch V2`). 기존 수동 슬라이더 값은 바뀌지 않음.
+- **T4** 미구현: `RemoveBG`가 schema enum에 없고, `mode` 값 철자와 Object Matting `box`의 multipart 인코딩이 공식 문서에 없음. 추정 필드 출하 금지에 따라 차단(specs/topaz_enhancement.md §9). SAM3 선택은 변경 없음.
+- 통신: BYOK 키(서버 설정에 마스킹 필드, 별도 저장·지우기, 변경 시 진행 작업 폐기), `X-API-Key`는 공식 base에만·redirect 미추종·signed URL에는 키 없음. submit 1회(재전송 없음, 응답 유실=처리 여부 불명) → polling(backoff, Retry-After, 30분 상한, 일시 오류 5회) → download_url → 스트리밍 다운로드(400MB 상한) → bounds·MIME·크기 검증. 취소/timeout/미정의 status 시 원래 키로 원격 취소 best effort. 견적은 `예상 크레딧 확인`을 눌렀을 때만, 실패는 "확인 불가".
+- 미적용 수동 값이 있으면 바로가기 차단·안내, 값 보존. 투명 문서는 실행 전 차단. 선택 영역이 있어도 전체 처리임을 표시.
+- 파일: `filesDir/topaz_work/<session>`(시트 소유, 닫을 때 저장 취소·생성 완료 후 삭제, 프로세스 첫 세션이 이전 잔여 정리). `ProjectRepository.create` 실패/취소 시 프로젝트 폴더 정리. 새 편집본 생성은 시작 후 취소 불가, 원치 않게 되면 삭제. 원본 프로젝트·히스토리·파일 불변.
+- 테스트 중 발견한 버그 수정: 새 편집본 생성 후 이동 전 두 번째 탭이 프로젝트를 중복 생성하던 문제.
+
+### Files
+
+- 추가(main): `core/ai/.../topaz/{TopazSettings,TopazModel,TopazDto,TopazClient,TopazHttpProvider}.kt`, `core/data/.../TopazWorkspace.kt`, `feature/editor/.../tools/enhance/{TopazState,TopazController,TopazSheet,TopazShortcut,TopazCompareLabel,TopazStorage}.kt`, `feature/export/.../MediaStoreFileStore.kt`
+- 수정(main): `AiModule.kt`, `DefaultProjectRepository.kt`(create 정리), `EditSheet.kt`(선택적 `cancelLabel`), `EditorAi.kt`, `EditorViewModel.kt`, `EditorRoute.kt`, `Tool.kt`, `ToolSheetHost.kt`, `{Light,Color,Detail}Sheet.kt`, `tools/select/{SelectionController,SelectionState,Sam3SettingsSheet}.kt`, `strings.xml`, app `DataModule.kt`·`ExportModule.kt`·`DiffuseNavHost.kt`
+- 테스트: 신규 `TopazHttpProviderTest`(24), `TopazSettingsTest`(7), `FakeTopazProvider`, `TopazWorkspaceTest`(3), `MediaStoreFileStoreTest`(3), `TopazToolTest`(22), `TopazSheetTest`(15), `TopazTestFixtures`; 수정 `ProjectPersistenceTest`(+1), `Sam3SettingsSheetTest`(+3, Saved에 Topaz 키), `SelectionToolTest`(4인자), `ToolStripLevelTest`(정확한 새 순서), EditorAi/ViewModel fixture 9개 + app `EditorBackTest`
+- 골든: 신규 `topaz_sheet_{setup,result,no_key}.png`; `editor_shell_ai_open.png` 재기록(1% 임계치 아래라 검증은 통과했지만 내용이 바뀜: 차이 bbox x863–1078 y2256–2350, '스타일' 자리에 '화질 개선', 육안 확인). 다른 골든은 재기록하지 않음.
+- 문서: `specs/topaz_enhancement.md`(신규), `specs/tool_groups.md`, `specs/export.md`, `specs/selection_tool.md` §8.4, `work/decisions.md` D098, 이 파일
+
+### Validation
+
+- `./gradlew --offline --quiet :core:ai:testDebugUnitTest --tests '*Topaz*'` → 31 pass
+- `./gradlew --offline --quiet :core:data:testDebugUnitTest` → pass
+- `./gradlew --offline --quiet :feature:export:testDebugUnitTest --tests '*MediaStoreFileStore*'` → 3 pass
+- `./gradlew --offline --quiet :feature:editor:testDebugUnitTest :app:testDebugUnitTest` → pass (Topaz 추가 전 회귀 확인 후 Topaz 테스트 포함 재실행)
+- `scripts/check.sh` → 1차 detekt 42건(신규 코드: 파라미터 수·magic number·return 수·줄 길이) → 수정 후 재실행 **exit 0**(lint, detekt, 전 모듈 unit test, verifyRoborazziDebug, dependencyGuard)
+- `./gradlew --offline --quiet :app:assembleDebug` → exit 0(Hilt 그래프 포함)
+- `git diff --check` → 통과
+- 구현 시점에는 실 API/실기기 미실행. 이후 Codex 실기기 검증 결과와 남은 제한은 위 최신 절을 참조.
+
+### Review Notes
+
+- Wire 선택(D098): schema 우선(`download_url`, Sharpen `Standard`), 모델 설정은 모델 페이지의 camelCase extra field. 얼굴 복원 on 시 strength/creativity 0.5/0.5(문서상 필수·기본값 없음) — 품질 미검증 값.
+- `TopazOutcome`/`TopazFailure`를 `AppError` 대신 둠(크레딧·불명 제출 등 구분 필요, `Sam3Outcome` 선례).
+- `EditorViewModel` 생성자 7개 → `@Suppress("LongParameterList")`(Topaz 파일/저장은 AI 번들이 아님). 기타 신규 suppression은 capability 표·failure 매핑·polling 상태 기계·guard 절.
+- 시트 구성 순서를 작업서대로(목적→옵션→크기/비용→상태/비교) 두어, 45% 시트에서 결과 크기·비교·고해상도 저장은 스크롤해야 보인다(캔버스는 결과와 '후' 라벨을 즉시 표시). 결과 상태에서 결과 영역을 위로 올릴지 검토 필요.
+- 시트 열 때 `Renderer.full`로 입력을 미리 렌더(로컬)하며 그동안 진행 overlay가 뜬다. 문서 변경 시 재렌더.
+- `EditorRoute.onOpenProject` 기본값 `{}` — app 외 호출부(테스트)는 이동하지 않는다.
+
+### Known Issues
+
+- T4(배경 제거·대상 추출) 차단: Topaz에 `model`/`mode`/`box` 실제 요청 형식을 확인해야 함.
+- 새 편집본 생성은 기존 `ImageLoader`가 파일 전체 bytes를 메모리로 읽는다(디코드는 샘플링). 256MP JPEG(수십~100MB)에서는 메모리 부담 가능 — 실기기 미측정.
+- 프로세스 종료 시 진행 중 작업은 복구하지 않음(미완료 안내 UI 없음, 다음 세션에서 잔여 파일만 정리). 이미 제출된 job은 Topaz 쪽에서 계속될 수 있다.
+- `Retry-After`·구체적 rate limit 수치·입력 파일 byte 상한은 문서에 없음(요청 500MB 상한만 명시).
+- 이전 미해결 사항 유지: Monet 제거 후 실기기 업데이트 검증 미실행·외부 Monet 서버 철거 아님. 보정 추천 REVIEW R1~R3 미해결, 12종 fixture×3회×6축 품질 평가 미완료. 멀티샷 3장 제한 원인·picker/5장 전체·실제 dog/car, 디자인/Back 실기기·IME/음성/TalkBack, 서버 멀티샷 ASGI 취소/큰 정수 metadata, 사진 품질/offline/12MP·PSS, Jev, 피부 D084 지원 0개 등은 아래 기록과 `work/retouch_evaluation.md` 참조.
+
 ## MonetGPT 자동 보정 앱 연동 제거 (2026-10-13, work/tasks.md)
 
 ### Status

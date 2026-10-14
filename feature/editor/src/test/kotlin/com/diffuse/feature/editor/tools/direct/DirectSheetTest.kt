@@ -1,9 +1,15 @@
 package com.diffuse.feature.editor.tools.direct
 
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.state.ToggleableState
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -18,6 +24,7 @@ import com.diffuse.core.ai.Availability
 import com.diffuse.core.ai.CropRatio
 import com.diffuse.core.ai.EditPlan
 import com.diffuse.core.ai.PlanStep
+import com.diffuse.core.ai.PlanTarget
 import com.diffuse.core.ai.Confidence
 import com.diffuse.core.ai.FakePlanProvider
 import com.diffuse.core.ai.GoalScope
@@ -27,7 +34,10 @@ import com.diffuse.core.ai.PlanGoal
 import com.diffuse.core.ai.PlanMode
 import com.diffuse.core.ai.PlanOutcome
 import com.diffuse.core.ai.PlanProposal
+import com.diffuse.core.ai.TopazBlock
 import com.diffuse.core.ai.WorkflowStep
+import com.diffuse.core.ai.topaz.TopazOptions
+import com.diffuse.core.ai.topaz.TopazPurpose
 import com.diffuse.core.ai.speech.FakeSpeechInput
 import com.diffuse.core.ai.speech.SpeechState
 import com.diffuse.core.imaging.model.AdjustKind
@@ -66,8 +76,10 @@ class DirectSheetTest {
         show(planned(TWO_STEP_PLAN))
 
         compose.onNodeWithTag(DirectStepsTestTag).assertExists()
-        compose.onNodeWithText("1. 나무 선택").assertExists()
-        compose.onNodeWithText("2. 선택 영역 채도 30").assertExists()
+        // §19: a selection is not a row of its own; the item names what it acts on.
+        compose.onNodeWithText("나무 새로 선택 (기존 선택과 겹치면 보정이 쌓여요)").assertDoesNotExist()
+        compose.onNodeWithText("나무 영역 채도 30").assertExists()
+        compose.onNodeWithText("대상: 나무").assertExists()
         // The prose a model might narrate never becomes a `PlanStep`, so it cannot be rendered.
         compose.onNodeWithText(PROSE).assertDoesNotExist()
     }
@@ -78,17 +90,17 @@ class DirectSheetTest {
             planned(
                 plan = EditPlan(
                     listOf(
-                        PlanStep.Adjust(AdjustKind.Exposure, -0.4f, masked = false),
-                        PlanStep.Erase,
-                        PlanStep.CutOut,
+                        PlanStep.Adjust(AdjustKind.Exposure, -0.4f),
+                        PlanStep.Select("bus", "n1"),
+                        PlanStep.CutOut("n1"),
                     ),
                 ),
             ),
         )
 
-        compose.onNodeWithText("1. 노출 -40").assertExists()
-        compose.onNodeWithText("2. 선택 영역 지우기").assertExists()
-        compose.onNodeWithText("3. 배경 지우기").assertExists()
+        compose.onNodeWithText("노출 -40").assertExists()
+        compose.onNodeWithText("대상: 사진 전체").assertExists()
+        compose.onNodeWithText("선택 영역 밖 지우기 (투명)").assertExists()
     }
 
     /** specs/adjust_hsl.md §8: a 혼합 step needs its band, because there is no chip beside it. */
@@ -98,13 +110,13 @@ class DirectSheetTest {
             planned(
                 plan = EditPlan(
                     listOf(
-                        PlanStep.Adjust(AdjustKind.HslRedSaturation, 0.4f, masked = false),
+                        PlanStep.Adjust(AdjustKind.HslRedSaturation, 0.4f),
                     ),
                 ),
             ),
         )
 
-        compose.onNodeWithText("1. 빨강 채도 40").assertExists()
+        compose.onNodeWithText("빨강 채도 40").assertExists()
     }
 
     /** T52: the phrase is English on the wire, so it is English in the template too. */
@@ -114,15 +126,16 @@ class DirectSheetTest {
             planned(
                 plan = EditPlan(
                     listOf(
-                        PlanStep.Select("bus"),
-                        PlanStep.Erase,
+                        PlanStep.Select("bus", "n1"),
+                        PlanStep.Erase("n1"),
                     ),
                 ),
             ),
         )
 
-        compose.onNodeWithText("1. bus 선택").assertExists()
-        compose.onNodeWithText("2. 선택 영역 지우기").assertExists()
+        // §19: the correction itself — "bus 지우기" — not the tool's category.
+        compose.onNodeWithText("bus 지우기").assertExists()
+        compose.onNodeWithText("대상: bus").assertExists()
     }
 
     /** specs/vibe_edit.md §4.1: the ratio reads in the 자르기 sheet's own chip characters. */
@@ -132,15 +145,13 @@ class DirectSheetTest {
             planned(
                 plan = EditPlan(
                     listOf(
-                        PlanStep.Select("bus"),
                         PlanStep.Crop(CropRatio.Story9x16),
                     ),
                 ),
             ),
         )
 
-        compose.onNodeWithText("1. bus 선택").assertExists()
-        compose.onNodeWithText("2. 9:16 비율로 자르기").assertExists()
+        compose.onNodeWithText("9:16 비율로 자르기").assertExists()
     }
 
     /** specs/generative_fill.md §8, §11: the prompt is English and the template is Korean. */
@@ -150,30 +161,31 @@ class DirectSheetTest {
             planned(
                 plan = EditPlan(
                     listOf(
-                        PlanStep.Select("chair"),
-                        PlanStep.Fill("a red umbrella"),
+                        PlanStep.Select("chair", "n1"),
+                        PlanStep.Fill("a red umbrella", "n1"),
                     ),
                 ),
             ),
         )
 
-        compose.onNodeWithText("1. chair 선택").assertExists()
-        compose.onNodeWithText("2. 선택 영역에 a red umbrella 채우기").assertExists()
+        compose.onNodeWithText("선택 영역에 a red umbrella 채우기").assertExists()
+        compose.onNodeWithText("대상: chair").assertExists()
+        compose.onNodeWithText("생성 보정 · 실행 때 유료 생성 호출을 사용해요").assertExists()
     }
 
     @Test
-    fun `적용 is disabled until a plan arrives`() {
+    fun `선택한 보정 실행 is disabled until a plan arrives`() {
         show(DirectState())
 
-        compose.onNodeWithText("적용").assertIsNotEnabled()
+        compose.onNodeWithText("선택한 보정 실행").assertIsNotEnabled()
         compose.onNodeWithTag(DirectStepsTestTag).assertDoesNotExist()
     }
 
     @Test
-    fun `적용 is enabled once a plan is there`() {
+    fun `선택한 보정 실행 is enabled once a plan is there`() {
         show(planned(TWO_STEP_PLAN))
 
-        compose.onNodeWithText("적용").assertIsEnabled()
+        compose.onNodeWithText("선택한 보정 실행").assertIsEnabled()
     }
 
     @Test
@@ -182,7 +194,7 @@ class DirectSheetTest {
 
         compose.onNodeWithTag(DirectHintTestTag).assertExists()
         compose.onNodeWithText("무엇을 할지 모르겠어요. 다르게 말해보세요.").assertExists()
-        compose.onNodeWithText("적용").assertIsNotEnabled()
+        compose.onNodeWithText("선택한 보정 실행").assertIsNotEnabled()
     }
 
     @Test
@@ -247,7 +259,7 @@ class DirectSheetTest {
         compose.onNodeWithContentDescription("보정 추천 받기 취소").assertExists()
         compose.onNodeWithTag(DirectRecommendCancelTestTag).performScrollTo().performClick()
         assertEquals(1, cancels)
-        compose.onNodeWithText("적용").assertIsNotEnabled()
+        compose.onNodeWithText("선택한 보정 실행").assertIsNotEnabled()
     }
 
     @Test
@@ -283,10 +295,10 @@ class DirectSheetTest {
         compose.onNodeWithTag(DirectPreserveTestTag).assertExists()
         compose.onNodeWithText("나무만 바꾸기 (추정)").assertExists()
         compose.onNodeWithTag(DirectStepsTestTag).assertExists()
-        compose.onNodeWithText("1. 나무 선택").assertExists()
+        compose.onNodeWithText("나무 영역 채도 30").assertExists()
         compose.onNodeWithTag(DirectChecksTestTag).assertExists()
         compose.onNodeWithText("축소본이라 잎의 세부 질감은 확인하기 어려워요").assertExists()
-        compose.onNodeWithText("적용").assertIsEnabled()
+        compose.onNodeWithText("선택한 보정 실행").assertIsEnabled()
     }
 
     @Test
@@ -297,9 +309,9 @@ class DirectSheetTest {
                     outcome = PlanOutcome.Ready,
                     goals = listOf(PlanGoal("g1", "원래 분위기를 지키며 얼굴만 조금", GoalSource.Default, GoalScope.Subject)),
                     workflow = listOf(
-                        WorkflowStep(PlanStep.Select("face"), "g1"),
+                        WorkflowStep(PlanStep.Select("face", "n1"), "g1"),
                         WorkflowStep(
-                            PlanStep.Adjust(AdjustKind.Exposure, 0.2f, masked = true),
+                            PlanStep.Adjust(AdjustKind.Exposure, 0.2f, PlanTarget.New("n1")),
                             "g1",
                             effect = "얼굴 형태가 보여요",
                             caution = "노이즈가 늘 수 있어요",
@@ -310,14 +322,14 @@ class DirectSheetTest {
         )
 
         compose.onNodeWithText("[추천 기본값] 원래 분위기를 지키며 얼굴만 조금").assertExists()
-        compose.onNodeWithText("2. 선택 영역 노출 20").assertExists()
+        compose.onNodeWithText("face 영역 노출 20").assertExists()
         compose.onNodeWithText("예상: 얼굴 형태가 보여요").assertExists()
         compose.onNodeWithText("주의: 노이즈가 늘 수 있어요").assertExists()
         compose.onNodeWithText("예상 효과는 실행 전 예측이며 결과를 보장하지 않아요").assertExists()
     }
 
     @Test
-    fun `no_change shows its reason, no steps and leaves 적용 off`() {
+    fun `no_change shows its reason, no steps and leaves 실행 off`() {
         showSuggestions(
             DirectState(
                 proposals = ProposalState(
@@ -333,7 +345,7 @@ class DirectSheetTest {
         compose.onNodeWithText("지금 사진에는 바꿀 것이 없어요").assertExists()
         compose.onNodeWithText("지금도 균형이 좋아요").assertExists()
         compose.onNodeWithTag(DirectStepsTestTag).assertDoesNotExist()
-        compose.onNodeWithText("적용").assertIsNotEnabled()
+        compose.onNodeWithText("선택한 보정 실행").assertIsNotEnabled()
     }
 
     @Test
@@ -360,7 +372,7 @@ class DirectSheetTest {
         )
         compose.waitForIdle()
         compose.onNodeWithText("지금 도구로는 할 수 없어요").assertExists()
-        compose.onNodeWithText("적용").assertIsNotEnabled()
+        compose.onNodeWithText("선택한 보정 실행").assertIsNotEnabled()
     }
 
     /** §14: model text is plain text — markup and links are shown as characters, not rendered. */
@@ -378,7 +390,7 @@ class DirectSheetTest {
 
     @Test
     @Config(fontScale = 2f)
-    fun `a long review scrolls inside the sheet and 적용 stays reachable at a large font`() {
+    fun `a long review scrolls inside the sheet and 실행 stays reachable at a large font`() {
         val long = "가".repeat(240)
         val proposal = FakePlanProvider.DEFAULT_PROPOSAL.copy(
             observations = List(8) { Observation("o$it", "영역$it", long, Confidence.Low) },
@@ -386,7 +398,7 @@ class DirectSheetTest {
         )
         show(recommended(proposal))
 
-        compose.onNodeWithText("적용").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("선택한 보정 실행").assertIsDisplayed().assertIsEnabled()
         compose.onNodeWithText("마지막 확인 사항").performScrollTo().assertIsDisplayed()
     }
 
@@ -468,13 +480,123 @@ class DirectSheetTest {
         assertEquals(emptyList<String>(), picked)
     }
 
+    // ---- §19, items the user turns on or off ---------------------------------
+
+    @Test
+    fun `each item is one switch row with its state, label and a 48dp target`() {
+        val toggled = mutableListOf<String>()
+        show(planned(TWO_ADJUSTS).let { it.copy(chosen = it.chosen - "s2") }, onToggle = { toggled += it })
+
+        compose.onNodeWithTag(directItemTag("s1"))
+            .assertHeightIsAtLeast(48.dp)
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Switch))
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.ToggleableState, ToggleableState.On))
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "적용함"))
+        compose.onNodeWithTag(directItemTag("s2"))
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.ToggleableState, ToggleableState.Off))
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "적용 안 함"))
+        compose.onNodeWithText("선택한 보정 1/2개").assertExists()
+
+        compose.onNodeWithTag(directItemTag("s2")).performScrollTo().performClick()
+
+        assertEquals(listOf("s2"), toggled)
+    }
+
+    @Test
+    fun `with every item off the sheet asks for a choice and 실행 is off`() {
+        show(planned(TWO_ADJUSTS).copy(chosen = emptySet()))
+
+        compose.onNodeWithText("적용할 보정을 선택하세요").assertExists()
+        compose.onNodeWithText("선택한 보정 실행").assertIsNotEnabled()
+    }
+
+    @Test
+    fun `a blocked Topaz item says how to fix it and blocks only while it is on`() {
+        val topaz = EditPlan(
+            listOf(
+                PlanStep.Adjust(AdjustKind.Exposure, 0.1f),
+                PlanStep.Topaz(TopazPurpose.Denoise, TopazOptions(scale = 1)),
+            ),
+        )
+        var state by androidx.compose.runtime.mutableStateOf(
+            planned(topaz).copy(blocks = mapOf("s2" to TopazBlock.NoKey)),
+        )
+        show { state }
+
+        compose.onNodeWithText("Topaz API 키가 없어요. 서버 설정에서 키를 입력하거나 이 항목을 끄세요").assertExists()
+        compose.onNodeWithText("Topaz 유료 · 선택한 보정 실행 시 마지막에 자동으로 처리해요").assertExists()
+        compose.onNodeWithText("선택한 보정 실행").assertIsNotEnabled()
+
+        state = state.copy(chosen = setOf("s1"))
+        compose.waitForIdle()
+        compose.onNodeWithText("선택한 보정 실행").assertIsEnabled()
+    }
+
+    @Test
+    fun `only Topaz on runs through the same primary, and says it reaches Topaz and its credits`() {
+        val topaz = EditPlan(
+            listOf(
+                PlanStep.Adjust(AdjustKind.Exposure, 0.1f),
+                PlanStep.Topaz(TopazPurpose.Denoise, TopazOptions(scale = 1)),
+            ),
+        )
+        show(planned(topaz).copy(chosen = setOf("s2")))
+
+        compose.onNodeWithText("선택한 보정 실행").assertIsEnabled()
+        compose.onNodeWithTag(DirectRunNoteTestTag).performScrollTo()
+            .assertTextContains("Topaz 화질 개선까지 자동으로", substring = true)
+            .assertTextContains("크레딧", substring = true)
+        compose.onNodeWithText("화질 개선에서 확인").assertDoesNotExist()
+    }
+
+    @Test
+    fun `in a 지시, an addition the AI proposed on its own says so`() {
+        val proposal = FakePlanProvider.ready(TWO_ADJUSTS).let { ready ->
+            ready.copy(
+                goals = ready.goals + PlanGoal("g2", "대비", GoalSource.Default, GoalScope.Global),
+                workflow = listOf(ready.workflow[0], ready.workflow[1].copy(goalId = "g2")),
+            )
+        }
+        show(DirectState(proposals = ProposalState(ProposalPhase.Ready, PlanMode.Direct, proposal)).allChosen())
+
+        compose.onNodeWithText("요청 외에 AI가 추가로 제안한 보정이에요").assertExists()
+    }
+
+    @Test
+    fun `toggles are locked while a candidate is being built`() {
+        show(planned(TWO_ADJUSTS).copy(candidate = CandidateState(CandidatePhase.Running, steps = 2)))
+
+        compose.onNodeWithTag(directItemTag("s1")).performScrollTo().assertIsNotEnabled()
+    }
+
+    @Test
+    fun `a stale candidate asks for another run`() {
+        show(planned(TWO_ADJUSTS).copy(candidate = CandidateState(CandidatePhase.Stale, chosen = setOf("s1"))))
+
+        compose.onNodeWithText("선택이 바뀌어 다시 실행해야 해요").assertExists()
+        compose.onNodeWithText("선택한 보정 다시 실행").assertIsEnabled()
+    }
+
+    @Test
+    @Config(fontScale = 2f)
+    fun `at a large font every toggle can be scrolled to and 실행 stays reachable`() {
+        val many = EditPlan(AdjustKind.entries.filter { it.hsl == null }.take(8).map { PlanStep.Adjust(it, 0.1f) })
+        show(planned(many))
+
+        compose.onNodeWithText("선택한 보정 실행").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithTag(directItemTag("s8")).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("선택한 보정 실행").assertIsDisplayed()
+    }
+
+    private fun DirectState.allChosen() = copy(chosen = items.map { it.id }.toSet())
+
     private fun recommended(proposal: PlanProposal) = DirectState(
         proposals = ProposalState(ProposalPhase.Ready, PlanMode.Recommend, proposal, frameReady = true),
-    )
+    ).allChosen()
 
     private fun planned(plan: EditPlan) = DirectState(
         proposals = ProposalState(ProposalPhase.Ready, PlanMode.Direct, FakePlanProvider.ready(plan)),
-    )
+    ).allChosen()
 
     private fun showSuggestions(state: DirectState) = showSuggestions { state }
 
@@ -510,13 +632,17 @@ class DirectSheetTest {
         compose.waitForIdle()
     }
 
-    private fun show(state: DirectState) {
+    private fun show(state: DirectState, onToggle: (String) -> Unit = {}) = show(onToggle) { state }
+
+    private fun show(onToggle: (String) -> Unit = {}, current: () -> DirectState) {
         compose.setContent {
+            val state = current()
             AppTheme(ThemeMode.Edit) {
                 DirectSheet(
                     state = state.copy(availability = Availability.Ready),
                     onCancel = {},
                     onApply = {},
+                    onToggle = onToggle,
                     promptBar = {
                         VoicePromptBar(
                             value = state.request,
@@ -540,10 +666,13 @@ class DirectSheetTest {
 
     private companion object {
         const val PROSE = "네, 나무를 푸르게 해드릴게요."
+        val TWO_ADJUSTS = EditPlan(
+            listOf(PlanStep.Adjust(AdjustKind.Exposure, 0.1f), PlanStep.Adjust(AdjustKind.Temperature, 0.05f)),
+        )
         val TWO_STEP_PLAN = EditPlan(
             listOf(
-                PlanStep.Select("나무"),
-                PlanStep.Adjust(AdjustKind.Saturation, 0.3f, masked = true),
+                PlanStep.Select("나무", "n1"),
+                PlanStep.Adjust(AdjustKind.Saturation, 0.3f, PlanTarget.New("n1")),
             ),
         )
     }

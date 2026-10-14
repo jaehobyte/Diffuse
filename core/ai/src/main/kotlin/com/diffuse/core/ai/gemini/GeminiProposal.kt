@@ -9,14 +9,21 @@ import com.diffuse.core.ai.GoalScope
 import com.diffuse.core.ai.GoalSource
 import com.diffuse.core.ai.IntentItem
 import com.diffuse.core.ai.Observation
+import com.diffuse.core.ai.PlanContext
+import com.diffuse.core.ai.PlanDirection
 import com.diffuse.core.ai.PlanGoal
 import com.diffuse.core.ai.PlanOutcome
 import com.diffuse.core.ai.PlanProposal
 import com.diffuse.core.ai.PlanStep
+import com.diffuse.core.ai.PlanTarget
 import com.diffuse.core.ai.RequestIntent
 import com.diffuse.core.ai.WorkflowStep
+import com.diffuse.core.ai.consumes
+import com.diffuse.core.ai.topaz.TopazJob
+import com.diffuse.core.ai.topaz.TopazOptions
 import com.diffuse.core.imaging.model.AdjustKind
 import com.diffuse.core.imaging.model.HslChannel
+import com.diffuse.core.imaging.style.atIntensity
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -24,6 +31,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.floatOrNull
+import kotlin.math.abs
 
 /** A response that cannot be accepted whole. [message] says which rule it broke, for the log. */
 internal class Unplannable(message: String) : Exception(message)
@@ -42,9 +50,14 @@ internal class Unplannable(message: String) : Exception(message)
 @Suppress("TooManyFunctions")
 internal object ProposalDecoder {
 
-    fun decode(args: JsonObject): PlanProposal {
+    /**
+     * @param context the snapshot the request was built from: a target ref the model writes
+     * resolves against it and nothing else (specs/vibe_edit.md §15).
+     */
+    fun decode(args: JsonObject, context: PlanContext = PlanContext()): PlanProposal {
         val goals = args.objects(ARG_GOALS, ProposalLimits.GOALS).map(::goal)
         return PlanProposal(
+            direction = args.optionalObject(ARG_DIRECTION)?.let(::direction),
             outcome = when (args.required(ARG_OUTCOME)) {
                 OUTCOME_READY -> PlanOutcome.Ready
                 OUTCOME_NO_CHANGE -> PlanOutcome.NoChange
@@ -56,10 +69,26 @@ internal object ProposalDecoder {
             intent = intent(args.optionalObject(ARG_INTENT)),
             goals = goals,
             colors = args.objects(ARG_COLOR_ROLES, ProposalLimits.COLORS).map(::color),
-            workflow = args.objects(ARG_WORKFLOW, ProposalLimits.WORKFLOW).flatMap { workflow(it, goals) },
+            workflow = args.objects(ARG_WORKFLOW, ProposalLimits.WORKFLOW)
+                .flatMapIndexed { index, item -> workflow(item, index, goals, context) },
             limitations = args.strings(ARG_LIMITATIONS, ProposalLimits.LIMITATIONS),
             reason = args.optional(ARG_REASON),
         )
+    }
+
+    private fun direction(o: JsonObject) = PlanDirection(
+        subject = o.required(ARG_SUBJECT),
+        strengths = o.strings(ARG_STRENGTHS, ProposalLimits.DIRECTION_ITEMS),
+        preserve = o.strings(ARG_PRESERVE, ProposalLimits.DIRECTION_ITEMS),
+        objective = o.required(ARG_OBJECTIVE),
+        success = o.required(ARG_SUCCESS),
+        source = source(o.required(ARG_SOURCE)),
+    )
+
+    private fun source(wire: String) = when (wire) {
+        "user" -> GoalSource.User
+        "default" -> GoalSource.Default
+        else -> fail("unknown goal source")
     }
 
     private fun observation(o: JsonObject) = Observation(
@@ -87,7 +116,10 @@ internal object ProposalDecoder {
                     kind = when (c.required(ARG_KIND)) {
                         "subject_only" -> ConstraintKind.SubjectOnly
                         "keep_background" -> ConstraintKind.KeepBackground
+                        "keep_frame" -> ConstraintKind.KeepFrame
+                        "keep_hue" -> ConstraintKind.KeepHue
                         "keep_colors" -> ConstraintKind.KeepColors
+                        "keep_exact_colors" -> ConstraintKind.KeepExactColors
                         "other" -> ConstraintKind.Other
                         else -> fail("unknown constraint kind")
                     },
@@ -102,11 +134,7 @@ internal object ProposalDecoder {
     private fun goal(o: JsonObject) = PlanGoal(
         id = o.required(ARG_ID),
         text = o.required(ARG_TEXT),
-        source = when (o.required(ARG_SOURCE)) {
-            "user" -> GoalSource.User
-            "default" -> GoalSource.Default
-            else -> fail("unknown goal source")
-        },
+        source = source(o.required(ARG_SOURCE)),
         scope = when (o.required(ARG_SCOPE)) {
             "global" -> GoalScope.Global
             "subject" -> GoalScope.Subject
@@ -128,52 +156,92 @@ internal object ProposalDecoder {
         target = o.required(ARG_TARGET),
     )
 
-    /** One workflow item; `adjust_color_range` becomes up to three steps, all for its goal. */
-    private fun workflow(o: JsonObject, goals: List<PlanGoal>): List<WorkflowStep> {
+    /**
+     * One workflow item; `adjust_color_range` becomes up to three steps, all for its goal. Each step
+     * gets its id here, from its wire position (`s3`, or `s3.1`… for a colour range's channels), so
+     * a later reorder or a toggle never re-identifies it (specs/vibe_edit.md §19).
+     */
+    private fun workflow(o: JsonObject, index: Int, goals: List<PlanGoal>, context: PlanContext): List<WorkflowStep> {
         val goalId = o.required(ARG_GOAL_ID)
-        val goal = goals.firstOrNull { it.id == goalId } ?: fail("step names no goal")
+        if (goals.none { it.id == goalId }) fail("step names no goal")
         val args = o.optionalObject(ARG_ARGS) ?: JsonObject(emptyMap())
         val effect = o.optional(ARG_EFFECT)
         val caution = o.optional(ARG_CAUTION)
-        return steps(o.required(ARG_TOOL), args, goal.scope == GoalScope.Subject)
-            .map { WorkflowStep(it, goalId, effect, caution) }
+        // §15: there is no `masked`; a local step names its target. An old-style `masked=true`
+        // would be a step the model thinks is local and the app would run on the whole photo.
+        if (args.flag(ARG_MASKED) == true) fail("masked is not an argument; a local step names its target")
+        val steps = steps(o.required(ARG_TOOL), args, context)
+        return steps.mapIndexed { k, step ->
+            val id = if (steps.size == 1) "s${index + 1}" else "s${index + 1}.${k + 1}"
+            WorkflowStep(step, goalId, effect, caution, id)
+        }
     }
 
-    /**
-     * The eight tools, with the argument rules their separate declarations carried. `masked`
-     * left out follows the goal: a subject goal acts inside its selection, any other does not.
-     */
-    private fun steps(tool: String, args: JsonObject, subject: Boolean): List<PlanStep> = when (tool) {
-        FN_SELECT_REGION -> listOf(PlanStep.Select(args.required(ARG_PHRASE)))
-        FN_ADJUST -> {
-            val kind = adjustKindOf(args.required(ARG_KIND)) ?: fail("unknown adjust kind")
-            val value = args.number(ARG_VALUE) ?: fail("adjust without a value")
-            listOf(PlanStep.Adjust(kind, kind.coerce(value), args.flag(ARG_MASKED) ?: subject))
-        }
-        FN_ADJUST_COLOR_RANGE -> colorRange(args, subject)
-        FN_ERASE_SELECTION -> listOf(PlanStep.Erase)
-        FN_CUT_OUT_SELECTION -> listOf(PlanStep.CutOut)
-        FN_FILL_SELECTION -> listOf(PlanStep.Fill(args.required(ARG_PROMPT)))
+    /** The nine tools, with the argument rules their separate declarations carried. */
+    private fun steps(tool: String, args: JsonObject, context: PlanContext): List<PlanStep> = when (tool) {
+        FN_SELECT_REGION -> listOf(
+            PlanStep.Select(args.required(ARG_PHRASE), args.required(ARG_TARGET), args.flag(ARG_MULTIPLE) ?: false),
+        )
+        FN_ADJUST -> listOf(adjust(args, context))
+        FN_ADJUST_COLOR_RANGE -> colorRange(args, context)
+        FN_ERASE_SELECTION -> listOf(PlanStep.Erase(args.required(ARG_TARGET)))
+        FN_CUT_OUT_SELECTION -> listOf(PlanStep.CutOut(args.required(ARG_TARGET)))
+        FN_FILL_SELECTION -> listOf(PlanStep.Fill(args.required(ARG_PROMPT), args.required(ARG_TARGET)))
         FN_CROP_RATIO -> listOf(PlanStep.Crop(cropRatioOf(args.required(ARG_RATIO)) ?: fail("unknown ratio")))
         FN_APPLY_STYLE -> listOf(style(args))
+        FN_TOPAZ_ENHANCE -> listOf(topaz(args))
         else -> fail("unknown tool")
     }
 
-    /** specs/style_match.md §6: 0…100, clamped; a look named with no strength means all of it. */
-    private fun style(args: JsonObject): PlanStep.Style {
-        val style = styleIdOf(args.required(ARG_STYLE)) ?: fail("unknown style")
-        val intensity = args.number(ARG_INTENSITY)?.toInt()?.coerceIn(0, FULL_STYLE_INTENSITY)
-        return PlanStep.Style(style, intensity ?: FULL_STYLE_INTENSITY)
+    private fun adjust(args: JsonObject, context: PlanContext): PlanStep.Adjust {
+        val kind = adjustKindOf(args.required(ARG_KIND)) ?: fail("unknown adjust kind")
+        val value = args.number(ARG_VALUE) ?: fail("adjust without a value")
+        return PlanStep.Adjust(kind, kind.coerce(value), args.optional(ARG_TARGET)?.let { target(it, context) })
     }
 
-    /** specs/adjust_hsl.md §8: hue → saturation → luminance; a zero channel is no step. */
-    private fun colorRange(args: JsonObject, subject: Boolean): List<PlanStep> {
+    /** §15: a ref the snapshot lists is that selection; anything else must be a declared label. */
+    private fun target(wire: String, context: PlanContext): PlanTarget =
+        context.target(wire)?.let { PlanTarget.Existing(it.ref, it.maskId) } ?: PlanTarget.New(wire)
+
+    /**
+     * specs/style_match.md §6: 0…100, clamped. The strength is **required** — "a look named
+     * means all of it" was a default nobody measured (§18).
+     */
+    private fun style(args: JsonObject): PlanStep.Style {
+        val style = styleIdOf(args.required(ARG_STYLE)) ?: fail("unknown style")
+        val intensity = args.number(ARG_INTENSITY) ?: fail("style without an intensity")
+        return PlanStep.Style(style, intensity.toInt().coerceIn(0, MAX_STYLE_INTENSITY))
+    }
+
+    /** §16: the purpose and its options; whether they fit the purpose is `ProposalCheck`'s. */
+    private fun topaz(args: JsonObject): PlanStep.Topaz {
+        val purpose = topazPurposeOf(args.required(ARG_PURPOSE)) ?: fail("unknown topaz purpose")
+        val scale = args.number(ARG_SCALE)?.let { scale ->
+            scale.toInt().takeIf { it.toFloat() == scale } ?: fail("scale is not a whole number")
+        }
+        return PlanStep.Topaz(
+            purpose,
+            TopazOptions(
+                scale = scale ?: purpose.defaultScale,
+                faceRecovery = args.flag(ARG_FACE_RECOVERY) ?: false,
+                sharpenStrength = args.number(ARG_SHARPEN_STRENGTH),
+            ),
+        )
+    }
+
+    /**
+     * specs/adjust_hsl.md §8, vibe_edit.md §15: whole-photo only, hue → saturation → luminance.
+     * A channel left out keeps its value; an explicit 0 resets it, and is no step when it is
+     * already 0.
+     */
+    private fun colorRange(args: JsonObject, context: PlanContext): List<PlanStep> {
+        if (args.optional(ARG_TARGET) != null) fail("colour range takes no target")
         val band = hslBandOf(args.required(ARG_COLOR)) ?: fail("unknown colour range")
-        val masked = args.flag(ARG_MASKED) ?: subject
         val steps = HslChannel.entries.mapNotNull { channel ->
-            args.number(channel.wireName)?.takeIf { it != 0f }?.let { value ->
-                val kind = hslKindOf(band, channel)
-                PlanStep.Adjust(kind, kind.coerce(value), masked)
+            val kind = hslKindOf(band, channel)
+            val current = context.adjustments.firstOrNull { it.kind == kind && it.targetRef == null }?.value ?: 0f
+            args.number(channel.wireName)?.takeUnless { it == 0f && current == 0f }?.let { value ->
+                PlanStep.Adjust(kind, kind.coerce(value))
             }
         }
         return steps.ifEmpty { fail("colour range without a change") }
@@ -234,90 +302,303 @@ internal object ProposalDecoder {
 }
 
 /**
- * specs/vibe_edit.md §14. The mechanical half of the rules the instruction states: a decoded
- * proposal whose structure contradicts itself or the request is refused. Whether the model
- * *understood* the photo is not checkable here and is left to the image evaluation.
+ * specs/vibe_edit.md §14–§17. The mechanical half of the rules the instruction states: a decoded
+ * proposal whose structure contradicts itself, the request or the snapshot is refused. Whether the
+ * model *understood* the photo — or classified a constraint well — is not checkable here; the
+ * rendered result is compared with the same input by the user (§18).
  */
+// One rule family per function; each returns the first violation or null.
+@Suppress("TooManyFunctions")
 internal object ProposalCheck {
 
-    /** @return the first rule [proposal] breaks for a request whose text is [requestText], or null. */
-    @Suppress("CyclomaticComplexMethod", "ReturnCount")
-    fun violation(proposal: PlanProposal, requestText: String): String? {
+    /**
+     * @param context the snapshot the request was built from — the targets a step may name and
+     * the values and style effects the simulation starts from.
+     * @return the first rule [proposal] breaks for a request whose text is [requestText], or null.
+     */
+    fun violation(proposal: PlanProposal, requestText: String, context: PlanContext = PlanContext()): String? =
+        envelope(proposal, requestText) ?: topazJob(proposal, context) ?: selectionViolation(proposal, context)
+
+    /**
+     * specs/vibe_edit.md §19: the rules that hold for any part of a proposal — the ones a user's
+     * choice of items is checked against again. The envelope rules (outcome, direction, goal ids)
+     * and the Topaz options are the original answer's and are not re-asked of a choice; whether
+     * the hand-off can run on the document it gets is the item's block, checked when it is known.
+     */
+    fun selectionViolation(proposal: PlanProposal, context: PlanContext = PlanContext()): String? =
+        topaz(proposal)
+            ?: targets(proposal, context)
+            ?: constraints(proposal)
+            ?: StateSimulation(context).violation(proposal.workflow.map { it.step })
+
+    @Suppress("CyclomaticComplexMethod")
+    private fun envelope(proposal: PlanProposal, requestText: String): String? {
         val ids = proposal.observations.map { it.id }
         val goalIds = proposal.goals.map { it.id }
         val steps = proposal.workflow
-        val constraints = proposal.intent.constraints.map { it.kind }.toSet()
-        when {
-            ids.size != ids.toSet().size || goalIds.size != goalIds.toSet().size -> return "duplicate id"
-            proposal.goals.any { goal -> goal.observationIds.any { it !in ids } } -> return "goal names no observation"
-            proposal.outcome == PlanOutcome.Ready && steps.none { it.step !is PlanStep.Select } ->
-                return "ready without an edit"
-            proposal.outcome != PlanOutcome.Ready && steps.isNotEmpty() -> return "a workflow that is not ready"
-            proposal.outcome != PlanOutcome.Ready && proposal.reason == null -> return "no reason"
+        val ready = proposal.outcome == PlanOutcome.Ready
+        return when {
+            ids.size != ids.toSet().size || goalIds.size != goalIds.toSet().size -> "duplicate id"
+            proposal.goals.any { goal -> goal.observationIds.any { it !in ids } } -> "goal names no observation"
+            ready && steps.none { it.step !is PlanStep.Select } -> "ready without an edit"
+            ready && proposal.direction == null -> "ready without a direction"
+            !ready && steps.isNotEmpty() -> "a workflow that is not ready"
+            !ready && proposal.reason == null -> "no reason"
             requestText.isBlank() && proposal.goals.any { it.source == GoalSource.User } ->
-                return "a user goal without a request"
-            steps.count { it.step is PlanStep.Crop } > 1 -> return "more than one crop"
-            steps.count { it.step is PlanStep.Style } > 1 -> return "more than one style"
-            steps.any { it.step is PlanStep.Style } && steps.any { it.isGlobalAdjust } ->
-                return "an adjust that repeats the style"
-        }
-        steps.forEachIndexed { index, item ->
-            val goal = proposal.goal(item.goalId) ?: return "step names no goal"
-            val step = item.step
-            if (step.needsRequest && goal.source != GoalSource.User) return "${step.name} that was not requested"
-            if (!goal.scope.allows(step)) return "${step.name} outside its ${goal.scope} goal"
-            val ownSelection = steps.take(index).any { it.goalId == item.goalId && it.step is PlanStep.Select }
-            if (step.consumesSelection && !ownSelection) return "${step.name} without its own selection"
-            if (step is PlanStep.Select && steps.drop(index + 1).takeWhile { it.step !is PlanStep.Select }
-                    .none { it.step.consumesSelection }
-            ) {
-                return "a selection nothing uses"
+                "a user goal without a request"
+            requestText.isBlank() && proposal.direction?.source == GoalSource.User ->
+                "a user direction without a request"
+            steps.count { it.step is PlanStep.Crop } > 1 -> "more than one crop"
+            steps.count { it.step is PlanStep.Style } > 1 -> "more than one style"
+            steps.count { it.step is PlanStep.Topaz } > 1 -> "more than one topaz"
+            // §19: a default goal may name any tool; what it may not do is leave its scope.
+            else -> steps.firstNotNullOfOrNull { item ->
+                val goal = proposal.goal(item.goalId) ?: return@firstNotNullOfOrNull "step names no goal"
+                if (goal.scope.allows(item.step)) null else "${item.step.name} outside its ${goal.scope} goal"
             }
-            val subjectOnly = ConstraintKind.SubjectOnly in constraints || ConstraintKind.KeepBackground in constraints
-            if (!step.isLocal && subjectOnly) return "${step.name} beyond a subject-only constraint"
-            if (step.changesColor && ConstraintKind.KeepColors in constraints) return "${step.name} under keep colours"
+        }
+    }
+
+    /**
+     * §16, §19: a Topaz step is the plan's last hand-off — beside local steps, whole-photo, never
+     * under an explicit constraint it cannot keep and never after a cut-out (which leaves the
+     * transparency no purpose takes). A missing key is not a refusal: the item says so and the
+     * user may turn it off.
+     */
+    private fun topaz(proposal: PlanProposal): String? {
+        val steps = proposal.workflow
+        if (steps.none { it.step is PlanStep.Topaz }) return null
+        val constraints = proposal.explicitConstraints
+        return when {
+            steps.any { it.step is PlanStep.CutOut } -> "topaz after a cut-out"
+            constraints.any { it in TOPAZ_FORBIDDEN } -> "topaz under a preservation constraint"
+            else -> null
+        }
+    }
+
+    /**
+     * §16: the options are ones the purpose offers and the snapshot's input fits it —
+     * `TopazJob.problem()` decides, with the snapshot's working size when it is known.
+     */
+    private fun topazJob(proposal: PlanProposal, context: PlanContext): String? {
+        val step = proposal.workflow.firstNotNullOfOrNull { it.step as? PlanStep.Topaz } ?: return null
+        val capability = context.topaz
+        val job = TopazJob(
+            purpose = step.purpose,
+            options = step.options,
+            inputWidth = capability?.inputWidth ?: 1,
+            inputHeight = capability?.inputHeight ?: 1,
+            inputHasAlpha = capability?.hasAlpha == true,
+        )
+        return job.problem()?.let { "topaz $it" }
+    }
+
+    /**
+     * §15: every target is explicit. A new label is declared once by a `Select`, never shadows a
+     * snapshot ref, and is used afterwards; erase, cut-out and fill consume the selection made
+     * right before them — what `PlanRunner` holds as the current mask.
+     */
+    @Suppress("CyclomaticComplexMethod", "ReturnCount")
+    private fun targets(proposal: PlanProposal, context: PlanContext): String? {
+        val steps = proposal.workflow.map { it.step }
+        val declared = mutableSetOf<String>()
+        var current: String? = null
+        steps.forEachIndexed { index, step ->
+            when (step) {
+                is PlanStep.Select -> {
+                    if (context.target(step.label) != null) return "a new selection reuses a snapshot ref"
+                    if (!declared.add(step.label)) return "a label declared twice"
+                    if (steps.drop(index + 1).none { it.uses(step.label) }) return "a selection nothing uses"
+                    current = step.label
+                }
+                is PlanStep.Adjust -> {
+                    val target = step.target
+                    if (target is PlanTarget.New && target.label !in declared) return "an undeclared target"
+                }
+                is PlanStep.Erase, is PlanStep.CutOut, is PlanStep.Fill -> {
+                    val label = step.consumed
+                    if (label !in declared) return "an undeclared target"
+                    if (label != current) return "${step.name} on a selection that is not the current one"
+                }
+                is PlanStep.Crop, is PlanStep.Style, is PlanStep.Topaz -> Unit
+            }
         }
         return null
     }
 
+    /**
+     * §17: each explicit constraint as the steps it forbids. Classifying the request is the model's.
+     * §19: a constraint the model only inferred (`explicit=false`) is its guess at the user's taste;
+     * it is shown as such and never blocks a proposal.
+     */
+    private fun constraints(proposal: PlanProposal): String? {
+        val kinds = proposal.explicitConstraints
+        return proposal.workflow.firstNotNullOfOrNull { item ->
+            val step = item.step
+            kinds.firstOrNull { !it.allows(step) }?.let { "${step.name} under $it" }
+        }
+    }
+
+    @Suppress("CyclomaticComplexMethod")
+    private fun ConstraintKind.allows(step: PlanStep): Boolean = when (this) {
+        // Outside the selection stays: local steps and a requested crop only. A cut-out deletes
+        // the outside, so it is the one local step these refuse.
+        ConstraintKind.SubjectOnly, ConstraintKind.KeepBackground ->
+            step is PlanStep.Select || step is PlanStep.Crop || step is PlanStep.Erase || step is PlanStep.Fill ||
+                (step is PlanStep.Adjust && step.masked)
+        ConstraintKind.KeepFrame -> step !is PlanStep.Crop && step !is PlanStep.CutOut
+        ConstraintKind.KeepHue -> !step.changesHue && !step.isGenerative
+        ConstraintKind.KeepColors -> !step.changesHue && !step.changesSaturation && !step.isGenerative
+        ConstraintKind.KeepExactColors -> step is PlanStep.Select || step is PlanStep.Crop
+        ConstraintKind.Other -> true
+    }
+
     private fun GoalScope.allows(step: PlanStep): Boolean = when (this) {
         GoalScope.Subject -> step is PlanStep.Select || step.consumesSelection
-        GoalScope.Global -> step is PlanStep.Style || step is PlanStep.Crop ||
+        GoalScope.Global -> step is PlanStep.Style || step is PlanStep.Crop || step is PlanStep.Topaz ||
             (step is PlanStep.Adjust && !step.masked)
         GoalScope.ColorRange -> step is PlanStep.Adjust && !step.masked && step.kind.hsl != null
     }
 
-    private val WorkflowStep.isGlobalAdjust: Boolean
-        get() = (step as? PlanStep.Adjust)?.let { !it.masked && it.kind.hsl == null } == true
-
-    /** What only an explicit request may ask for (§14): a look, a shape, a removal or a fill. */
-    private val PlanStep.needsRequest: Boolean
-        get() = this is PlanStep.Style || this is PlanStep.Crop || this is PlanStep.Erase ||
-            this is PlanStep.CutOut || this is PlanStep.Fill
+    private val PlanProposal.explicitConstraints: Set<ConstraintKind>
+        get() = intent.constraints.filter { it.explicit }.map { it.kind }.toSet()
 
     private val PlanStep.consumesSelection: Boolean
         get() = when (this) {
             is PlanStep.Adjust -> masked
-            PlanStep.Erase, PlanStep.CutOut, is PlanStep.Fill -> true
-            is PlanStep.Select, is PlanStep.Crop, is PlanStep.Style -> false
+            is PlanStep.Erase, is PlanStep.CutOut, is PlanStep.Fill -> true
+            is PlanStep.Select, is PlanStep.Crop, is PlanStep.Style, is PlanStep.Topaz -> false
         }
 
-    /** Stays inside a selection: a crop only reframes, so it changes no tone outside one either. */
-    private val PlanStep.isLocal: Boolean
-        get() = this is PlanStep.Select || this is PlanStep.Crop || consumesSelection
+    private val PlanStep.consumed: String?
+        get() = when (this) {
+            is PlanStep.Erase -> target
+            is PlanStep.CutOut -> target
+            is PlanStep.Fill -> target
+            else -> null
+        }
 
-    private val PlanStep.changesColor: Boolean
+    private fun PlanStep.uses(label: String): Boolean = consumes(label)
+
+    private val PlanStep.isGenerative: Boolean
+        get() = this is PlanStep.Erase || this is PlanStep.Fill || this is PlanStep.Topaz
+
+    private val PlanStep.changesHue: Boolean
         get() = this is PlanStep.Style ||
-            (this is PlanStep.Adjust && (kind.hsl != null || kind in COLOR_KINDS))
+            (this is PlanStep.Adjust && (kind in HUE_KINDS || kind.hsl?.channel == HslChannel.Hue))
+
+    private val PlanStep.changesSaturation: Boolean
+        get() = this is PlanStep.Adjust && (kind in SATURATION_KINDS || kind.hsl != null)
 
     private val PlanStep.name: String get() = this::class.simpleName.orEmpty()
 
-    private val COLOR_KINDS = setOf(
-        AdjustKind.Temperature,
-        AdjustKind.Tint,
-        AdjustKind.Saturation,
-        AdjustKind.Vibrance,
+    private val HUE_KINDS = setOf(AdjustKind.Temperature, AdjustKind.Tint)
+    private val SATURATION_KINDS = setOf(AdjustKind.Saturation, AdjustKind.Vibrance)
+
+    /** §16: Topaz processes the whole photo and may redraw it; none of these can be kept. */
+    private val TOPAZ_FORBIDDEN = setOf(
+        ConstraintKind.SubjectOnly,
+        ConstraintKind.KeepBackground,
+        ConstraintKind.KeepHue,
+        ConstraintKind.KeepColors,
+        ConstraintKind.KeepExactColors,
     )
+}
+
+/**
+ * specs/vibe_edit.md §15: the plan's steps replayed on the snapshot's values with the editor's
+ * own rules — `withAdjust` replaces one `(kind, target)` setting, a style replaces exactly the
+ * values its catalog entry carries at that intensity (`atIntensity`, the function the 스타일
+ * sheet and `PlanRunner` use). What it refuses is a setting the plan writes twice, a value a
+ * later style throws away, an adjust that repeats or reverses the style before it, and a style
+ * that writes nothing. An adjust on a kind the style does not carry is independent; one that goes
+ * further in the style's own direction is a deliberate final step.
+ *
+ * When the snapshot carries no style effects the style's values are unknown, and nothing is
+ * claimed about overlap with it — the style's name is never read as its effect.
+ */
+internal class StateSimulation(private val context: PlanContext) {
+
+    private data class Written(val byStyle: Boolean, val value: Float, val before: Float)
+
+    /** The final `(kind, target key)` values the steps leave, and the first rule they broke. */
+    data class Replay(val values: Map<Pair<AdjustKind, String?>, Float>, val violation: String?)
+
+    fun violation(steps: List<PlanStep>): String? = replay(steps).violation
+
+    /**
+     * Replays every step to the end — the values are what the editor would hold, which a test
+     * compares with `EditDocument.withAdjust` — and records the first violation on the way.
+     * A setting a step leaves at 0 is gone, as `withAdjust` removes it.
+     */
+    fun replay(steps: List<PlanStep>): Replay {
+        val run = Run(context.adjustments.associate { (it.kind to it.targetRef) to it.value }.toMutableMap())
+        steps.forEach { step ->
+            when (step) {
+                is PlanStep.Adjust -> run.adjust(step)
+                is PlanStep.Style -> context.styles.firstOrNull { it.style == step.style }
+                    ?.let { run.style(it.values.atIntensity(step.intensity)) }
+                else -> Unit
+            }
+        }
+        return Replay(run.values.filterValues { it != 0f }, run.violation)
+    }
+
+    /** One replay's state: the values so far, who wrote each in this plan, the first violation. */
+    private inner class Run(val values: MutableMap<Pair<AdjustKind, String?>, Float>) {
+        private val written = mutableMapOf<Pair<AdjustKind, String?>, Written>()
+        var violation: String? = null
+            private set
+
+        fun adjust(step: PlanStep.Adjust) {
+            val key = step.kind to step.target?.key
+            written[key]?.let { previous -> flag(overlap(previous, step.value)) }
+            written[key] = Written(byStyle = false, value = step.value, before = values[key] ?: 0f)
+            values[key] = step.value
+        }
+
+        fun style(scaled: Map<AdjustKind, Float>) {
+            if (scaled.isEmpty()) flag("a style that changes nothing")
+            scaled.forEach { (kind, value) ->
+                val key = kind to null
+                if (written[key]?.byStyle == false) flag("an adjust the style then replaces")
+                written[key] = Written(byStyle = true, value = value, before = values[key] ?: 0f)
+                values[key] = value
+            }
+        }
+
+        private fun overlap(previous: Written, value: Float): String? {
+            val styleDirection = direction(previous.value - previous.before)
+            return when {
+                !previous.byStyle -> "the same setting set twice"
+                abs(value - previous.value) < SAME -> "an adjust that repeats the style"
+                styleDirection != 0 && direction(value - previous.value) != styleDirection ->
+                    "an adjust that reverses the style"
+                else -> null
+            }
+        }
+
+        private fun flag(rule: String?) {
+            if (violation == null) violation = rule
+        }
+    }
+
+    private val PlanTarget.key: String
+        get() = when (this) {
+            is PlanTarget.Existing -> ref
+            is PlanTarget.New -> "new:$label"
+        }
+
+    private fun direction(delta: Float): Int = when {
+        delta > SAME -> 1
+        delta < -SAME -> -1
+        else -> 0
+    }
+
+    private companion object {
+        /** Two final settings this close are the same slider position (the sheets show 1/100). */
+        const val SAME = 0.01f
+    }
 }
 
 private fun fail(reason: String): Nothing = throw Unplannable(reason)

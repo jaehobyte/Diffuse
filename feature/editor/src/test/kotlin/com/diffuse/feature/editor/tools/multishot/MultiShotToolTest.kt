@@ -1,5 +1,8 @@
 package com.diffuse.feature.editor.tools.multishot
 
+import com.diffuse.core.ai.FakeTopazProvider
+import com.diffuse.feature.editor.tools.enhance.testTopazSettings
+import com.diffuse.feature.editor.tools.enhance.testTopazStorage
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.RectF
@@ -280,9 +283,12 @@ class MultiShotToolTest {
             Sam3Settings(context),
             GeminiSettings(context),
             FakeMatchStyleProvider(),
+            FakeTopazProvider(),
+            testTopazSettings(),
         ),
         dispatchers = TestDispatchers,
         savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),
+        topazStorage = testTopazStorage(),
     )
 
     private class RecordingRenderer : Renderer {

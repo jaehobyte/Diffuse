@@ -7,6 +7,7 @@ import com.diffuse.core.ai.FakeEraseProvider
 import com.diffuse.core.ai.FakeFillProvider
 import com.diffuse.core.ai.FakeSegmentationProvider
 import com.diffuse.core.ai.PlanStep
+import com.diffuse.core.ai.PlanTarget
 import com.diffuse.core.ai.StyleId
 import com.diffuse.core.common.AppError
 import com.diffuse.core.common.DispatcherProvider
@@ -39,7 +40,7 @@ import org.robolectric.annotation.GraphicsMode
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class PlanRunnerProposalTest {
 
-    private val segmentation = FakeSegmentationProvider(openDelayMs = 0)
+    private val segmentation = FakeSegmentationProvider(openDelayMs = 0).apply { textInstances = 1 }
 
     private val dispatchers = object : DispatcherProvider {
         override val default: CoroutineDispatcher get() = Dispatchers.Unconfined
@@ -68,7 +69,7 @@ class PlanRunnerProposalTest {
     fun `brighter on a raised exposure replaces it with the higher final value`() = runTest {
         val raised = document().withAdjust(AdjustKind.Exposure, RAISED)
 
-        val result = last(EditPlan(listOf(PlanStep.Adjust(AdjustKind.Exposure, BRIGHTER, masked = false))), raised)
+        val result = last(EditPlan(listOf(PlanStep.Adjust(AdjustKind.Exposure, BRIGHTER))), raised)
 
         assertEquals(BRIGHTER, result.adjustValue(AdjustKind.Exposure), TOLERANCE)
         assertEquals(1, result.operations.filterIsInstance<Operation.Adjust>().size)
@@ -79,7 +80,12 @@ class PlanRunnerProposalTest {
         val raised = document().withAdjust(AdjustKind.Exposure, RAISED)
 
         val result = last(
-            EditPlan(listOf(PlanStep.Select("face"), PlanStep.Adjust(AdjustKind.Exposure, LOCAL, masked = true))),
+            EditPlan(
+                listOf(
+                    PlanStep.Select("face", "n1"),
+                    PlanStep.Adjust(AdjustKind.Exposure, LOCAL, PlanTarget.New("n1")),
+                ),
+            ),
             raised,
         )
 
@@ -94,7 +100,12 @@ class PlanRunnerProposalTest {
         val earlier = document().withMask(ImageRef("/p/mask_old.png"), id = "old")
 
         val result = last(
-            EditPlan(listOf(PlanStep.Select("face"), PlanStep.Adjust(AdjustKind.Exposure, LOCAL, masked = true))),
+            EditPlan(
+                listOf(
+                    PlanStep.Select("face", "n1"),
+                    PlanStep.Adjust(AdjustKind.Exposure, LOCAL, PlanTarget.New("n1")),
+                ),
+            ),
             earlier,
         )
 
@@ -107,7 +118,12 @@ class PlanRunnerProposalTest {
     @Test
     fun `one of two same-coloured objects is changed through its selection only`() = runTest {
         val result = last(
-            EditPlan(listOf(PlanStep.Select("green bus"), PlanStep.Adjust(AdjustKind.Contrast, LOCAL, masked = true))),
+            EditPlan(
+                listOf(
+                    PlanStep.Select("green bus", "n1"),
+                    PlanStep.Adjust(AdjustKind.Contrast, LOCAL, PlanTarget.New("n1")),
+                ),
+            ),
             document(),
         )
 
@@ -118,7 +134,12 @@ class PlanRunnerProposalTest {
     @Test
     fun `a failed selection stops the run and falls back to nothing global`() = runTest {
         val events = runner.run(
-            EditPlan(listOf(PlanStep.Select(ABSENT), PlanStep.Adjust(AdjustKind.Exposure, LOCAL, masked = true))),
+            EditPlan(
+                listOf(
+                    PlanStep.Select(ABSENT, "n1"),
+                    PlanStep.Adjust(AdjustKind.Exposure, LOCAL, PlanTarget.New("n1")),
+                ),
+            ),
             document(),
             frame(),
             activeMask = null,
@@ -146,8 +167,8 @@ class PlanRunnerProposalTest {
         val result = last(
             EditPlan(
                 listOf(
-                    PlanStep.Select("flowers"),
-                    PlanStep.Adjust(AdjustKind.Vibrance, LOCAL, masked = true),
+                    PlanStep.Select("flowers", "n1"),
+                    PlanStep.Adjust(AdjustKind.Vibrance, LOCAL, PlanTarget.New("n1")),
                     PlanStep.Crop(CropRatio.Portrait3x4),
                 ),
             ),
@@ -164,9 +185,9 @@ class PlanRunnerProposalTest {
         val events = runner.run(
             EditPlan(
                 listOf(
-                    PlanStep.Adjust(AdjustKind.Exposure, BRIGHTER, masked = false),
-                    PlanStep.Adjust(AdjustKind.Contrast, LOCAL, masked = false),
-                    PlanStep.Select("face"),
+                    PlanStep.Adjust(AdjustKind.Exposure, BRIGHTER),
+                    PlanStep.Adjust(AdjustKind.Contrast, LOCAL),
+                    PlanStep.Select("face", "n1"),
                 ),
             ),
             document(),

@@ -1,5 +1,7 @@
 package com.diffuse.navigation
 
+import com.diffuse.feature.editor.tools.enhance.TopazStorage
+import com.diffuse.core.data.TopazWorkspace
 import android.graphics.Bitmap
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -165,9 +167,14 @@ class EditorBackTest {
                 Sam3Settings(context),
                 GeminiSettings(context),
                 FakeMatchStyleProvider(),
+                com.diffuse.core.ai.FakeTopazProvider(),
+                com.diffuse.core.ai.topaz.TopazSettings(context),
             ),
             dispatchers = ImmediateDispatchers,
             savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),
+            topazStorage = TopazStorage(
+                TopazWorkspace(java.io.File(context.cacheDir, "topaz_test"), ImmediateDispatchers),
+            ) { _, _, _, _ -> com.diffuse.core.common.Result.Success(Unit) },
         )
     }
 

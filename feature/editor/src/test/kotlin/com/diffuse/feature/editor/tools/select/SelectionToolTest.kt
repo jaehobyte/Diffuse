@@ -1,5 +1,8 @@
 package com.diffuse.feature.editor.tools.select
 
+import com.diffuse.core.ai.FakeTopazProvider
+import com.diffuse.feature.editor.tools.enhance.testTopazSettings
+import com.diffuse.feature.editor.tools.enhance.testTopazStorage
 import android.graphics.Bitmap
 import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
@@ -606,7 +609,7 @@ class SelectionToolTest {
         val viewModel = viewModel()
         viewModel.onToolClick(Tool.Select)
 
-        viewModel.selection.saveSettings("http://10.0.2.2:8080", "tok", "AIza-key")
+        viewModel.selection.saveSettings("http://10.0.2.2:8080", "tok", "AIza-key", "")
 
         assertFalse(viewModel.uiState.value.selection.showSettings)
         assertEquals("http://10.0.2.2:8080", settings.current().baseUrl)
@@ -620,7 +623,7 @@ class SelectionToolTest {
     fun `saving only a Gemini key leaves SAM 3 unconfigured`() = runTest {
         val viewModel = viewModel()
 
-        viewModel.selection.saveSettings("", "", "AIza-only")
+        viewModel.selection.saveSettings("", "", "AIza-only", "")
 
         assertEquals("AIza-only", geminiSettings.config.value.apiKey)
         assertEquals("AIza-only", viewModel.uiState.value.selection.geminiApiKey)
@@ -633,7 +636,7 @@ class SelectionToolTest {
     fun `saving only SAM 3 leaves the Gemini key blank`() = runTest {
         val viewModel = viewModel()
 
-        viewModel.selection.saveSettings("http://10.0.2.2:8080", "tok", "")
+        viewModel.selection.saveSettings("http://10.0.2.2:8080", "tok", "", "")
 
         assertEquals("http://10.0.2.2:8080", settings.current().baseUrl)
         assertEquals("tok", settings.current().token)
@@ -658,9 +661,12 @@ class SelectionToolTest {
             settings,
             geminiSettings,
             FakeMatchStyleProvider(),
+            FakeTopazProvider(),
+            testTopazSettings(),
         ),
         dispatchers = TestDispatchers,
         savedStateHandle = SavedStateHandle(mapOf(EditorViewModel.PROJECT_ID to PROJECT_ID)),
+        topazStorage = testTopazStorage(),
     )
 
     private class FakeRenderer : Renderer {

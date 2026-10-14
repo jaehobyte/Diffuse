@@ -17,6 +17,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -73,11 +74,15 @@ class GeminiPlanStyleTest {
     /** §6's instruction rule, now with §14's: a look is a style and only when it was asked for. */
     @Test
     fun `the instruction tells a look apart from a change`() {
-        assertTrue(PLAN_SYSTEM_INSTRUCTION.contains("$FN_APPLY_STYLE needs a requested look"))
+        // §19: a look may be a default suggestion; the old "needs a requested look" rule is gone.
+        assertFalse(PLAN_SYSTEM_INSTRUCTION.contains("$FN_APPLY_STYLE needs a requested look"))
+        assertTrue(PLAN_SYSTEM_INSTRUCTION.contains("a style is one effect"))
         assertTrue(
-            PLAN_SYSTEM_INSTRUCTION.contains("apply_style(style=\"film-warm\", intensity=100), and nothing that"),
+            PLAN_SYSTEM_INSTRUCTION.contains("apply_style(style=\"film-warm\", intensity chosen from its listed"),
         )
-        assertTrue(PLAN_SYSTEM_INSTRUCTION.contains("never add an adjust that repeats what a style already does"))
+        assertTrue(PLAN_SYSTEM_INSTRUCTION.contains("never set a value a style in the same plan already"))
+        // §18: 100 is the whole preset, never "a natural default".
+        assertTrue(PLAN_SYSTEM_INSTRUCTION.contains("100 is not a natural default"))
     }
 
     private fun calls(vararg parts: String) = MockResponse()

@@ -47,6 +47,8 @@ data class SelectionState(
      * is only one sheet.
      */
     val geminiApiKey: String = "",
+    /** specs/topaz_enhancement.md §4: shown masked in the same sheet. */
+    val topazApiKey: String = "",
     /** One-shot snackbar text, cleared once shown. DESIGN.md §4 forbids toasts. */
     @StringRes val message: Int? = null,
 ) {

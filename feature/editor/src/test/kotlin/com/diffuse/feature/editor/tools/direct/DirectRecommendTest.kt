@@ -99,7 +99,15 @@ class DirectRecommendTest {
         viewModel.direct.recommend()
 
         assertEquals(1, planner.planCount)
-        assertEquals(PlanRequest("", PlanMode.Recommend, PlanContext()), planner.lastRequest)
+        val request = planner.lastRequest!!
+        assertEquals("" to PlanMode.Recommend, request.text to request.mode)
+        // §15: an untouched photo — no values, no selections, no operations — at the frame's size.
+        val context = request.context
+        assertEquals(emptyList<Any>(), context.adjustments + context.targets + context.operations)
+        assertEquals(DirectFakeRenderer.SIZE, request.context.imageWidth)
+        // §15: the catalog's own values for every style, and Topaz as configured — no key text.
+        assertEquals(12, request.context.styles.size)
+        assertFalse(request.context.topaz!!.hasAlpha)
         val state = viewModel.uiState.value
         assertEquals(ProposalPhase.Ready, state.direct.phase)
         assertTrue(state.direct.canApply)
@@ -146,8 +154,12 @@ class DirectRecommendTest {
 
         assertEquals(ADJUSTED, planner.lastImage!!.getPixel(0, 0))
         assertEquals(
-            listOf(CurrentAdjust(AdjustKind.Exposure, 0.4f, masked = false)),
-            planner.lastRequest?.context?.adjustments,
+            listOf(AdjustKind.Exposure to 0.4f),
+            planner.lastRequest?.context?.adjustments?.map { it.kind to it.value },
+        )
+        assertEquals(
+            listOf(null),
+            planner.lastRequest?.context?.adjustments?.map { it.targetRef },
         )
     }
 
@@ -157,10 +169,10 @@ class DirectRecommendTest {
         val viewModel = opened()
         viewModel.onAdjust(AdjustKind.Exposure, 0.4f)
         viewModel.onAdjustFinished()
-        planner.next(EditPlan(listOf(PlanStep.Adjust(AdjustKind.Exposure, 0.55f, masked = false))))
+        planner.next(EditPlan(listOf(PlanStep.Adjust(AdjustKind.Exposure, 0.55f))))
 
         viewModel.direct.submit("더 밝게")
-        viewModel.applySheet()
+        viewModel.previewAndApply()
 
         val document = viewModel.uiState.value.document!!
         assertEquals(0.55f, document.adjustValue(AdjustKind.Exposure), 1e-6f)
@@ -170,11 +182,11 @@ class DirectRecommendTest {
     }
 
     @Test
-    fun `적용 runs the reviewed plan and asks nothing again`() = runTest {
+    fun `미리보기 and 적용 run the reviewed plan and ask nothing again`() = runTest {
         val viewModel = opened()
         viewModel.direct.recommend()
 
-        viewModel.applySheet()
+        viewModel.previewAndApply()
 
         assertEquals(1, planner.planCount)
         assertEquals(2, viewModel.uiState.value.document!!.operations.size)
@@ -368,7 +380,7 @@ class DirectRecommendTest {
         planner.hold()
         viewModel.direct.recommend()
         planner.release()
-        planner.next(EditPlan(listOf(PlanStep.Adjust(AdjustKind.Contrast, 0.2f, masked = false))))
+        planner.next(EditPlan(listOf(PlanStep.Adjust(AdjustKind.Contrast, 0.2f))))
 
         viewModel.direct.submit(REQUEST)
 
@@ -376,7 +388,7 @@ class DirectRecommendTest {
         assertEquals(2, planner.planCount)
         assertEquals(PlanMode.Direct, planner.lastRequest?.mode)
         assertEquals(PlanMode.Direct, state.proposals.mode)
-        assertEquals(listOf(PlanStep.Adjust(AdjustKind.Contrast, 0.2f, masked = false)), state.plan?.steps)
+        assertEquals(listOf(PlanStep.Adjust(AdjustKind.Contrast, 0.2f)), state.plan?.steps)
     }
 
     @Test

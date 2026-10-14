@@ -1,9 +1,24 @@
 package com.diffuse.core.ai
 
 import android.graphics.Bitmap
+import com.diffuse.core.ai.topaz.TopazOptions
+import com.diffuse.core.ai.topaz.TopazPurpose
 import com.diffuse.core.common.Result
 import com.diffuse.core.imaging.model.AdjustKind
 import kotlinx.coroutines.flow.StateFlow
+
+/**
+ * specs/vibe_edit.md §15. Which selection a local step acts on, named **explicitly** — never "the
+ * one that happens to be active". [Existing] is a selection the document already carries, reached
+ * through the snapshot's opaque [Existing.ref]; the [Existing.maskId] it resolves to never goes on
+ * the wire. [New] is the [PlanStep.Select] earlier in the same workflow that declared [New.label].
+ */
+sealed interface PlanTarget {
+
+    data class Existing(val ref: String, val maskId: String) : PlanTarget
+
+    data class New(val label: String) : PlanTarget
+}
 
 /**
  * specs/vibe_edit.md §7. One step of a plan; each maps onto a tool that already exists
@@ -11,23 +26,33 @@ import kotlinx.coroutines.flow.StateFlow
  */
 sealed interface PlanStep {
 
-    data class Select(val phrase: String) : PlanStep
+    /**
+     * §15: [label] is the new target this selection creates; a later step names it to act on it.
+     * [multiple] is a request for several things ("풍선들"): only then may several instances be
+     * unioned — one person never silently becomes everyone the segmenter found.
+     */
+    data class Select(val phrase: String, val label: String, val multiple: Boolean = false) : PlanStep
 
     /**
      * [kind] is the enum rather than the wire's function name: returning a `String` would split
-     * one validation across two modules (specs/ai_provider.md §2).
+     * one validation across two modules (specs/ai_provider.md §2). [value] is the **final**
+     * setting; [target] null is the whole photo.
      */
-    data class Adjust(val kind: AdjustKind, val value: Float, val masked: Boolean) : PlanStep
+    data class Adjust(val kind: AdjustKind, val value: Float, val target: PlanTarget? = null) : PlanStep {
+        val masked: Boolean get() = target != null
+    }
 
-    data object Erase : PlanStep
+    /** §15: erase, cut-out and fill consume the selection [target] names, which a select made. */
+    data class Erase(val target: String) : PlanStep
 
-    data object CutOut : PlanStep
+    /** Deletes everything **outside** [target]'s selection. */
+    data class CutOut(val target: String) : PlanStep
 
     /**
      * specs/generative_fill.md §8. The one step that carries a noun the **model** wrote: it is
      * English, for the reason every phrase argument is (specs/vibe_edit.md §4).
      */
-    data class Fill(val prompt: String) : PlanStep
+    data class Fill(val prompt: String, val target: String) : PlanStep
 
     /**
      * specs/vibe_edit.md §4.1. The model picks a **ratio**, never a rectangle: the rect is
@@ -38,10 +63,17 @@ sealed interface PlanStep {
 
     /**
      * specs/style_match.md §6. The model names a **look**, never numbers: [style] is one of the
-     * catalog's twelve ids and [intensity] is how much of it, 0…100. The id resolves to a preset
-     * at the `feature:editor` boundary — `core:ai` does not carry the catalog.
+     * catalog's twelve ids and [intensity] is how much of it, 0…100 — a multiplier on the preset,
+     * not a blend with the photo. The id resolves to a preset at the `feature:editor` boundary.
      */
     data class Style(val style: StyleId, val intensity: Int) : PlanStep
+
+    /**
+     * specs/vibe_edit.md §16, specs/topaz_enhancement.md §1. A Topaz purpose and its options. It
+     * is never run by the plan runner: it opens the existing Topaz sheet, prefilled, and the user
+     * runs it there — a result is a gallery file or a new edit copy (D098), never an operation.
+     */
+    data class Topaz(val purpose: TopazPurpose, val options: TopazOptions) : PlanStep
 }
 
 /**
@@ -94,22 +126,94 @@ data class EditPlan(val steps: List<PlanStep>)
 enum class PlanMode { Recommend, Direct }
 
 /**
- * One adjustment the document already carries, as the **final setting** `withAdjust` would
- * replace. [masked] says it lives on a selection rather than the whole photo.
+ * specs/vibe_edit.md §15. One adjustment the document already carries, as the **final setting**
+ * `withAdjust` would replace. [ref] is opaque and only means something inside this snapshot;
+ * [targetRef] is the [PlanTargetState.ref] it lives on, null for the whole photo. [order] is its
+ * position in the operation list, which is the order the renderer applies it in.
  */
-data class CurrentAdjust(val kind: AdjustKind, val value: Float, val masked: Boolean)
+data class CurrentAdjust(
+    val kind: AdjustKind,
+    val value: Float,
+    val targetRef: String? = null,
+    val ref: String = "",
+    val order: Int = 0,
+) {
+    val masked: Boolean get() = targetRef != null
+}
+
+/** Where a selection's description came from. [Unknown] is never guessed into "face". */
+enum class TargetSource {
+    /** A selection a plan made and the user confirmed in this editor session. */
+    Confirmed,
+
+    /**
+     * specs/vibe_edit.md §19 (2026-10-14): a selection a plan's `Select` found for its phrase in this
+     * editor session and used without asking — what it was looked for as, never "the user said so".
+     */
+    Resolved,
+    Unknown,
+}
 
 /**
- * specs/vibe_edit.md §14. A pure summary of the document the photo was rendered from, built in
- * `feature:editor` so `core:ai` never reads an `EditDocument`. It is what lets the model plan
- * "더 밝게" on a photo whose exposure is already raised.
+ * §15: one selection the document carries. [maskId] is local and never sent; [ref] is what the
+ * model may name. A legacy or manual selection has no [description].
+ */
+data class PlanTargetState(
+    val ref: String,
+    val maskId: String,
+    val active: Boolean,
+    val description: String? = null,
+    val source: TargetSource = TargetSource.Unknown,
+    val order: Int = 0,
+)
+
+/** §15: an operation that is not a value — a mask, a generated patch, a crop — by kind only. */
+data class OperationNote(val order: Int, val kind: String, val targetRef: String? = null)
+
+/** §15: the crop the document carries, in the un-cropped source's normalised space. */
+data class CropNote(val left: Float, val top: Float, val right: Float, val bottom: Float, val angleDeg: Float)
+
+/**
+ * specs/style_match.md §6, vibe_edit.md §15: what a style *actually* writes — the catalog's
+ * converted values at intensity 100, neutral entries already dropped. Derived from the catalog,
+ * never from the style's name.
+ */
+data class StyleEffect(val style: StyleId, val values: Map<AdjustKind, Float>)
+
+/**
+ * §16: the Topaz purposes a plan may hand off to. [configured] is whether a key exists — the key
+ * itself never leaves the device. [inputWidth]/[inputHeight] are the working size the sheet would
+ * render, when known; [hasAlpha] blocks every purpose.
+ */
+data class TopazCapability(
+    val configured: Boolean,
+    val inputWidth: Int? = null,
+    val inputHeight: Int? = null,
+    val hasAlpha: Boolean = false,
+)
+
+/**
+ * specs/vibe_edit.md §14, §15. A pure summary of the document the photo was rendered from, built
+ * in `feature:editor` so `core:ai` never reads an `EditDocument`. Every reference in it is opaque
+ * and only valid for this snapshot.
  */
 data class PlanContext(
     val adjustments: List<CurrentAdjust> = emptyList(),
     /** The document has an applied selection. */
     val hasSelection: Boolean = false,
     val cropped: Boolean = false,
-)
+    val targets: List<PlanTargetState> = emptyList(),
+    /** Every operation in render order; adjustments are listed in [adjustments] too. */
+    val operations: List<OperationNote> = emptyList(),
+    val crop: CropNote? = null,
+    /** The size of the preview the model is shown. */
+    val imageWidth: Int = 0,
+    val imageHeight: Int = 0,
+    val styles: List<StyleEffect> = emptyList(),
+    val topaz: TopazCapability? = null,
+) {
+    fun target(ref: String): PlanTargetState? = targets.firstOrNull { it.ref == ref }
+}
 
 /** What the planner is asked: the user's text verbatim, why it is asked, and the document state. */
 data class PlanRequest(

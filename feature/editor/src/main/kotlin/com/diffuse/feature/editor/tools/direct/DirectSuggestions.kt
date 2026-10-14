@@ -1,18 +1,29 @@
 package com.diffuse.feature.editor.tools.direct
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import androidx.annotation.StringRes
+import com.diffuse.core.ai.CropNote
 import com.diffuse.core.ai.CurrentAdjust
 import com.diffuse.core.ai.EditPlanProvider
+import com.diffuse.core.ai.OperationNote
 import com.diffuse.core.ai.PlanContext
 import com.diffuse.core.ai.PlanMode
 import com.diffuse.core.ai.PlanOutcome
 import com.diffuse.core.ai.PlanProposal
 import com.diffuse.core.ai.PlanRequest
+import com.diffuse.core.ai.PlanTargetState
+import com.diffuse.core.ai.StyleEffect
+import com.diffuse.core.ai.StyleId
+import com.diffuse.core.ai.TargetSource
+import com.diffuse.core.ai.TopazCapability
 import com.diffuse.core.common.AppError
 import com.diffuse.core.common.Result
+import com.diffuse.core.imaging.model.AdjustKind
 import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.core.imaging.model.Operation
+import com.diffuse.core.imaging.style.StylePreset
+import com.diffuse.core.imaging.style.atIntensity
 import com.diffuse.feature.editor.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -22,6 +33,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 /**
  * specs/vibe_edit.md §14. Where a 보정 추천 or a sent 지시 is. [Loading] is inline for a
@@ -83,27 +95,127 @@ fun ExampleSentence.hintRes(): Int = when (this) {
 }
 
 /**
- * §14: the document as the planner may know it — every adjustment as the final setting
- * `withAdjust` would replace, and whether a selection or crop exists. Pure, so `core:ai` never
- * reads an `EditDocument`.
+ * §14, §15: the document as the planner may know it — every adjustment as the final setting
+ * `withAdjust` would replace, every selection by an opaque ref with what this session confirmed
+ * it to be, and every operation in render order. Pure, so `core:ai` never reads an
+ * `EditDocument`. Refs are positional (`t1`, `a1` …) and only mean something inside the snapshot;
+ * the mask ids they resolve to stay here.
+ *
+ * @param notes mask id → the phrase a plan's selection was found for in this session (§19: found
+ * by the segmenter and used without asking, so [TargetSource.Resolved], never "confirmed by the
+ * user"). A selection with no note is unknown: a legacy, manual or earlier-session one is never
+ * guessed.
  */
-fun planContextOf(document: EditDocument): PlanContext = PlanContext(
-    adjustments = document.operations.filterIsInstance<Operation.Adjust>().map {
-        CurrentAdjust(it.kind, it.value, masked = it.maskId != null)
-    },
-    hasSelection = document.activeMaskId != null,
-    cropped = document.crop() != null,
-)
+// The snapshot is one fact per argument; grouping them would only rename the list.
+@Suppress("LongParameterList")
+fun planContextOf(
+    document: EditDocument,
+    notes: Map<String, String> = emptyMap(),
+    styles: List<StyleEffect> = emptyList(),
+    topaz: TopazCapability? = null,
+    imageWidth: Int = 0,
+    imageHeight: Int = 0,
+): PlanContext {
+    val masks = document.operations.filterIsInstance<Operation.Mask>()
+    val targetRefs = masks.mapIndexed { index, mask -> mask.id to "t${index + 1}" }.toMap()
+    val adjusts = document.operations.filterIsInstance<Operation.Adjust>()
+    val adjustRefs = adjusts.mapIndexed { index, adjust -> adjust.id to "a${index + 1}" }.toMap()
+    val order = document.operations.mapIndexed { index, op -> op.id to index + 1 }.toMap()
+    val crop = document.crop()
+    return PlanContext(
+        adjustments = adjusts.map {
+            CurrentAdjust(
+                kind = it.kind,
+                value = it.value,
+                targetRef = it.maskId?.let(targetRefs::get),
+                ref = adjustRefs.getValue(it.id),
+                order = order.getValue(it.id),
+            )
+        },
+        hasSelection = document.activeMaskId != null,
+        cropped = crop != null,
+        targets = masks.map { mask ->
+            val note = notes[mask.id]
+            PlanTargetState(
+                ref = targetRefs.getValue(mask.id),
+                maskId = mask.id,
+                active = mask.id == document.activeMaskId,
+                description = note,
+                source = if (note != null) TargetSource.Resolved else TargetSource.Unknown,
+                order = order.getValue(mask.id),
+            )
+        },
+        operations = document.operations.mapIndexed { index, op -> operationNote(index + 1, op, targetRefs) },
+        crop = crop?.let { CropNote(it.rect.left, it.rect.top, it.rect.right, it.rect.bottom, it.angleDeg) },
+        imageWidth = imageWidth,
+        imageHeight = imageHeight,
+        styles = styles,
+        topaz = topaz,
+    )
+}
 
-/** What a proposal was asked from. Two asks with equal snapshots would send the same request. */
+/**
+ * §15: an operation the model cannot set by value, by what it is. Generated pixels and masks
+ * are named, never described — the planner does not know what they show.
+ */
+private fun operationNote(order: Int, op: Operation, targets: Map<String, String>): OperationNote = when (op) {
+    is Operation.Adjust -> OperationNote(order, "adjust ${op.kind.settingName()}", op.maskId?.let(targets::get))
+    is Operation.Mask -> OperationNote(order, "selection ${targets[op.id]} (changes no pixels)")
+    is Operation.CutOut -> OperationNote(order, "cut-out: everything outside deleted", targets[op.maskId])
+    is Operation.GenerativeErase -> OperationNote(order, "generative erase", targets[op.maskId])
+    is Operation.GenerativeFill -> OperationNote(order, "generative fill", targets[op.maskId])
+    is Operation.Outpaint -> OperationNote(order, "outpaint: generated area added outside the original frame")
+    is Operation.Crop -> OperationNote(order, "crop (applied last)")
+    is Operation.SkinRetouch -> OperationNote(order, "skin retouch", targets[op.maskId])
+    is Operation.MultiShot -> OperationNote(order, "multi-shot composite")
+}
+
+/** The name `adjust`/`adjust_color_range` use on the wire: one lowercase word or "band channel". */
+private fun AdjustKind.settingName(): String =
+    hsl?.let { "${it.band.name.lowercase()} ${it.channel.name.lowercase()}" } ?: name.lowercase()
+
+/**
+ * specs/style_match.md §6, vibe_edit.md §15: each catalogued look as the values it writes at
+ * intensity 100 — the same converted `params` the 스타일 sheet and `PlanRunner` scale. An id
+ * `StyleId` does not mirror is left out rather than guessed.
+ */
+fun styleEffectsOf(presets: List<StylePreset>): List<StyleEffect> = presets.mapNotNull { preset ->
+    StyleId.entries.firstOrNull { it.id == preset.id }
+        ?.let { StyleEffect(it, preset.params.atIntensity(FULL_INTENSITY)) }
+}
+
+/**
+ * §16: what the Topaz sheet would be given. The size is the stored source's — already the working
+ * size — times the crop's share; an outpainted canvas has no size known without rendering, and
+ * says so rather than guessing. The 화질 개선 sheet checks the real render again.
+ */
+fun topazCapabilityOf(configured: Boolean, document: EditDocument): TopazCapability {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(document.source.path, bounds)
+    val known = bounds.outWidth > 0 && bounds.outHeight > 0 && document.outpaint() == null
+    val rect = document.crop()?.rect
+    return TopazCapability(
+        configured = configured,
+        inputWidth = if (known) (bounds.outWidth * (rect?.width() ?: 1f)).roundToInt() else null,
+        inputHeight = if (known) (bounds.outHeight * (rect?.height() ?: 1f)).roundToInt() else null,
+        hasAlpha = document.hasAlpha,
+    )
+}
+
+private const val FULL_INTENSITY = 100
+
+/**
+ * What a proposal was asked from. Two asks with equal snapshots would send the same request: the
+ * same document, words, mode, settings and session notes.
+ */
 private data class PlanSnapshot(
     /** The document the frame was rendered from; its `id` is the project. */
     val document: EditDocument,
     val text: String,
     val mode: PlanMode,
-    val context: PlanContext,
-    /** Bumped by every Gemini settings change. */
+    /** Bumped by every Gemini or Topaz settings change. */
     val settings: Int,
+    val notes: Map<String, String>,
 )
 
 /** specs/vibe_edit.md §14. The asking half of [DirectState]. */
@@ -113,25 +225,34 @@ data class ProposalState(
     /** The answered proposal under review, whatever its outcome. Never persisted. */
     val proposal: PlanProposal? = null,
     val frameReady: Boolean = false,
+    /** §19: the snapshot [proposal] was asked with — a choice of items is checked against it. */
+    val context: PlanContext? = null,
 )
 
 /**
- * specs/vibe_edit.md §14. Owns one planning request at a time, for 보정 추천 (inline) and a sent
- * 지시 (the overlay) alike. A request is pinned to a [PlanSnapshot] — the document the frame was
- * rendered from, the text verbatim, the mode, the settings context and the Gemini settings
- * generation — and a sequence number every invalidation bumps, so an answer for anything that
- * has since changed is dropped even when the provider ignored its cancellation.
+ * specs/vibe_edit.md §14, §15. Owns one planning request at a time, for 보정 추천 (inline) and a
+ * sent 지시 (the overlay) alike. A request is pinned to a [PlanSnapshot] — the document the frame
+ * was rendered from, the text verbatim, the mode, the Gemini and Topaz settings generation and the
+ * session's confirmed selections — and a sequence number every invalidation bumps, so an answer
+ * for anything that has since changed is dropped even when the provider ignored its cancellation.
+ * The context sent is built from the same snapshot, once, and kept with the answer.
  *
  * It never edits and never plans on its own: only [ask] sends, and only with a frame of the
  * document on screen. A 지시 sent before that frame exists waits for it.
  */
+// Each parameter is one thing a request depends on or reports to; §15 added the snapshot's two.
+@Suppress("LongParameterList")
 class DirectProposals internal constructor(
     private val provider: EditPlanProvider,
     private val runner: PlanRunner,
     private val scope: CoroutineScope,
     settingsChanges: Flow<Any>,
-    /** True while a run commits; its commits change the document and must not invalidate it. */
-    private val running: () -> Boolean,
+    /** §15, §19: the session's found selections, mask id → phrase; part of every snapshot. */
+    private val notes: () -> Map<String, String>,
+    /** §15: the full context for a document, its frame and the notes — styles and Topaz included. */
+    private val contextOf: suspend (EditDocument, Bitmap, Map<String, String>) -> PlanContext,
+    /** Anything that drops the proposal drops what was built from it (§18's candidate). */
+    private val onInvalidated: () -> Unit,
     private val onFailure: (AppError, PlanMode) -> Unit,
 ) {
 
@@ -142,7 +263,7 @@ class DirectProposals internal constructor(
     private var frame: Bitmap? = null
     private var waiting: Pair<String, PlanMode>? = null
     private var asked: PlanSnapshot? = null
-    private var cached: Pair<PlanSnapshot, PlanProposal>? = null
+    private var cached: Triple<PlanSnapshot, PlanProposal, PlanContext>? = null
     private var settings = 0
     private var seq = 0
     private var job: Job? = null
@@ -164,7 +285,9 @@ class DirectProposals internal constructor(
     fun onCanvas(document: EditDocument?, preview: Bitmap?) {
         if (document != this.document) {
             this.document = document
-            if (!running()) invalidate()
+            // §18: a run builds a candidate and commits nothing, so any change to the document
+            // — undo, redo, another project — is one the proposal was not asked about.
+            invalidate()
         }
         frame = preview
         _state.value = _state.value.copy(frameReady = preview != null)
@@ -186,7 +309,12 @@ class DirectProposals internal constructor(
             if (mode == PlanMode.Direct) {
                 stop()
                 waiting = text to mode
-                _state.value = _state.value.copy(phase = ProposalPhase.Loading, mode = mode, proposal = null)
+                _state.value = _state.value.copy(
+                    phase = ProposalPhase.Loading,
+                    mode = mode,
+                    proposal = null,
+                    context = null,
+                )
             }
             return
         }
@@ -194,7 +322,7 @@ class DirectProposals internal constructor(
         if (hit != null) {
             stop()
             asked = hit.first
-            show(hit.second, hit.first)
+            show(hit.second, hit.first, hit.third)
         } else {
             send(text, mode, document, preview)
         }
@@ -205,14 +333,16 @@ class DirectProposals internal constructor(
         val snapshot = snapshotOf(text, mode, document)
         val mine = seq
         asked = snapshot
-        _state.value = _state.value.copy(phase = ProposalPhase.Loading, mode = mode, proposal = null)
+        _state.value = _state.value.copy(phase = ProposalPhase.Loading, mode = mode, proposal = null, context = null)
         job = scope.launch {
-            val result = provider.plan(preview, PlanRequest(text, mode, snapshot.context))
+            val context = contextOf(document, preview, snapshot.notes)
+            if (mine != seq) return@launch
+            val result = provider.plan(preview, PlanRequest(text, mode, context))
             if (mine != seq) return@launch
             when (result) {
                 is Result.Success -> {
-                    cached = snapshot to result.value
-                    show(result.value, snapshot)
+                    cached = Triple(snapshot, result.value, context)
+                    show(result.value, snapshot, context)
                 }
                 is Result.Failure -> fail(result.error, mode)
             }
@@ -220,7 +350,7 @@ class DirectProposals internal constructor(
     }
 
     /** §9.1 still applies on arrival: a ready plan the runner would refuse is not shown as ready. */
-    private fun show(proposal: PlanProposal, snapshot: PlanSnapshot) {
+    private fun show(proposal: PlanProposal, snapshot: PlanSnapshot, context: PlanContext) {
         val phase = when (proposal.outcome) {
             PlanOutcome.Ready -> if (
                 proposal.workflow.isNotEmpty() && runner.validate(proposal.plan, snapshot.document) == null
@@ -237,6 +367,7 @@ class DirectProposals internal constructor(
             phase = phase,
             mode = snapshot.mode,
             proposal = proposal.takeUnless { phase == ProposalPhase.NotUnderstood },
+            context = context.takeUnless { phase == ProposalPhase.NotUnderstood },
         )
     }
 
@@ -246,6 +377,7 @@ class DirectProposals internal constructor(
         _state.value = _state.value.copy(
             phase = if (refused) ProposalPhase.NotUnderstood else ProposalPhase.Failed,
             proposal = null,
+            context = null,
         )
         if (!refused) onFailure(error, mode)
     }
@@ -257,9 +389,11 @@ class DirectProposals internal constructor(
     fun readyFor(document: EditDocument, text: String): PlanProposal? {
         val snapshot = asked ?: return null
         val current = _state.value
-        val same = snapshot.document == document && snapshot.text == text && snapshot.settings == settings
+        val same = snapshot.document == document && snapshot.text == text && snapshot.settings == settings &&
+            snapshot.notes == notes()
         return current.proposal.takeIf { current.phase == ProposalPhase.Ready && same }
     }
+
 
     /** 취소, inline or on the overlay: the request is dropped and the bar keeps its text. */
     fun cancel() {
@@ -267,7 +401,7 @@ class DirectProposals internal constructor(
         stop()
         cached = null
         asked = null
-        _state.value = _state.value.copy(phase = ProposalPhase.Cancelled, proposal = null)
+        _state.value = _state.value.copy(phase = ProposalPhase.Cancelled, proposal = null, context = null)
     }
 
     /** Any change to what a proposal was asked from: the answer, the cache and the request go. */
@@ -275,7 +409,8 @@ class DirectProposals internal constructor(
         stop()
         cached = null
         asked = null
-        _state.value = _state.value.copy(phase = ProposalPhase.Idle, proposal = null)
+        _state.value = _state.value.copy(phase = ProposalPhase.Idle, proposal = null, context = null)
+        onInvalidated()
     }
 
     private fun stop() {
@@ -286,7 +421,7 @@ class DirectProposals internal constructor(
     }
 
     private fun snapshotOf(text: String, mode: PlanMode, document: EditDocument) =
-        PlanSnapshot(document, text, mode, planContextOf(document), settings)
+        PlanSnapshot(document, text, mode, settings, notes())
 
     private companion object {
         /** Duplicated from `core:ai` for the reason `BLOCKED_PREFIX` is: it is internal there. */
