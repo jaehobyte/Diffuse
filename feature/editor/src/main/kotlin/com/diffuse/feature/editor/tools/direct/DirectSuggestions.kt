@@ -134,6 +134,7 @@ fun planContextOf(
         },
         hasSelection = document.activeMaskId != null,
         cropped = crop != null,
+        expandable = document.canOutpaint,
         targets = masks.map { mask ->
             val note = notes[mask.id]
             PlanTargetState(

@@ -281,9 +281,8 @@ class ExpandToolTest {
     /** Applies a selection, which is exactly what §3's guard refuses to outpaint over. */
     private suspend fun withSelection(): EditorViewModel {
         val viewModel = viewModel()
-        viewModel.onToolClick(Tool.Select)
-        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
-        viewModel.applySheet()
+        // A tap on the photo at the AI level: the mask it makes is committed as it lands.
+        viewModel.selectOnCanvas(0.5f, 0.5f, foreground = true)
         return viewModel
     }
 
@@ -381,6 +380,9 @@ class ExpandToolTest {
             fillId: String,
             bitmap: Bitmap,
         ): Result<ImageRef> = Result.Success(ImageRef("/p/fill_$fillId.png"))
+
+        override suspend fun saveEnhanced(projectId: String, fileId: String, source: SourceImage): Result<ImageRef> =
+            Result.Success(ImageRef("/p/enhanced_$fileId.jpg"))
 
         override suspend fun saveOutpaintResult(
             projectId: String,

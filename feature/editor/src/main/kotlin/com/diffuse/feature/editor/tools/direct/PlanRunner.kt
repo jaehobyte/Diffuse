@@ -16,6 +16,7 @@ import com.diffuse.core.common.newId
 import com.diffuse.core.imaging.model.AdjustKind
 import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.core.imaging.model.ImageRef
+import com.diffuse.core.imaging.model.Margins
 import com.diffuse.feature.editor.tools.crop.CropState
 import com.diffuse.feature.editor.tools.crop.preset
 import com.diffuse.feature.editor.tools.erase.EraseCommit
@@ -82,6 +83,14 @@ class PlanRunner(
     /** The 지우기 tool's commit, shared so both paths erase through the same margin (T50). */
     private val eraseCommit: EraseCommit,
     /**
+     * outpaint.md §3 in a plan: the bare source through the provider at these margins, its file
+     * stored and the `Outpaint` committed, exactly as the 확대 sheet's 적용 does it — bound by the
+     * ViewModel, which holds the source and the project. The runner only computes the margins.
+     */
+    private val expandCommit: suspend (EditDocument, Margins) -> Result<EditDocument> = { _, _ ->
+        Result.Failure(AppError.Unsupported)
+    },
+    /**
      * T70: the frame a generative step is shown — the step's own document minus its `Adjust` ops,
      * which is `tools/AdjustStack.kt`'s `generativeInput` bound by the ViewModel. The run's
      * `preview` is what the *user* is looking at and stays the segmentation session's; a baked
@@ -124,6 +133,8 @@ class PlanRunner(
                 is PlanStep.Erase -> step.target != current
                 is PlanStep.CutOut -> step.target != current
                 is PlanStep.Fill -> step.target != current
+                // outpaint.md §3: an `Outpaint` goes under every stored mask and patch.
+                is PlanStep.Expand -> !document.canOutpaint
                 is PlanStep.Crop, is PlanStep.Style, is PlanStep.Topaz -> false
             }
             if (step is PlanStep.Select) current = step.label
@@ -244,6 +255,7 @@ class PlanRunner(
                 }
                 is PlanStep.CutOut -> if (isCurrent(step.target, document)) cutOut(document) else missing()
                 is PlanStep.Crop -> Result.Success(crop(step, document))
+                is PlanStep.Expand -> expand(step, document)
                 is PlanStep.Style -> Result.Success(style(step, document))
                 // §16: a Topaz step opens its sheet; it is never run here.
                 is PlanStep.Topaz -> Result.Failure(AppError.Unsupported)
@@ -424,6 +436,25 @@ class PlanRunner(
          */
         private fun crop(step: PlanStep.Crop, document: EditDocument): EditDocument =
             CropState.from(document, sourceAspect).withPreset(step.ratio.preset).applyTo(document)
+
+        /**
+         * outpaint.md §3 in a plan: the margins that reach the ratio are computed from the
+         * un-cropped source's aspect, never received, and `withOutpaint` keeps the op first and
+         * re-bases any crop. A result this session already paid for is reapplied from the cache;
+         * an offline rebuild without one stops, as a generated patch does.
+         */
+        // A hit, an offline miss and a call are three different answers.
+        @Suppress("ReturnCount")
+        private suspend fun expand(step: PlanStep.Expand, document: EditDocument): Result<EditDocument> {
+            cache?.outpaint(step)?.let { hit ->
+                return Result.Success(document.withOutpaint(hit.margins, hit.resultRef, hit.id))
+            }
+            if (offline) return needsPreview()
+            val target = step.ratio.preset.ratio ?: return Result.Failure(AppError.Unsupported)
+            return expandCommit(document, Margins.toReach(sourceAspect, target)).also { result ->
+                if (result is Result.Success) result.value.outpaint()?.let { cache?.putOutpaint(step, it) }
+            }
+        }
 
         /**
          * specs/style_match.md §6: the id resolves to a preset here, at the `feature:editor`

@@ -66,6 +66,13 @@ class BrowseImportTest {
         ): Result<com.diffuse.core.imaging.model.ImageRef> =
             Result.Success(com.diffuse.core.imaging.model.ImageRef("/fill_$fillId.png"))
 
+        override suspend fun saveEnhanced(
+            projectId: String,
+            fileId: String,
+            source: SourceImage,
+        ): Result<com.diffuse.core.imaging.model.ImageRef> =
+            Result.Success(com.diffuse.core.imaging.model.ImageRef("/enhanced_$fileId.jpg"))
+
         override suspend fun saveOutpaintResult(
             projectId: String,
             outpaintId: String,

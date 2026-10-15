@@ -29,6 +29,7 @@ import com.diffuse.core.imaging.load.SourceImage
 import com.diffuse.core.imaging.model.AdjustKind
 import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.core.imaging.model.ImageRef
+import com.diffuse.core.imaging.model.Operation
 import com.diffuse.core.imaging.render.Renderer
 import com.diffuse.feature.editor.EditorAi
 import com.diffuse.feature.editor.EditorViewModel
@@ -343,7 +344,7 @@ class TopazToolTest {
     }
 
     @Test
-    fun `a new edit copy is created once from the result, at the working size, without the old ops`() = runTest {
+    fun `적용 stores the result once at the working size and makes it the photo, as one undo`() = runTest {
         val viewModel = viewModel()
         viewModel.onToolClick(Tool.Light)
         viewModel.onAdjust(AdjustKind.Exposure, 0.3f)
@@ -354,31 +355,33 @@ class TopazToolTest {
         assertTrue(viewModel.uiState.value.topaz.reopensSmaller)
         viewModel.topaz.run()
 
-        viewModel.topaz.openCopy()
-        viewModel.topaz.openCopy()
+        viewModel.topaz.adopt()
+        viewModel.topaz.adopt()
 
-        val created = repository.created.single()
-        assertEquals(4096, maxOf(created.widthPx, created.heightPx))
-        assertEquals(FULL_WIDTH * 4, created.sourceWidthPx)
-        assertEquals("copy-1", viewModel.uiState.value.topaz.openedProjectId)
-
-        viewModel.topaz.onNavigated()
-        assertNull(viewModel.uiState.value.topaz.openedProjectId)
+        val stored = repository.enhanced.single()
+        assertEquals(4096, maxOf(stored.widthPx, stored.heightPx))
+        assertEquals(FULL_WIDTH * 4, stored.sourceWidthPx)
+        val adopted = viewModel.uiState.value.document!!
+        assertEquals(ImageRef("/p/enhanced_1.jpg"), adopted.source)
+        assertEquals("the old ops are in the pixels", emptyList<Operation>(), adopted.operations)
         assertNull(viewModel.uiState.value.selectedTool)
-        assertEquals(original, viewModel.uiState.value.document)
-        assertTrue(viewModel.uiState.value.canUndo)
+        assertFalse(viewModel.uiState.value.topaz.isOpen)
         assertEquals(1, topaz.submitCount)
+
+        viewModel.undo()
+        assertEquals(original, viewModel.uiState.value.document)
     }
 
     @Test
-    fun `a failed copy keeps the editor where it was and navigates nowhere`() = runTest {
-        repository.failCreate = true
+    fun `a failed 적용 keeps the editor where it was and the result for a retry`() = runTest {
+        repository.failEnhance = true
         val viewModel = ranOnce()
+        val before = viewModel.uiState.value.document
 
-        viewModel.topaz.openCopy()
+        viewModel.topaz.adopt()
 
-        assertNull(viewModel.uiState.value.topaz.openedProjectId)
-        assertEquals(R.string.topaz_open_failed, viewModel.uiState.value.topaz.message)
+        assertEquals(before, viewModel.uiState.value.document)
+        assertEquals(R.string.topaz_adopt_failed, viewModel.uiState.value.topaz.message)
         assertEquals(Tool.Enhance, viewModel.uiState.value.selectedTool)
         assertNotNull(viewModel.uiState.value.topaz.result)
     }
@@ -498,16 +501,18 @@ class TopazToolTest {
     }
 
     private class RecordingRepository : ProjectRepository {
-        val created = mutableListOf<SourceImage>()
-        var failCreate = false
+        val enhanced = mutableListOf<SourceImage>()
+        var failEnhance = false
         var hasAlpha = false
         private var document = EditDocument(PROJECT_ID, ImageRef("/p.jpg"), createdAt = 0L, updatedAt = 0L)
 
         override fun observeAll(): Flow<List<ProjectSummary>> = flowOf(emptyList())
-        override suspend fun create(source: SourceImage): Result<String> {
-            if (failCreate) return Result.Failure(AppError.Io(java.io.IOException("full")))
-            created += source
-            return Result.Success("copy-${created.size}")
+        override suspend fun create(source: SourceImage): Result<String> = Result.Success(PROJECT_ID)
+
+        override suspend fun saveEnhanced(projectId: String, fileId: String, source: SourceImage): Result<ImageRef> {
+            if (failEnhance) return Result.Failure(AppError.Io(java.io.IOException("full")))
+            enhanced += source
+            return Result.Success(ImageRef("/p/enhanced_${enhanced.size}.jpg"))
         }
 
         /** A `.png` source is how a document says it has alpha (edit_model.md). */

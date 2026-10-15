@@ -219,6 +219,9 @@ class CropPreviewTest {
             bitmap: Bitmap,
         ): Result<ImageRef> = Result.Success(ImageRef("/p/fill_$fillId.png"))
 
+        override suspend fun saveEnhanced(projectId: String, fileId: String, source: SourceImage): Result<ImageRef> =
+            Result.Success(ImageRef("/p/enhanced_$fileId.jpg"))
+
         override suspend fun saveOutpaintResult(
             projectId: String,
             outpaintId: String,

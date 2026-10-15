@@ -16,6 +16,7 @@ import com.diffuse.core.common.Result
 import com.diffuse.core.imaging.model.AdjustKind
 import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.core.imaging.model.ImageRef
+import com.diffuse.core.imaging.model.Margins
 import com.diffuse.core.imaging.model.Operation
 import com.diffuse.feature.editor.tools.erase.EraseCommit
 import com.diffuse.feature.editor.tools.fill.FillCommit
@@ -43,6 +44,7 @@ class PlanRunnerTest {
     private val eraser = FakeEraseProvider()
     private val savedMasks = mutableListOf<String>()
     private val savedErases = mutableListOf<String>()
+    private val expanded = mutableListOf<Margins>()
     private val filler = FakeFillProvider()
     private val savedFills = mutableListOf<String>()
     private var failMaskWrite = false
@@ -79,6 +81,11 @@ class PlanRunnerTest {
                 Result.Success(ImageRef("/p/erase_$eraseId.png"))
             },
         ),
+        // outpaint.md §3 in a plan: what the runner asked for is the margins; the file is a name.
+        expandCommit = { document, margins ->
+            expanded += margins
+            Result.Success(document.withOutpaint(margins, ImageRef("/p/outpaint_x.png"), "x"))
+        },
         // T70: the frame a generative step is shown, which is not the run's `preview`. Colour-coded
         // so a test can say which of the two the step actually sent.
         generativeInput = { plainFrame() },
@@ -496,6 +503,38 @@ class PlanRunnerTest {
     @Test
     fun `a plan with no Select opens no session at all`() = runTest {
         val plan = EditPlan(listOf(PlanStep.Adjust(AdjustKind.Exposure, 0.5f)))
+
+        runner.run(plan, document(), preview(), activeMask = null, sourceAspect = SOURCE_ASPECT).toList()
+
+        assertEquals(0, segmentation.openCount)
+    }
+
+    // ---- expand_to_ratio -------------------------------------------------
+
+    @Test
+    fun `an Expand step commits an Outpaint first, with the margins that reach the ratio`() = runTest {
+        val plan = EditPlan(listOf(PlanStep.Expand(CropRatio.Square), PlanStep.Adjust(AdjustKind.Exposure, 0.5f)))
+
+        val ops = lastDocument(plan).operations
+
+        // A 2:1 source reaches 1:1 by growing its height by half on each side.
+        assertEquals(Margins(top = 0.5f, bottom = 0.5f), expanded.single())
+        assertTrue("the outpaint is the first op", ops.first() is Operation.Outpaint)
+        assertTrue("the adjust lands on the expanded canvas", ops.last() is Operation.Adjust)
+    }
+
+    @Test
+    fun `an Expand step is rejected on a document that already holds a selection`() {
+        val step = PlanStep.Expand(CropRatio.Square)
+        val selected = document().withMask(ImageRef("/p/mask_m.png"), "m")
+
+        assertEquals(step, runner.validate(EditPlan(listOf(step)), selected))
+        assertNull(runner.validate(EditPlan(listOf(step)), document()))
+    }
+
+    @Test
+    fun `an Expand step opens no segmentation session`() = runTest {
+        val plan = EditPlan(listOf(PlanStep.Expand(CropRatio.Story9x16)))
 
         runner.run(plan, document(), preview(), activeMask = null, sourceAspect = SOURCE_ASPECT).toList()
 

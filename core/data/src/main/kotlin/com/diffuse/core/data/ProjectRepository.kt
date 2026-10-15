@@ -53,6 +53,13 @@ interface ProjectRepository {
         bitmap: Bitmap,
     ): Result<ImageRef>
 
+    /**
+     * Writes [source] as `enhanced_<fileId>.jpg` (`.png` with alpha) in the project folder and
+     * hands back the reference a document takes as its `source` from then on: a Topaz result the
+     * user applied, already at the working size. The original source file stays.
+     */
+    suspend fun saveEnhanced(projectId: String, fileId: String, source: SourceImage): Result<ImageRef>
+
     /** Writes a generative result as `outpaint_<outpaintId>.png` in the project folder. */
     suspend fun saveOutpaintResult(
         projectId: String,

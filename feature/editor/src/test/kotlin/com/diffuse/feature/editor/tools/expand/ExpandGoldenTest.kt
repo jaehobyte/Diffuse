@@ -40,7 +40,8 @@ class ExpandGoldenTest {
 
     /**
      * §6: the photo shrinks to leave room, the pending area is the checkerboard DESIGN.md §2
-     * already defines for "no pixels here", and the four handles sit on the edge midpoints.
+     * already defines for "no pixels here" under a translucent veil and a rim, and the four
+     * handles sit on the edge midpoints.
      */
     @Test
     fun expandOverlay() {
@@ -52,7 +53,7 @@ class ExpandGoldenTest {
                     bitmap = image,
                     viewport = viewport,
                     onViewportChange = { viewport = it },
-                    overlayTransform = OverlayTransform(margins = MARGINS),
+                    overlayTransform = OverlayTransform(margins = MARGINS, roomForHandles = true),
                     overlay = { ExpandOverlay(margins = MARGINS, onMarginsChange = {}) },
                 )
             }

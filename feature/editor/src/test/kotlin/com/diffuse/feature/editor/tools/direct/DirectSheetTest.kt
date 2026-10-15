@@ -154,6 +154,15 @@ class DirectSheetTest {
         compose.onNodeWithText("9:16 비율로 자르기").assertExists()
     }
 
+    /** outpaint.md in a plan: the same chip characters as the crop, the other way round. */
+    @Test
+    fun `an expand step names the ratio it grows to`() {
+        show(planned(plan = EditPlan(listOf(PlanStep.Expand(CropRatio.Story9x16)))))
+
+        compose.onNodeWithText("9:16 비율로 확대").assertExists()
+        compose.onNodeWithText("생성 보정", substring = true).assertExists()
+    }
+
     /** specs/generative_fill.md §8, §11: the prompt is English and the template is Korean. */
     @Test
     fun `a fill step names what will be put there`() {

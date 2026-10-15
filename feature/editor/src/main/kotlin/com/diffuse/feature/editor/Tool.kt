@@ -11,7 +11,6 @@ import androidx.compose.material.icons.rounded.BurstMode
 import androidx.compose.material.icons.rounded.Colorize
 import androidx.compose.material.icons.rounded.Crop
 import androidx.compose.material.icons.rounded.HighQuality
-import androidx.compose.material.icons.rounded.HighlightAlt
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.OpenInFull
 import androidx.compose.material.icons.rounded.Palette
@@ -41,7 +40,11 @@ enum class Tool(
     Crop(R.string.editor_tool_crop, Icons.Rounded.Crop),
     Detail(R.string.editor_tool_detail, Icons.Rounded.Tune),
 
-    Select(R.string.editor_tool_select, Icons.Rounded.HighlightAlt, ToolGroup.Ai),
+    /**
+     * 선택 is no longer an item: at the AI level the photo itself takes the tap, and the mask
+     * it makes is committed as it lands (EditorViewModel.selectOnCanvas). 지우기 is therefore
+     * the first child.
+     */
     Erase(R.string.editor_tool_erase, Icons.Rounded.AutoFixHigh, ToolGroup.Ai),
 
     /** specs/generative_fill.md §6: the two generative region tools sit together. */

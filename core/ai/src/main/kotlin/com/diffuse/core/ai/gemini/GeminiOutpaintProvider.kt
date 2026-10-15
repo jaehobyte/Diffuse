@@ -117,9 +117,14 @@ class GeminiOutpaintProvider @Inject internal constructor(
 
     /**
      * §5: the provider maps the answer onto a canvas whose aspect it already computed, so a model
-     * that answered at a different ratio would shift the photograph the user did not ask to move.
-     * generative_erase.md §11 accepted that risk without a guard because nothing outside its mask
-     * could move; here the whole frame is at stake, so it is refused rather than scaled.
+     * that answered at a wholly different ratio would shift the photograph the user did not ask
+     * to move. generative_erase.md §11 accepted that risk without a guard because nothing outside
+     * its mask could move; here the whole frame is at stake, so that is refused rather than scaled.
+     *
+     * Measured against the live model (2026-10-15, the user's own photos): it never returns the
+     * input's exact ratio but its own ~1 MP sizes on a 32px grid, 0.7–4.6% off the request while
+     * keeping the layout in place. Those are resampled onto the asked canvas; only a snap to
+     * another ratio altogether is refused. §5's 2% was tighter than the model itself.
      */
     private fun aspectMatches(decoded: Bitmap, width: Int, height: Int): Boolean {
         if (decoded.width <= 0 || decoded.height <= 0) return false
@@ -128,7 +133,7 @@ class GeminiOutpaintProvider @Inject internal constructor(
     }
 
     private companion object {
-        /** §5: "differs from the request by more than 2%". */
-        const val ASPECT_TOLERANCE = 0.02f
+        /** The model's own rounding lands within 5% (see [aspectMatches]); a snap is far past this. */
+        const val ASPECT_TOLERANCE = 0.1f
     }
 }

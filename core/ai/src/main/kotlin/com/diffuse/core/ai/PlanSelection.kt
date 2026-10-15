@@ -88,5 +88,5 @@ internal fun PlanStep.consumes(label: String): Boolean = when (this) {
     is PlanStep.Erase -> target == label
     is PlanStep.CutOut -> target == label
     is PlanStep.Fill -> target == label
-    is PlanStep.Select, is PlanStep.Crop, is PlanStep.Style, is PlanStep.Topaz -> false
+    is PlanStep.Select, is PlanStep.Crop, is PlanStep.Expand, is PlanStep.Style, is PlanStep.Topaz -> false
 }

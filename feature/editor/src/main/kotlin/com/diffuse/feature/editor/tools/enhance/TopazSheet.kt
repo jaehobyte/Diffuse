@@ -50,7 +50,7 @@ data class TopazActions(
     val onEstimate: () -> Unit = {},
     val onRun: () -> Unit = {},
     val onSave: () -> Unit = {},
-    val onOpenCopy: () -> Unit = {},
+    val onAdopt: () -> Unit = {},
     val onCompare: (Boolean) -> Unit = {},
     val onOpenSettings: () -> Unit = {},
     val onClose: () -> Unit = {},
@@ -59,8 +59,8 @@ data class TopazActions(
 /**
  * specs/topaz_enhancement.md §2. Purpose and one-line description → options → sizes and cost →
  * status and compare → the pinned row. Setup is [취소 | 실행]; a current result is
- * [닫기 | 새 편집본으로 열기], with 고해상도 저장 as the result area's secondary action. One filled
- * primary either way.
+ * [닫기 | 적용], with 고해상도 저장 as the result area's secondary action. One filled primary
+ * either way.
  */
 @Composable
 fun TopazSheet(
@@ -74,8 +74,8 @@ fun TopazSheet(
     EditSheet(
         title = stringResource(group.titleRes),
         onCancel = actions.onClose,
-        onApply = if (showsResult) actions.onOpenCopy else actions.onRun,
-        applyLabel = stringResource(if (showsResult) R.string.topaz_open_copy else R.string.topaz_run),
+        onApply = if (showsResult) actions.onAdopt else actions.onRun,
+        applyLabel = if (showsResult) null else stringResource(R.string.topaz_run),
         applyEnabled = if (showsResult) state.phase == TopazPhase.Idle else state.canRun,
         cancelLabel = if (showsResult) stringResource(R.string.topaz_close) else null,
         modifier = modifier.testTag(TopazSheetTestTag),
@@ -284,7 +284,7 @@ private fun ResultSection(state: TopazState, actions: TopazActions) {
             modifier = Modifier.testTag(TopazSaveTestTag),
         )
     }
-    Text(stringResource(R.string.topaz_copy_note), style = Typography.bodySm, color = colors.inkSecondary)
+    Text(stringResource(R.string.topaz_adopt_note), style = Typography.bodySm, color = colors.inkSecondary)
 }
 
 /**

@@ -194,13 +194,12 @@ internal class DirectRecordingRepository : ProjectRepository {
     /** §18: every path a discarded plan preview asked to delete. */
     val discarded = mutableListOf<String>()
 
-    /** D098: every project a Topaz result was opened as, every one deleted again, and a failing create. */
-    val created = mutableListOf<SourceImage>()
-    val deleted = mutableListOf<String>()
-    var failCreate = false
+    /** §19 적용 with Topaz: every result stored as this project's photo, and a failing store. */
+    val enhanced = mutableListOf<SourceImage>()
+    var failEnhance = false
 
-    /** Holds a create in flight — the window a cancelled copy needs. */
-    var createGate: CompletableDeferred<Unit>? = null
+    /** Holds a store in flight — the window a cancelled 적용 needs. */
+    var enhanceGate: CompletableDeferred<Unit>? = null
 
     override suspend fun discardFiles(projectId: String, paths: Set<String>): Result<Unit> {
         discarded += paths
@@ -208,12 +207,16 @@ internal class DirectRecordingRepository : ProjectRepository {
     }
 
     override fun observeAll(): Flow<List<ProjectSummary>> = flowOf(emptyList())
-    override suspend fun create(source: SourceImage): Result<String> {
-        createGate?.await()
-        if (failCreate) return Result.Failure(AppError.Io(java.io.IOException("full")))
-        created += source
-        return Result.Success("copy-${created.size}")
+    override suspend fun create(source: SourceImage): Result<String> = Result.Success(PROJECT_ID)
+
+    override suspend fun saveEnhanced(projectId: String, fileId: String, source: SourceImage): Result<ImageRef> {
+        enhanceGate?.await()
+        if (failEnhance) return Result.Failure(AppError.Io(java.io.IOException("full")))
+        enhanced += source
+        return Result.Success(ImageRef(enhancedPath(enhanced.size)))
     }
+
+    fun enhancedPath(n: Int): String = "/p/enhanced_$n.jpg"
     override suspend fun load(id: String): Result<EditDocument> = Result.Success(document)
     override suspend fun save(document: EditDocument): Result<Unit> {
         this.document = document
@@ -267,10 +270,7 @@ internal class DirectRecordingRepository : ProjectRepository {
         Result.Success(Unit)
 
     override suspend fun duplicate(id: String): Result<String> = Result.Success("copy")
-    override suspend fun delete(id: String): Result<Unit> {
-        deleted += id
-        return Result.Success(Unit)
-    }
+    override suspend fun delete(id: String): Result<Unit> = Result.Success(Unit)
 }
 
 private const val PROJECT_ID = "p"

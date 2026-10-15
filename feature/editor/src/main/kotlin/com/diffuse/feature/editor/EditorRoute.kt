@@ -11,8 +11,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
@@ -43,7 +41,10 @@ import com.diffuse.feature.editor.tools.expand.ExpandSheet
 import com.diffuse.feature.editor.tools.fill.FillSheet
 import com.diffuse.feature.editor.tools.prompt.VoicePromptBar
 import com.diffuse.feature.editor.tools.select.Sam3SettingsSheet
-import com.diffuse.feature.editor.tools.select.SelectSheet
+import com.diffuse.feature.editor.tools.select.SelectionOverlay
+import com.diffuse.feature.editor.canvas.CanvasCaption
+import com.diffuse.feature.editor.tools.direct.Dictation
+import com.diffuse.feature.editor.tools.direct.rememberDictation
 import com.diffuse.core.imaging.render.CanvasPoint
 import com.diffuse.feature.editor.tools.multishot.MultiShotActions
 import com.diffuse.feature.editor.tools.multishot.MultiShotOverlay
@@ -61,13 +62,10 @@ fun EditorRoute(
     onExport: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: EditorViewModel = hiltViewModel(),
-    /** specs/topaz_enhancement.md §5: the nav graph opens a new edit copy; this module cannot. */
-    onOpenProject: (String) -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val document = state.document
 
-    OpenedCopies(state, viewModel, onOpenProject)
 
     // specs/persistence.md: the app going to the background saves now, not 2s later.
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.onStop() }
@@ -87,19 +85,26 @@ fun EditorRoute(
     // §4: system back closes the level before it leaves the screen.
     BackHandler(enabled = toolLevel != ToolGroup.Root) { toolLevel = ToolGroup.Root }
 
-    // Opening the AI level warms the session, so a tap on the photo answers about as fast as
-    // the Photo Editor's. Nobody waits on it, so nothing is shown for it.
-    LaunchedEffect(toolLevel) {
-        if (toolLevel == ToolGroup.Ai) warmSelection(state, viewModel)
-    }
+    // specs/vibe_edit.md §3, as it stands: 지시 listens first and opens its sheet on what it
+    // heard. Declared after the level's BackHandler, so back stops the listening before it
+    // closes the level.
+    val dictation = rememberDictation(viewModel)
+    BackHandler(enabled = dictation.listening) { dictation.stop() }
 
     val pointTaps = pointTaps(state, viewModel, toolLevel)
     Box(modifier = modifier.fillMaxSize()) {
         EditorScreen(
             preview = shownPreview(state),
             source = state.source,
-            selectedTool = state.selectedTool,
-            onToolClick = viewModel::onToolClick,
+            // The strip's yellow marks what is active: while 지시 listens, 지시.
+            selectedTool = state.selectedTool ?: Tool.Direct.takeIf { dictation.listening },
+            onToolClick = { tool ->
+                if (tool == Tool.Direct && dictation.takesTap(state)) {
+                    dictation.toggle()
+                } else {
+                    viewModel.onToolClick(tool)
+                }
+            },
             canUndo = state.canUndo,
             canRedo = state.canRedo,
             canCompare = state.canCompare,
@@ -121,31 +126,9 @@ fun EditorRoute(
             onCancelWork = { cancelWork(viewModel) },
             message = message(state),
             onMessageShown = { clearMessages(viewModel) },
-            canvasOverlay = canvasOverlay(state, viewModel),
+            canvasOverlay = canvasOverlay(state, viewModel, toolLevel, dictation),
             sheet = sheetFor(state, document, viewModel),
         )
-    }
-}
-
-/**
- * specs/topaz_enhancement.md §5: one navigation per created copy — the 화질 개선 sheet's and, since
- * specs/vibe_edit.md §19, a plan workflow's. The id is consumed once it has been handed over.
- */
-@Composable
-private fun OpenedCopies(state: EditorUiState, viewModel: EditorViewModel, onOpenProject: (String) -> Unit) {
-    val openedProjectId = state.topaz.openedProjectId
-    LaunchedEffect(openedProjectId) {
-        if (openedProjectId != null) {
-            onOpenProject(openedProjectId)
-            viewModel.topaz.onNavigated()
-        }
-    }
-    val directCopyId = state.direct.openedProjectId
-    LaunchedEffect(directCopyId) {
-        if (directCopyId != null) {
-            onOpenProject(directCopyId)
-            viewModel.direct.onNavigated()
-        }
     }
 }
 
@@ -179,18 +162,14 @@ private fun topazFrame(state: EditorUiState) = state.topaz.result
     ?.let { result -> if (state.topaz.comparing) state.topaz.input?.before else result.after }
 
 /**
- * specs/selection_tool.md §2 and multishot.md §2: the tools that claim a single-finger tap on the
- * photo — 선택, and 멀티샷 while an added photo's selection is being refined. At the AI level with
- * nothing open, the photo itself takes the tap (see [selectOnCanvas]).
+ * specs/selection_tool.md §2 and multishot.md §2: who claims a single-finger tap on the photo —
+ * the photo itself at the AI level with nothing open, and 멀티샷 while an added photo's selection
+ * is being refined.
  */
 private fun pointTaps(state: EditorUiState, viewModel: EditorViewModel, level: ToolGroup): CanvasPointTaps? = when {
-    state.selectedTool == Tool.Select -> CanvasPointTaps(
-        onForeground = { viewModel.selection.addPoint(it.x, it.y, foreground = true) },
-        onBackground = { viewModel.selection.addPoint(it.x, it.y, foreground = false) },
-    )
     state.selectedTool == null && level == ToolGroup.Ai && !state.selection.showSettings -> CanvasPointTaps(
-        onForeground = { selectOnCanvas(viewModel, it, foreground = true) },
-        onBackground = { selectOnCanvas(viewModel, it, foreground = false) },
+        onForeground = { viewModel.selectOnCanvas(it.x, it.y, foreground = true) },
+        onBackground = { viewModel.selectOnCanvas(it.x, it.y, foreground = false) },
     )
     state.selectedTool == Tool.MultiShot && state.multiShot.selected?.status ==
         ShotStatus.Selecting -> CanvasPointTaps(
@@ -198,24 +177,6 @@ private fun pointTaps(state: EditorUiState, viewModel: EditorViewModel, level: T
         onBackground = { viewModel.multiShot.addPoint(it.x, it.y, include = false) },
     )
     else -> null
-}
-
-/**
- * The Photo Editor's way in: tapping the thing to select *is* selecting it. At the AI level a tap
- * on the photo is 선택's own tap one step earlier — it opens the sheet, or has the tool explain
- * why it cannot, and then adds the point, kept until the session is ready if the warm-up is
- * still on the wire.
- */
-private fun selectOnCanvas(viewModel: EditorViewModel, point: Offset, foreground: Boolean) {
-    viewModel.onToolClick(Tool.Select)
-    if (viewModel.uiState.value.selectedTool != Tool.Select) return
-    viewModel.selection.addPoint(point.x, point.y, foreground)
-}
-
-/** The same open 선택 does on entry, on the same preview, with nobody shown waiting for it. */
-private fun warmSelection(state: EditorUiState, viewModel: EditorViewModel) {
-    if (!state.selection.enabled) return
-    state.preview?.let { viewModel.selection.open(it.asAndroidBitmap(), wait = false) }
 }
 
 /** DESIGN.md §7: the overlay's cancel button reaches whichever tool is working. */
@@ -248,7 +209,6 @@ private fun isBusy(state: EditorUiState): Boolean =
 
 /** specs/selection_tool.md §1 and generative_erase.md §5: a tool that cannot work is greyed. */
 private fun disabledTools(state: EditorUiState): Set<Tool> = buildSet {
-    if (!state.selection.enabled) add(Tool.Select)
     if (!state.erase.enabled || state.document?.activeMaskId == null) add(Tool.Erase)
     // specs/generative_fill.md §6: the same two reasons, and the same greyed-but-tappable rule.
     if (!state.fill.enabled || state.document?.activeMaskId == null) add(Tool.Fill)
@@ -269,7 +229,6 @@ private fun busyLabel(state: EditorUiState): Int = when {
     state.expand.busy -> R.string.expand_working
     state.fill.busy -> R.string.fill_working
     state.style.matching -> R.string.style_matching
-    state.selection.phraseBusy -> R.string.select_prompt_working
     else -> R.string.select_preparing
 }
 
@@ -296,18 +255,13 @@ private fun message(state: EditorUiState): String? {
 private fun canvasOverlay(
     state: EditorUiState,
     viewModel: EditorViewModel,
+    level: ToolGroup,
+    dictation: Dictation,
 ): (@Composable androidx.compose.foundation.layout.BoxScope.() -> Unit)? = when (state.selectedTool) {
     Tool.Crop -> cropOverlaySlot(
         rect = state.cropState.rect,
         onRectChange = { viewModel.onCropChange(state.cropState.copy(rect = it)) },
         aspect = state.cropState.preset,
-    )
-    Tool.Select -> selectionOverlaySlot(
-        mask = state.selection.mask,
-        points = state.selection.points,
-        labels = state.selection.labels,
-        reveal = true,
-        busy = state.selection.busy,
     )
     // specs/outpaint.md §6: the pending area is the canvas's own checkerboard, drawn by
     // `OverlayTransform.margins`; the overlay itself is the four handles.
@@ -327,10 +281,40 @@ private fun canvasOverlay(
     }
     // specs/selection_tool.md §8.1: while a masked adjustment is being made, the scrim shows
     // where it will land. Toggle off and it disappears.
-    null -> null
+    null -> aiLevelOverlay(state, level, dictation)
     else -> state.activeMask
         ?.takeIf { state.maskedAdjust }
         ?.let { selectionOverlaySlot(mask = it, points = emptyList(), labels = emptyList()) }
+}
+
+/**
+ * The AI level with nothing open: the selection a tap on the photo is building — the run's own
+ * mask while it has one, the document's active mask otherwise — and one line saying what a tap
+ * does, or what 지시 is hearing. The reveal plays for the run's masks only; a mask that comes
+ * back by undo simply appears.
+ */
+private fun aiLevelOverlay(
+    state: EditorUiState,
+    level: ToolGroup,
+    dictation: Dictation,
+): (@Composable androidx.compose.foundation.layout.BoxScope.() -> Unit)? {
+    if (level != ToolGroup.Ai) return null
+    val selection = state.selection
+    val mask = selection.mask ?: state.activeMask
+    return {
+        SelectionOverlay(
+            mask = mask,
+            points = selection.points,
+            labels = selection.labels,
+            reveal = selection.mask != null,
+            busy = selection.busy,
+        )
+        when {
+            dictation.listening ->
+                CanvasCaption(dictation.partial.ifBlank { stringResource(R.string.direct_listening) })
+            mask == null && selection.points.isEmpty() -> CanvasCaption(stringResource(R.string.select_hint))
+        }
+    }
 }
 
 @Composable
@@ -367,25 +351,6 @@ private fun sheetFor(
         {
             when (state.selectedTool) {
                 Tool.Crop -> CropToolSheet(state = state, viewModel = viewModel)
-                Tool.Select -> SelectSheet(
-                    state = state.selection,
-                    onModeChange = viewModel.selection::setMode,
-                    onInvert = viewModel.selection::invert,
-                    onClear = viewModel.selection::clear,
-                    onCutOut = { viewModel.applySelection(cutOut = true) },
-                    onCancel = viewModel::cancelSheet,
-                    onApply = viewModel::applySheet,
-                    promptBar = {
-                        VoicePromptBar(
-                            value = state.selection.phrase,
-                            onValueChange = viewModel.selection::setPhrase,
-                            onSubmit = viewModel.selection::submitPhrase,
-                            speech = viewModel.speech,
-                            enabled = !state.selection.phraseBusy,
-                            onMessage = viewModel.selection::showMessage,
-                        )
-                    },
-                )
                 Tool.Fill -> FillToolSheet(state = state, viewModel = viewModel)
                 Tool.Expand -> ExpandToolSheet(state = state, viewModel = viewModel)
                 Tool.Style -> StyleToolSheet(state = state, viewModel = viewModel)
@@ -426,7 +391,7 @@ private fun TopazToolSheet(state: EditorUiState, viewModel: EditorViewModel) {
             onEstimate = topaz::checkEstimate,
             onRun = topaz::run,
             onSave = topaz::save,
-            onOpenCopy = topaz::openCopy,
+            onAdopt = topaz::adopt,
             onCompare = topaz::setComparing,
             onOpenSettings = { viewModel.selection.setSettingsVisible(true) },
             onClose = viewModel::cancelSheet,
@@ -443,7 +408,7 @@ private fun overlayTransform(state: EditorUiState): OverlayTransform = when (sta
         quarterTurns = state.cropState.quarterTurns,
         straightenDeg = state.cropState.straightenDeg,
     )
-    Tool.Expand -> OverlayTransform(margins = state.expand.margins)
+    Tool.Expand -> OverlayTransform(margins = state.expand.margins, roomForHandles = true)
     else -> OverlayTransform.None
 }
 

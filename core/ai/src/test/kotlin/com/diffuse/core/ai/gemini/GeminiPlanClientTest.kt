@@ -245,7 +245,7 @@ class GeminiPlanClientTest {
         assertEquals(
             listOf(
                 "select_region", "adjust", "adjust_color_range", "erase_selection",
-                "cut_out_selection", "fill_selection", "crop_ratio", "apply_style", "topaz_enhance",
+                "cut_out_selection", "fill_selection", "crop_ratio", "expand_to_ratio", "apply_style", "topaz_enhance",
             ),
             item["properties"]!!.jsonObject["tool"]!!.jsonObject["enum"]!!.jsonArray.map { it.jsonPrimitive.content },
         )
@@ -566,6 +566,30 @@ class GeminiPlanClientTest {
             workflow.map { it.step::class },
         )
         assertEquals(listOf("s3", "s2", "s1"), workflow.map { it.id })
+    }
+
+    /** outpaint.md §3: an `Outpaint` is always the first op, so an expand goes first, wherever it arrived. */
+    @Test
+    fun `an expand wherever it arrived runs first, and ids survive the reorder`() = runTest {
+        server.enqueue(
+            calls(
+                envelope(
+                    workflow = listOf(
+                        step("adjust", """{"kind":"exposure","value":0.2}"""),
+                        step("expand_to_ratio", """{"ratio":"story_9_16"}"""),
+                        step("topaz_enhance", """{"purpose":"denoise"}"""),
+                    ),
+                ),
+            ),
+        )
+
+        val workflow = client.plan(JPEG, DIRECT).valueOrFail().workflow
+        assertEquals(
+            listOf(PlanStep.Expand(CropRatio.Story9x16), PlanStep.Adjust(AdjustKind.Exposure, 0.2f)),
+            workflow.map { it.step }.take(2),
+        )
+        assertEquals(PlanStep.Topaz::class, workflow.last().step::class)
+        assertEquals(listOf("s2", "s1", "s3"), workflow.map { it.id })
     }
 
     @Test

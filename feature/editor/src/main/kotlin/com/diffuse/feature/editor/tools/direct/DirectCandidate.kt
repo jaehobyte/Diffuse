@@ -78,7 +78,7 @@ data class CandidateState(
     /** §19: 강도 줄이기 was used; a new choice rebuilds at the proposal's own strength. */
     val reduced: Boolean = false,
     /**
-     * §19: Running, the Topaz step's stage in the provider's words; Review, a save or a new copy
+     * §19: Running, the Topaz step's stage in the provider's words; Review, a save or an 적용
      * reading the result. Null otherwise.
      */
     val topazPhase: TopazPhase? = null,

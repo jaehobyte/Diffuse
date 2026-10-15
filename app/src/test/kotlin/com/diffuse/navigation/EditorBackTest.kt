@@ -72,7 +72,7 @@ class EditorBackTest {
     private val aiTag get() = compose.activity.getString(EditorR.string.editor_tool_ai)
 
     /** The top bar's back shares the strip's label, so the AI level is told by its first tool. */
-    private val aiLevelTag get() = compose.activity.getString(EditorR.string.editor_tool_select)
+    private val aiLevelTag get() = compose.activity.getString(EditorR.string.editor_tool_erase)
 
     @Before
     fun setUp() {
@@ -225,6 +225,9 @@ class EditorBackTest {
 
         override suspend fun saveFillResult(projectId: String, fillId: String, bitmap: Bitmap) =
             Result.Success(ImageRef("/p/fill_$fillId.png"))
+
+        override suspend fun saveEnhanced(projectId: String, fileId: String, source: SourceImage): Result<ImageRef> =
+            Result.Success(ImageRef("/p/enhanced_$fileId.jpg"))
 
         override suspend fun saveOutpaintResult(projectId: String, outpaintId: String, bitmap: Bitmap) =
             Result.Success(ImageRef("/p/outpaint_$outpaintId.png"))

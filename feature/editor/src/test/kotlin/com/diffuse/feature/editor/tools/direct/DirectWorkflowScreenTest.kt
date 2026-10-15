@@ -18,6 +18,7 @@ import com.diffuse.core.ai.PlanStep
 import com.diffuse.core.ai.topaz.TopazOptions
 import com.diffuse.core.ai.topaz.TopazPurpose
 import com.diffuse.core.imaging.model.AdjustKind
+import com.diffuse.core.imaging.model.ImageRef
 import com.diffuse.core.imaging.model.Operation
 import com.diffuse.core.ui.ScreenshotOptions
 import com.diffuse.feature.editor.EditorRoute
@@ -32,6 +33,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -44,7 +46,7 @@ import kotlin.math.abs
 
 /**
  * specs/vibe_edit.md §19 end to end through `EditorRoute`: the user's own taps — one 선택한 보정
- * 실행, a held 전후 비교 and 새 편집본으로 열기 — on the real screen, with three different fake
+ * 실행, a held 전후 비교 and 적용 — on the real screen, with three different fake
  * pixels (input, local candidate, Topaz result) so the frame the canvas is handed is told apart.
  */
 @RunWith(AndroidJUnit4::class)
@@ -72,10 +74,7 @@ class DirectWorkflowScreenTest {
     @Test
     fun `one 실행 tap shows the Topaz result on this canvas, and holding compare shows the input`() {
         val viewModel = planned(LOCAL_AND_TOPAZ)
-        var opened: String? = null
-        compose.setContent {
-            EditorRoute(onExport = {}, viewModel = viewModel, onOpenProject = { opened = it })
-        }
+        compose.setContent { EditorRoute(onExport = {}, viewModel = viewModel) }
         compose.waitForIdle()
 
         compose.onNodeWithText("선택한 보정 실행").performClick()
@@ -98,18 +97,20 @@ class DirectWorkflowScreenTest {
         compose.waitForIdle()
         assertNear(FakeTopazProvider.RESULT_COLOR, centre(shownPreview(viewModel.uiState.value)))
 
-        // Comparing and recomposing call nothing; nothing was created, opened or committed.
+        // Comparing and recomposing call nothing; nothing was stored or committed.
         assertEquals(1, harness.topaz.submitCount)
-        assertNull(opened)
-        assertTrue(harness.repository.created.isEmpty())
+        assertTrue(harness.repository.enhanced.isEmpty())
         assertEquals(emptyList<Operation>(), viewModel.uiState.value.document!!.operations)
+        assertFalse(viewModel.uiState.value.canUndo)
 
-        compose.onNodeWithText("새 편집본으로 열기").performClick()
+        compose.onNodeWithText("적용").performClick()
         compose.waitForIdle()
 
-        assertEquals("copy-1", opened)
-        assertEquals(1, harness.repository.created.size)
+        assertEquals(1, harness.repository.enhanced.size)
+        assertEquals(ImageRef(harness.repository.enhancedPath(1)), viewModel.uiState.value.document!!.source)
         assertEquals(emptyList<Operation>(), viewModel.uiState.value.document!!.operations)
+        assertTrue(viewModel.uiState.value.canUndo)
+        assertNull(viewModel.uiState.value.selectedTool)
     }
 
     @Test

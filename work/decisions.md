@@ -8,6 +8,75 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+## D106 - 확대 in a plan: `expand_to_ratio`, chosen against `crop_ratio` from the photo
+
+Status: Accepted (2026-10-15, interactive request "넣어줘볼래? 프롬프트에는 이미지를 보고 크롭이 나을지 확대가
+나을지를 판단하라고"). Reverses specs/outpaint.md §9 "No planner function" and amends vibe_edit.md §4's
+catalog and §9.2; both protected and not edited.
+
+- **One more tool, the same closed enum.** `expand_to_ratio(ratio)` takes `crop_ratio`'s six ratios;
+  `PlanStep.Expand(ratio)`. The margins are computed in `PlanRunner` from the un-cropped source's
+  aspect (`Margins.toReach`, both sides of the short axis, clamped at `MAX_MARGIN_FRACTION`), never
+  received. The catalog tells the model to choose crop or expand by looking at the photo and to say
+  why in the step's effect; the system instruction no longer lists "adding area outside the frame" as
+  unsupported.
+- **First, alone, and only on an expandable photo.** `GeminiPlanClient` moves an expand to the front
+  (an `Outpaint` is always `operations[0]`); `ProposalCheck` refuses a second one, one beside a crop or a
+  cut-out, one under `subject_only` / `keep_background` (it is generative, so the colour constraints
+  refuse it too; `keep_frame` allows it — nothing is removed), and one for a document whose snapshot
+  says `expandable = false` (`EditDocument.canOutpaint`, carried in `PlanContext`). `PlanRunner.validate`
+  repeats the last rule on the live document.
+- **Committed as the 확대 sheet commits.** `expandCommit`, bound by `EditorViewModel`: bare source →
+  `OutpaintProvider.outpaint` → `saveOutpaintResult` → `withOutpaint`. The session's `PlanCache` keeps
+  the resulting `Outpaint` by step and reapplies it through `withOutpaint` (the generic `reapply` would
+  append it and lose index 0); an offline rebuild without one stops, as a generated patch does.
+- **Shown as a paid, generative item** (`direct_step_expand`, the generative cost line, the paid note
+  and the `Generated` finding), so it toggles like 지우기/채우기. No new `CandidateFinding`: it cannot
+  run under the two constraints that make `outsideChanged` compare frames.
+
+## D105 - Topaz results are applied in place: 적용 makes the result this project's photo
+
+Status: Accepted (2026-10-15, interactive request "이 이름을 그냥 적용으로 바꾸고 적용하면 알아서 바꾼다음에 편집
+계속 이어나가게"). Supersedes D098's "a gallery file or a new edit copy" and the matching lines of D101;
+contradicts specs/topaz_enhancement.md §5–§7 and specs/vibe_edit.md §19, which are protected and were not
+edited.
+
+- **적용 replaces 새 편집본으로 열기** in both the 화질 개선 sheet and the 지시 workflow's review. The
+  result is read through `ImageLoader` (working size, ≤ 4096px), written as `enhanced_<id>.jpg` into
+  **this** project's folder (`ProjectRepository.saveEnhanced`), and pushed as **one history entry**
+  whose `source` is that file and whose operation list is empty (the earlier edits are in its pixels;
+  the active selection goes with them). Undo returns to the photo and operations as they were; 원본 복원
+  still reaches the real original, which stays on disk.
+- **No project is created and nothing navigates.** `TopazHost.createProject/discardProject/onOpenedCopy`
+  became `storeResult/discardResult/adopt`; `openedProjectId`, `onNavigated`, the route's
+  `OpenedCopies` and `EditorRoute.onOpenProject` are gone. A store already under way when the user
+  cancels or closes finishes and its file is discarded, exactly as a create used to be deleted.
+- **고해상도 저장 is unchanged** and remains the only way to keep the full-resolution file; the
+  editing bound stays 4096px.
+- Chosen over a new `Operation` that re-bases the render on the result file: that would leave the
+  earlier ops in the list for every accessor (`adjustValue`, `crop()`, the tools' entry state) to
+  misread, for the sake of undo the history stack already gives by holding `source` per document.
+
+## D104 - Select from the preview at the AI level; 지시 listens first; no session warm-up
+
+Status: Accepted (2026-10-15, interactive requests "하단에 선택 버튼 없애고 지시랑 통합", "사용자가 지시를 통해
+말하거나 터치를 하면 그때 동작해야되는데"). Contradicts specs/selection_tool.md (sheet, 추가/빼기, 반전,
+배경 지우기, 문구 선택, 적용), specs/tool_groups.md (선택 item) and specs/vibe_edit.md §3 (지시 opens its
+sheet on tap); protected, not edited.
+
+- **No 선택 tool.** At the AI level a tap on the photo adds a foreground point, a long press a
+  background one; the mask a run returns is committed at once as one `Mask` op (one undo per tap) and
+  becomes the active mask. When the active mask stops being the run's own (undo, a plan's selection),
+  the run's points are dropped. A caption over the photo says what a tap does until a mask exists.
+- **지시 listens before it shows anything.** Its strip item starts the recogniser (permission asked
+  if needed) with no sheet; the canvas caption shows "듣고 있어요…" and the partial text; the sheet opens
+  only on a final sentence and asks for the plan then. A second tap or back stops listening. No
+  recogniser or no planner key falls back to the sheet / 서버 설정 as before.
+- **No warm-up.** The SAM session is opened by the first tap (or when 지시 needs it), never on entering
+  the AI level; the first tap shows the progress overlay for the upload. Found during device
+  verification: the warm-up's upload looked like unrequested segmentation on the server.
+- `Operation.CutOut` keeps its model, renderer and plan path although 배경 지우기 has no UI entry now.
+
 ## D103 - Browse laid out like the Galaxy Gallery: day headers over a 4-column square grid
 
 Status: Accepted (2026-10-14, interactive follow-up to D102 "처음에 이미지 배열하는 것도 삼성 갤럭시처럼").

@@ -29,6 +29,7 @@ internal const val FN_ERASE_SELECTION = "erase_selection"
 internal const val FN_CUT_OUT_SELECTION = "cut_out_selection"
 internal const val FN_FILL_SELECTION = "fill_selection"
 internal const val FN_CROP_RATIO = "crop_ratio"
+internal const val FN_EXPAND_TO_RATIO = "expand_to_ratio"
 internal const val FN_APPLY_STYLE = "apply_style"
 internal const val FN_TOPAZ_ENHANCE = "topaz_enhance"
 
@@ -199,7 +200,7 @@ internal const val ARG_PRESERVE = "preserve"
 internal const val ARG_OBJECTIVE = "objective"
 internal const val ARG_SUCCESS = "success"
 
-/** The nine tools a workflow step may name — the planner's whole vocabulary. */
+/** The ten tools a workflow step may name — the planner's whole vocabulary. */
 internal val PLAN_TOOLS: List<String> = listOf(
     FN_SELECT_REGION,
     FN_ADJUST,
@@ -208,6 +209,7 @@ internal val PLAN_TOOLS: List<String> = listOf(
     FN_CUT_OUT_SELECTION,
     FN_FILL_SELECTION,
     FN_CROP_RATIO,
+    FN_EXPAND_TO_RATIO,
     FN_APPLY_STYLE,
     FN_TOPAZ_ENHANCE,
 )
@@ -271,6 +273,15 @@ private val TOOL_CATALOG: String =
         "the user moves the frame. portrait_3_4 is an ordinary feed post (\"인스타\" with no shape), " +
         "landscape_4_3 the wide one, story_9_16 a story or reel, square only when the request says " +
         "square or 1:1. It is never a free rectangle, and it removes what falls outside the frame.\n" +
+        "- $FN_EXPAND_TO_RATIO - ratio - reaches one of the same ratios the other way round: the " +
+        "canvas grows and the new area outside the original frame is generated to continue the " +
+        "scene (generative and paid; it redraws only the added area). Choose between " +
+        "$FN_CROP_RATIO and $FN_EXPAND_TO_RATIO by looking at the photo: crop when the subject sits " +
+        "well inside the frame and what the new frame removes is empty or disposable; expand when " +
+        "a crop would cut into the subject or lose context the photo needs, and the scene continues " +
+        "plainly at the edges that would grow (sky, wall, water, ground, floor, a plain backdrop). " +
+        "A side can grow by at most half of itself, so a ratio further away than that is a crop. " +
+        "It is not possible for a photo that already holds a selection, cut-out or generated patch.\n" +
         "- $FN_APPLY_STYLE - style, intensity - applies a catalogued look to the whole photo. style " +
         "is one of ${StyleId.entries.joinToString(", ") { it.id }}; the snapshot lists what each one " +
         "actually writes. intensity 0 to 100 multiplies every listed value (value x intensity/100); " +
@@ -296,7 +307,7 @@ private val TOPAZ_RULES: String =
         "why it beats the local tools here):\n" +
         "- upscale: more pixels in the same frame (2x or 4x resolution) for a small or low-resolution " +
         "photo that will be printed, cropped or viewed large. It is not $FN_CROP_RATIO, which " +
-        "removes area, and not adding area outside the frame, which no tool here does.\n" +
+        "removes area, and not adding area outside the frame, which is $FN_EXPAND_TO_RATIO.\n" +
         "- sharpen: restores motion blur, missed focus or softness from a lens. The local " +
         "$FN_ADJUST sharpen only raises edge contrast and never brings back blurred detail.\n" +
         "- denoise: removes visible grain or colour noise, typical of night, indoor and high-ISO " +
@@ -380,7 +391,9 @@ internal val PLAN_SYSTEM_INSTRUCTION: String =
         "in a small JPEG.\n" +
         "- Composition: observe cut-off subjects, distracting objects and the role of empty space. " +
         "Propose $FN_CROP_RATIO when a ratio clearly strengthens the subject or the user's platform, " +
-        "never to enforce thirds or less space. Actively look for objects that do not fit the " +
+        "never to enforce thirds or less space. For a ratio the user asks for, decide from the photo " +
+        "whether $FN_CROP_RATIO or $FN_EXPAND_TO_RATIO serves it better and say why in the effect. " +
+        "Actively look for objects that do not fit the " +
         "scene's mood or pull attention away from the subject, anywhere in the frame: litter " +
         "in a landscape, a distracting sign, or an incidental passer-by. When one is visible, " +
         "recommend $FN_SELECT_REGION followed by $FN_ERASE_SELECTION as a separate default " +
@@ -481,9 +494,9 @@ internal val PLAN_SYSTEM_INSTRUCTION: String =
         "drop a condition silently or pick someone arbitrarily. An explicit request overrides " +
         "the keep-the-mood default.\n" +
         "- A request the tools cannot meet - a free rectangle crop such as \"위 여백만 줄여줘\", " +
-        "skin retouching, adding area outside the frame, background removal - is unsupported, or " +
-        "a limitation that says what to do by hand; never invent coordinates or tools. More " +
-        "resolution is $FN_TOPAZ_ENHANCE upscale, not area outside the frame.\n" +
+        "skin retouching, background removal - is unsupported, or a limitation that says what to " +
+        "do by hand; never invent coordinates or tools. More resolution is $FN_TOPAZ_ENHANCE " +
+        "upscale, not area outside the frame; area outside the frame is $FN_EXPAND_TO_RATIO.\n" +
         "\n" +
         "Priorities: an explicit goal in the request weighs ${PlanPriority.EXPLICIT_GOAL}, an " +
         "object the request names weighs ${PlanPriority.EXPLICIT_OBJECT}, an unrequested general " +
@@ -493,8 +506,9 @@ internal val PLAN_SYSTEM_INSTRUCTION: String =
         "\n" +
         "Workflow rules:\n" +
         "- Every step names a goal that serves the direction. A subject goal's changes name a " +
-        "target; a global goal uses whole-photo adjust, $FN_APPLY_STYLE, $FN_CROP_RATIO or " +
-        "$FN_TOPAZ_ENHANCE; a color_range goal uses $FN_ADJUST_COLOR_RANGE. A selection nothing " +
+        "target; a global goal uses whole-photo adjust, $FN_APPLY_STYLE, $FN_CROP_RATIO, " +
+        "$FN_EXPAND_TO_RATIO or $FN_TOPAZ_ENHANCE; a color_range goal uses $FN_ADJUST_COLOR_RANGE. " +
+        "A selection nothing " +
         "uses is not an edit.\n" +
         "- A default goal may use any tool its scope allows when the photo shows the reason. In " +
         "direct mode, first meet the request with user goals; a further improvement you add is a " +
@@ -504,8 +518,10 @@ internal val PLAN_SYSTEM_INSTRUCTION: String =
         "- Never set the same setting twice, never set a value a style in the same plan already " +
         "writes unless it is a deliberate further step in the same direction, never undo what " +
         "the style does, and never set a value before a style that then replaces it.\n" +
-        "- $FN_CROP_RATIO at most once, as the last local step; one style at most; " +
-        "$FN_TOPAZ_ENHANCE at most once, after everything.\n" +
+        "- $FN_CROP_RATIO at most once, as the last local step; $FN_EXPAND_TO_RATIO at most once, " +
+        "as the first step, never together with $FN_CROP_RATIO or $FN_CUT_OUT_SELECTION and never " +
+        "under subject_only or keep_background; one style at most; $FN_TOPAZ_ENHANCE at most " +
+        "once, after everything.\n" +
         "- Expected effects are hypotheses until the rendered result is compared with the same " +
         "input snapshot. Do not claim that a valid plan proves a good result. The user previews " +
         "every local plan and compares it before anything is kept.\n" +
@@ -553,7 +569,11 @@ internal val PLAN_SYSTEM_INSTRUCTION: String =
         "topaz_enhance(purpose=\"denoise\", scale=1) last, effect \"노이즈를 줄인다 - 로컬 조정으로는 " +
         "제거되지 않는다\".\n" +
         "- \"배경은 그대로 두고 얼굴만 밝게\": explicit keep_background; no erase, style or Topaz.\n" +
-        "- \"인스타 스토리에 올릴거야\": crop_ratio(ratio=\"story_9_16\").\n" +
+        "- \"인스타 스토리에 올릴거야\" on a landscape with the subject centred and empty sides: " +
+        "crop_ratio(ratio=\"story_9_16\").\n" +
+        "- \"스토리 비율로\" on a tight portrait whose head nearly touches the top edge, plain wall " +
+        "above and below: expand_to_ratio(ratio=\"story_9_16\") - a crop would cut the head; effect " +
+        "\"위아래 벽을 이어 그려 스토리 비율을 만든다\".\n" +
         "- recommend, no request, a well-balanced photo: no_change with the strengths in the " +
         "direction and the reason.\n"
 
@@ -593,7 +613,7 @@ private val STEP_ARGS = obj(
         HslChannel.Hue.wireName to Schema(type = TYPE_NUMBER),
         HslChannel.Saturation.wireName to Schema(type = TYPE_NUMBER),
         HslChannel.Luminance.wireName to Schema(type = TYPE_NUMBER),
-        ARG_RATIO to choice("crop_ratio.", CropRatio.entries.map { it.wireName }),
+        ARG_RATIO to choice("crop_ratio, expand_to_ratio.", CropRatio.entries.map { it.wireName }),
         ARG_PROMPT to text("fill_selection: short English description."),
         ARG_STYLE to choice("apply_style.", StyleId.entries.map { it.id }),
         ARG_INTENSITY to Schema(type = TYPE_NUMBER, description = "apply_style: 0 to 100, required."),

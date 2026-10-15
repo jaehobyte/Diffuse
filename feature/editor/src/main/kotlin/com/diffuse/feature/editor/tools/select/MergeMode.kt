@@ -1,13 +1,8 @@
 package com.diffuse.feature.editor.tools.select
 
-import androidx.annotation.StringRes
-import com.diffuse.feature.editor.R
-
 /**
- * specs/selection_tool.md §4. Whether the next prompt's result joins the selection or is taken
- * out of it. Without this the only way to undo an over-eager selection would be to start over.
+ * specs/selection_tool.md §4. Whether an incoming mask joins a selection or is taken out of
+ * it. The [추가 | 빼기] toggle that chose this went with the selection sheet — a tap on the photo
+ * always adds, and a long-press excludes inside the run — so only [MaskOps] still reads it.
  */
-enum class MergeMode(@StringRes val labelRes: Int) {
-    Add(R.string.select_mode_add),
-    Subtract(R.string.select_mode_subtract),
-}
+enum class MergeMode { Add, Subtract }

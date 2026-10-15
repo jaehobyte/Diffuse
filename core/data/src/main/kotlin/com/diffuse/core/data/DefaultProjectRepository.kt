@@ -61,15 +61,8 @@ class DefaultProjectRepository(
 
     private suspend fun createFiles(id: String, now: Long, source: SourceImage): Result<String> =
         runCatchingIo {
-            val extension = if (source.hasAlpha) "png" else "jpg"
-            val sourceFile = files.sourceFile(id, extension)
-            sourceFile.parentFile?.mkdirs()
-            val written = sourceFile.outputStream().use { stream ->
-                val format =
-                    if (source.hasAlpha) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG
-                source.bitmap.compress(format, JPEG_QUALITY, stream)
-            }
-            if (!written) throw IOException("could not encode the source of $id")
+            val sourceFile = files.sourceFile(id, source.extension)
+            source.writeTo(sourceFile)
             val document = EditDocument(
                 id = id,
                 source = ImageRef(sourceFile.absolutePath),
@@ -178,6 +171,18 @@ class DefaultProjectRepository(
         bitmap: Bitmap,
     ): Result<ImageRef> = withContext(dispatchers.io) {
         runCatchingIo { files.writePng(files.fillFile(projectId, fillId), bitmap) }
+    }
+
+    override suspend fun saveEnhanced(
+        projectId: String,
+        fileId: String,
+        source: SourceImage,
+    ): Result<ImageRef> = withContext(dispatchers.io) {
+        runCatchingIo {
+            val file = files.enhancedFile(projectId, fileId, source.extension)
+            source.writeTo(file)
+            ImageRef(file.absolutePath)
+        }
     }
 
     override suspend fun saveOutpaintResult(
@@ -349,14 +354,15 @@ class DefaultProjectRepository(
             }
         }
 
-    private inline fun <T> runCatchingIo(block: () -> T): Result<T> = try {
-        Result.Success(block())
-    } catch (_: UnsupportedDocumentException) {
-        Result.Failure(AppError.Unsupported)
-    } catch (e: IOException) {
-        Result.Failure(AppError.Io(e))
-    }
+}
 
+/** The two failures a project write or read may report; anything else is a bug and propagates. */
+private inline fun <T> runCatchingIo(block: () -> T): Result<T> = try {
+    Result.Success(block())
+} catch (_: UnsupportedDocumentException) {
+    Result.Failure(AppError.Unsupported)
+} catch (e: IOException) {
+    Result.Failure(AppError.Io(e))
 }
 
 private fun EditDocument.skinRetouchFilesExist(): Boolean = skinRetouches().all { retouch ->
@@ -461,6 +467,18 @@ private fun decodeDocument(logger: Logger?, text: String): EditDocument = try {
 }
 
 /** The result files are written whole or not at all, like a shot subject. */
+private val SourceImage.extension: String get() = if (hasAlpha) "png" else "jpg"
+
+/** The source's own encoding: PNG exactly when it has alpha, JPEG otherwise (edit_model.md). */
+private fun SourceImage.writeTo(file: File) {
+    file.parentFile?.mkdirs()
+    val written = file.outputStream().use { stream ->
+        val format = if (hasAlpha) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG
+        bitmap.compress(format, JPEG_QUALITY, stream)
+    }
+    if (!written) throw IOException("could not encode ${file.name}")
+}
+
 private fun ProjectFiles.writePng(file: File, bitmap: Bitmap): ImageRef {
     writeAtomically(file) { temporary ->
         val compressed = temporary.outputStream().use {

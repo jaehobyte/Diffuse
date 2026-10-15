@@ -61,14 +61,20 @@ internal fun fillInstruction(prompt: String): String =
  * specs/outpaint.md §5. The same idea as the other two — the white area is where to paint — with
  * the border in place of a region.
  *
- * The last clause carries more weight here than anywhere else: the provider maps the answer onto
- * a canvas whose aspect it has already computed, so a model that returns a different ratio would
- * shift the user's photograph. `GeminiOutpaintProvider` refuses that answer rather than scaling
- * it, which is why the sentence and the guard are written together.
+ * Worded as an outpainting task that names the white area as empty canvas (2026-10-15, against
+ * the live model on the user's photos): the earlier "extend into the border" phrasing left a
+ * pale, near-white band with a visible seam on a tall expansion, while this one continued the
+ * sky and the window frame without one. The size clause still matters: the provider maps the
+ * answer onto a canvas whose aspect it has already computed, and `GeminiOutpaintProvider`
+ * refuses an answer that snapped to another ratio rather than scaling it.
  */
 internal const val OUTPAINT_INSTRUCTION =
-    "The image has a solid pure-white border around a photograph. Extend the photograph into " +
-        "that border so the whole image looks like one wider photograph taken from the same " +
-        "position: continue the scene's geometry, horizon, lighting, texture, focus and grain " +
-        "outward. Do not add a new subject, text or watermark. Do not alter the photograph " +
-        "inside the border. Return only the edited image, at the same aspect ratio as the input."
+    "This is an outpainting task. The image is a photograph onto which blank, solid pure-white " +
+        "areas were added outside its original edges. Those white areas are empty canvas, not " +
+        "part of the scene. Fill every white pixel by extending the photograph outward as if " +
+        "the camera had captured a larger field of view from the same position: continue the " +
+        "sky, walls, window frames, furniture and any object cut by the original edge, with " +
+        "matching perspective, lighting, colour, focus and grain. No white or blank area may " +
+        "remain. Do not add a new subject, text or watermark. Keep the original photograph " +
+        "region exactly as it is, in the same place. Return only the finished image at the " +
+        "same size and aspect ratio as the input."

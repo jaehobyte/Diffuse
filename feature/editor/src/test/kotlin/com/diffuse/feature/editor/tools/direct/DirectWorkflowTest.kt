@@ -47,7 +47,7 @@ import kotlin.math.abs
  * local steps into a candidate, the plan's own selections without a confirmation tap, the crop into
  * the candidate, and the Topaz step on the candidate's full render — and the whole result is
  * reviewed on this screen. Nothing reaches the document, its history, Browse or the nav graph until
- * the user keeps it: 적용 without Topaz, 고해상도 저장 / 새 편집본으로 열기 with it (D098).
+ * the user keeps it: 적용, with Topaz as the photo itself, or 고해상도 저장 of the full file.
  *
  * Every "no paid call" is a count on the fakes; every "no new project" is the repository's.
  */
@@ -84,9 +84,8 @@ class DirectWorkflowTest {
         assertEquals(1, topaz.submitCount)
         assertEquals(TopazPurpose.Denoise, topaz.lastJob!!.purpose)
         assertNear(FakeTopazProvider.RESULT_COLOR, direct.candidate!!.topaz!!.after.asAndroidBitmap().centre())
-        // No new edit copy, no navigation, no commit: the original is as it was.
-        assertTrue(harness.repository.created.isEmpty())
-        assertNull(direct.openedProjectId)
+        // Nothing stored, nothing committed: the original is as it was.
+        assertTrue(harness.repository.enhanced.isEmpty())
         assertEquals(Tool.Direct, viewModel.uiState.value.selectedTool)
         assertEquals(emptyList<Operation>(), viewModel.uiState.value.document!!.operations)
         assertFalse(viewModel.uiState.value.canUndo)
@@ -296,9 +295,9 @@ class DirectWorkflowTest {
         assertTrue(direct.canApply)
         assertEquals(1, topaz.submitCount)
         viewModel.direct.save()
-        viewModel.direct.openCopy()
+        viewModel.direct.adoptTopaz()
         assertTrue(harness.saves.isEmpty())
-        assertTrue(harness.repository.created.isEmpty())
+        assertTrue(harness.repository.enhanced.isEmpty())
 
         viewModel.applySheet()
 
@@ -496,124 +495,135 @@ class DirectWorkflowTest {
     }
 
     @Test
-    fun `a failed copy keeps the result for a retry that creates one project and submits nothing`() = runTest {
-        harness.repository.failCreate = true
+    fun `a failed 적용 keeps the result for a retry that stores it once and submits nothing`() = runTest {
+        harness.repository.failEnhance = true
         val viewModel = planned(LOCAL_AND_TOPAZ)
         viewModel.applySheet()
+        val input = viewModel.uiState.value.document
 
         viewModel.applySheet()
 
-        assertNull(direct(viewModel).openedProjectId)
-        assertEquals(R.string.topaz_open_failed, direct(viewModel).message?.res)
+        assertEquals(input, viewModel.uiState.value.document)
+        assertEquals(R.string.topaz_adopt_failed, direct(viewModel).message?.res)
         assertNotNull(direct(viewModel).candidate!!.topaz)
-        harness.repository.failCreate = false
+        harness.repository.failEnhance = false
         viewModel.applySheet()
-        assertEquals("copy-1", direct(viewModel).openedProjectId)
+        assertEquals(enhancedRef(1), viewModel.uiState.value.document!!.source)
         assertEquals(1, topaz.submitCount)
     }
 
     // ---- keeping a Topaz result ----------------------------------------------
 
     @Test
-    fun `새 편집본으로 열기 creates one project from the result file, and the original stays as it was`() = runTest {
-        val viewModel = planned(LOCAL_AND_TOPAZ)
-        viewModel.applySheet()
-        val result = direct(viewModel).candidate!!.topaz!!
+    fun `적용 with a Topaz result stores it once as this project's photo, and one undo brings the input back`() =
+        runTest {
+            val viewModel = planned(LOCAL_AND_TOPAZ)
+            viewModel.applySheet()
+            val result = direct(viewModel).candidate!!.topaz!!
+            val input = viewModel.uiState.value.document
 
-        viewModel.applySheet()
-        viewModel.applySheet()
-        viewModel.direct.openCopy()
+            viewModel.applySheet()
+            viewModel.applySheet()
+            viewModel.direct.adoptTopaz()
 
-        val created = harness.repository.created.single()
-        assertEquals(result.width, created.sourceWidthPx)
-        assertEquals("copy-1", direct(viewModel).openedProjectId)
-        viewModel.direct.onNavigated()
-        assertNull(direct(viewModel).openedProjectId)
-        assertNull(viewModel.uiState.value.selectedTool)
-        assertEquals(emptyList<Operation>(), viewModel.uiState.value.document!!.operations)
-        assertFalse(viewModel.uiState.value.canUndo)
-        assertEquals(1, topaz.submitCount)
-        // The session's files go with it; the copy is its own project's.
-        assertTrue(harness.topazRoot.listFiles().orEmpty().isEmpty())
-    }
+            val stored = harness.repository.enhanced.single()
+            assertEquals(result.width, stored.sourceWidthPx)
+            val adopted = viewModel.uiState.value.document!!
+            assertEquals(enhancedRef(1), adopted.source)
+            assertEquals("the local edits are in the pixels", emptyList<Operation>(), adopted.operations)
+            assertNull(adopted.activeMaskId)
+            assertNull(viewModel.uiState.value.selectedTool)
+            assertNull(direct(viewModel).candidate)
+            assertEquals(1, topaz.submitCount)
+            // The session's files go with it; the photo is the project's own file now.
+            assertTrue(harness.topazRoot.listFiles().orEmpty().isEmpty())
+
+            assertTrue(viewModel.uiState.value.canUndo)
+            viewModel.undo()
+            assertEquals(input, viewModel.uiState.value.document)
+        }
 
     @Test
-    fun `a copy cancelled while it is created is deleted rather than left in Browse`() = runTest {
+    fun `an 적용 cancelled while the result is stored discards the stored file and changes nothing`() = runTest {
         val viewModel = planned(LOCAL_AND_TOPAZ)
         viewModel.applySheet()
-        harness.repository.createGate = CompletableDeferred()
-        viewModel.direct.openCopy()
-        assertEquals(TopazPhase.Opening, direct(viewModel).candidate?.topazPhase)
+        val input = viewModel.uiState.value.document
+        harness.repository.enhanceGate = CompletableDeferred()
+        viewModel.direct.adoptTopaz()
+        assertEquals(TopazPhase.Adopting, direct(viewModel).candidate?.topazPhase)
 
         viewModel.cancelSheet()
-        // The create reads the result file: the session's folder waits for it.
+        // The store reads the result file: the session's folder waits for it.
         assertTrue(harness.topazRoot.listFiles().orEmpty().isNotEmpty())
-        harness.repository.createGate!!.complete(Unit)
+        harness.repository.enhanceGate!!.complete(Unit)
 
-        assertEquals(listOf("copy-1"), harness.repository.deleted)
-        assertNull(direct(viewModel).openedProjectId)
+        assertTrue(harness.repository.discarded.contains(harness.repository.enhancedPath(1)))
+        assertEquals(input, viewModel.uiState.value.document)
+        assertFalse(viewModel.uiState.value.canUndo)
         assertTrue(harness.topazRoot.listFiles().orEmpty().isEmpty())
-        assertEquals(emptyList<Operation>(), viewModel.uiState.value.document!!.operations)
     }
 
     @Test
-    fun `a copy cancelled on the overlay and tried again - A finishing first is deleted, only B opens`() = runTest {
-        val viewModel = planned(LOCAL_AND_TOPAZ)
-        viewModel.applySheet()
-        val (a, b) = cancelledAndRetried(viewModel)
+    fun `an 적용 cancelled on the overlay and tried again - A finishing first is discarded, only B applies`() =
+        runTest {
+            val viewModel = planned(LOCAL_AND_TOPAZ)
+            viewModel.applySheet()
+            val (a, b) = cancelledAndRetried(viewModel)
 
-        a.complete(Unit)
-        assertEquals(listOf("copy-1"), harness.repository.deleted)
-        assertNull(direct(viewModel).openedProjectId)
-        assertEquals(TopazPhase.Opening, direct(viewModel).candidate?.topazPhase)
+            a.complete(Unit)
+            assertTrue(harness.repository.discarded.contains(harness.repository.enhancedPath(1)))
+            assertFalse(viewModel.uiState.value.canUndo)
+            assertEquals(TopazPhase.Adopting, direct(viewModel).candidate?.topazPhase)
 
-        b.complete(Unit)
-        assertEquals("copy-2", direct(viewModel).openedProjectId)
-        assertEquals(listOf("copy-1"), harness.repository.deleted)
-        assertEquals(1, topaz.submitCount)
-    }
+            b.complete(Unit)
+            assertEquals(enhancedRef(2), viewModel.uiState.value.document!!.source)
+            assertFalse(harness.repository.discarded.contains(harness.repository.enhancedPath(2)))
+            assertEquals(1, topaz.submitCount)
+        }
 
     @Test
-    fun `a copy cancelled on the overlay and tried again - A finishing after B is deleted, B stays opened`() =
+    fun `an 적용 cancelled on the overlay and tried again - A finishing after B is discarded, B stays applied`() =
         runTest {
             val viewModel = planned(LOCAL_AND_TOPAZ)
             viewModel.applySheet()
             val (a, b) = cancelledAndRetried(viewModel)
 
             b.complete(Unit)
-            assertEquals("copy-1", direct(viewModel).openedProjectId)
+            assertEquals(enhancedRef(1), viewModel.uiState.value.document!!.source)
 
             a.complete(Unit)
-            assertEquals(listOf("copy-2"), harness.repository.deleted)
-            assertEquals("copy-1", direct(viewModel).openedProjectId)
+            assertTrue(harness.repository.discarded.contains(harness.repository.enhancedPath(2)))
+            assertEquals(enhancedRef(1), viewModel.uiState.value.document!!.source)
             assertNull(direct(viewModel).message)
             assertEquals(1, topaz.submitCount)
         }
 
     @Test
-    fun `a cancelled copy failing late leaves the retry opening, and the retry's failure is its own`() = runTest {
+    fun `a cancelled 적용 failing late leaves the retry storing, and the retry's failure is its own`() = runTest {
         val viewModel = planned(LOCAL_AND_TOPAZ)
         viewModel.applySheet()
+        val input = viewModel.uiState.value.document
         val (a, b) = cancelledAndRetried(viewModel)
 
-        harness.repository.failCreate = true
+        harness.repository.failEnhance = true
         a.complete(Unit)
         assertNull(direct(viewModel).message)
-        assertEquals(TopazPhase.Opening, direct(viewModel).candidate?.topazPhase)
+        assertEquals(TopazPhase.Adopting, direct(viewModel).candidate?.topazPhase)
 
         b.complete(Unit)
-        assertEquals(R.string.topaz_open_failed, direct(viewModel).message?.res)
+        assertEquals(R.string.topaz_adopt_failed, direct(viewModel).message?.res)
         assertNull(direct(viewModel).candidate?.topazPhase)
-        assertNull(direct(viewModel).openedProjectId)
-        assertTrue(harness.repository.created.isEmpty())
+        assertEquals(input, viewModel.uiState.value.document)
+        assertTrue(harness.repository.enhanced.isEmpty())
         assertEquals(1, topaz.submitCount)
     }
 
     @Test
-    fun `closing with a cancelled copy and its retry in flight keeps the result until the last one ends`() =
+    fun `closing with a cancelled 적용 and its retry in flight keeps the result until the last one ends`() =
         runTest {
             val viewModel = planned(LOCAL_AND_TOPAZ)
             viewModel.applySheet()
+            val input = viewModel.uiState.value.document
             val (a, b) = cancelledAndRetried(viewModel)
 
             viewModel.cancelSheet()
@@ -622,8 +632,8 @@ class DirectWorkflowTest {
             assertTrue(harness.topazRoot.listFiles().orEmpty().isNotEmpty())
             a.complete(Unit)
 
-            assertEquals(listOf("copy-1", "copy-2"), harness.repository.deleted)
-            assertNull(direct(viewModel).openedProjectId)
+            assertTrue(harness.repository.discarded.containsAll(List(2) { harness.repository.enhancedPath(it + 1) }))
+            assertEquals(input, viewModel.uiState.value.document)
             assertTrue(harness.topazRoot.listFiles().orEmpty().isEmpty())
         }
 
@@ -636,7 +646,7 @@ class DirectWorkflowTest {
         viewModel.cancelSheet()
 
         assertTrue(harness.topazRoot.listFiles().orEmpty().isEmpty())
-        assertTrue(harness.repository.created.isEmpty())
+        assertTrue(harness.repository.enhanced.isEmpty())
         assertNotEquals(Tool.Direct, viewModel.uiState.value.selectedTool)
     }
 
@@ -651,19 +661,21 @@ class DirectWorkflowTest {
 
     private fun direct(viewModel: EditorViewModel) = viewModel.uiState.value.direct
 
-    /** Copy A held, cancelled on the overlay, then copy B held: the gates release each in any order. */
+    private fun enhancedRef(n: Int) = ImageRef(harness.repository.enhancedPath(n))
+
+    /** Store A held, cancelled on the overlay, then store B held: the gates release each in any order. */
     private fun cancelledAndRetried(
         viewModel: EditorViewModel,
     ): Pair<CompletableDeferred<Unit>, CompletableDeferred<Unit>> {
         val a = CompletableDeferred<Unit>()
         val b = CompletableDeferred<Unit>()
-        harness.repository.createGate = a
-        viewModel.direct.openCopy()
+        harness.repository.enhanceGate = a
+        viewModel.direct.adoptTopaz()
         viewModel.direct.cancelWork()
         assertNull(direct(viewModel).candidate?.topazPhase)
-        harness.repository.createGate = b
-        viewModel.direct.openCopy()
-        assertEquals(TopazPhase.Opening, direct(viewModel).candidate?.topazPhase)
+        harness.repository.enhanceGate = b
+        viewModel.direct.adoptTopaz()
+        assertEquals(TopazPhase.Adopting, direct(viewModel).candidate?.topazPhase)
         return a to b
     }
 

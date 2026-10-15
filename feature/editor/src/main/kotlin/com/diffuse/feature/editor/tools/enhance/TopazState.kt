@@ -44,7 +44,7 @@ enum class TopazPhase(@StringRes val labelRes: Int) {
     Processing(R.string.topaz_phase_processing),
     Downloading(R.string.topaz_phase_downloading),
     Saving(R.string.topaz_phase_saving),
-    Opening(R.string.topaz_phase_opening),
+    Adopting(R.string.topaz_phase_adopting),
 }
 
 /** §4: an estimate is asked for, never assumed; "unknown" is never shown as 0. */
@@ -99,8 +99,6 @@ data class TopazState(
     /** The last run's failure, shown in the sheet with a retry until the next run starts. */
     val failure: TopazFailure? = null,
     @StringRes val message: Int? = null,
-    /** One-shot: the new edit copy to navigate to. Consumed by the route. */
-    val openedProjectId: String? = null,
 ) {
 
     val isOpen: Boolean get() = group != null

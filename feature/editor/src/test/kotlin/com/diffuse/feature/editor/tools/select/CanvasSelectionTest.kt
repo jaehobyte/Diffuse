@@ -3,6 +3,7 @@ package com.diffuse.feature.editor.tools.select
 import android.graphics.Bitmap
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.performTouchInput
@@ -28,6 +29,7 @@ import com.diffuse.core.data.SkinRetouchFiles
 import com.diffuse.core.imaging.load.SourceImage
 import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.core.imaging.model.ImageRef
+import com.diffuse.core.imaging.model.Operation
 import com.diffuse.core.imaging.render.Renderer
 import com.diffuse.feature.editor.EditorAi
 import com.diffuse.feature.editor.EditorRoute
@@ -35,6 +37,8 @@ import com.diffuse.feature.editor.EditorViewModel
 import com.diffuse.feature.editor.R
 import com.diffuse.feature.editor.TestDispatchers
 import com.diffuse.feature.editor.Tool
+import com.diffuse.core.ui.components.EditSheetTestTag
+import com.diffuse.feature.editor.canvas.CanvasCaptionTestTag
 import com.diffuse.feature.editor.canvas.EditorCanvasTestTag
 import com.diffuse.feature.editor.tools.enhance.testTopazSettings
 import com.diffuse.feature.editor.tools.enhance.testTopazStorage
@@ -58,8 +62,8 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * Selecting straight from the preview. At the AI level of the strip the photo itself takes the
- * tap: it opens 선택 and becomes its first point, so the user never has to find the tool first.
+ * Selecting straight from the preview: at the AI level of the strip the photo itself takes the
+ * tap, no sheet opens, and the mask the tap makes is committed to the document as it lands.
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -86,21 +90,23 @@ class CanvasSelectionTest {
     fun tearDown() = Dispatchers.resetMain()
 
     @Test
-    fun `opening the AI level warms the session before any tool is tapped`() {
+    fun `opening the AI level sends nothing to the backend and says what a tap does`() {
         val viewModel = viewModel()
         compose.setContent { EditorRoute(onExport = {}, viewModel = viewModel) }
         compose.waitForIdle()
-        assertEquals(0, provider.openCount)
+        compose.onNodeWithTag(CanvasCaptionTestTag).assertDoesNotExist()
 
         compose.onNodeWithTag(string(R.string.editor_tool_ai)).performClick()
         compose.waitForIdle()
 
-        assertEquals(1, provider.openCount)
-        assertNull("warming selects no tool", viewModel.uiState.value.selectedTool)
+        assertEquals("no upload until the user taps or speaks", 0, provider.openCount)
+        assertNull("opening the level selects no tool", viewModel.uiState.value.selectedTool)
+        compose.onNodeWithTag(CanvasCaptionTestTag).assertExists()
+        compose.onNodeWithText(string(R.string.select_hint)).assertExists()
     }
 
     @Test
-    fun `a tap on the photo at the AI level opens 선택 with that point`() {
+    fun `a tap on the photo at the AI level commits that selection without a sheet`() {
         val viewModel = viewModel()
         compose.setContent { EditorRoute(onExport = {}, viewModel = viewModel) }
         compose.waitForIdle()
@@ -110,10 +116,15 @@ class CanvasSelectionTest {
         tapCanvas()
 
         val state = viewModel.uiState.value
-        assertEquals(Tool.Select, state.selectedTool)
+        assertNull("no sheet opens", state.selectedTool)
+        compose.onNodeWithTag(EditSheetTestTag).assertDoesNotExist()
         assertEquals(listOf(true), state.selection.labels)
         assertNotNull(state.selection.mask)
-        assertEquals("the warm session was reused", 1, provider.openCount)
+        assertEquals(1, state.document!!.operations.filterIsInstance<Operation.Mask>().size)
+        assertNotNull(state.document.activeMaskId)
+        assertEquals("the tap opened the session", 1, provider.openCount)
+        compose.onNodeWithTag(SelectionOverlayTestTag).assertExists()
+        compose.onNodeWithTag(CanvasCaptionTestTag).assertDoesNotExist()
     }
 
     @Test
@@ -126,6 +137,7 @@ class CanvasSelectionTest {
 
         assertNull(viewModel.uiState.value.selectedTool)
         assertTrue(viewModel.uiState.value.selection.points.isEmpty())
+        assertTrue(viewModel.uiState.value.document!!.operations.isEmpty())
     }
 
     @Test
@@ -215,6 +227,9 @@ class CanvasSelectionTest {
 
         override suspend fun saveFillResult(projectId: String, fillId: String, bitmap: Bitmap): Result<ImageRef> =
             Result.Success(ImageRef("/p/fill_$fillId.png"))
+
+        override suspend fun saveEnhanced(projectId: String, fileId: String, source: SourceImage): Result<ImageRef> =
+            Result.Success(ImageRef("/p/enhanced_$fileId.jpg"))
 
         override suspend fun saveOutpaintResult(
             projectId: String,

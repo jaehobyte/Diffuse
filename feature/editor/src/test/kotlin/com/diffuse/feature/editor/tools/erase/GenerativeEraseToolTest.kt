@@ -292,9 +292,8 @@ class GenerativeEraseToolTest {
             viewModel.onAdjust(AdjustKind.Exposure, EXPOSURE)
             viewModel.onAdjustFinished()
         }
-        viewModel.onToolClick(Tool.Select)
-        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
-        viewModel.applySheet()
+        // A tap on the photo at the AI level: the mask it makes is committed as it lands.
+        viewModel.selectOnCanvas(0.5f, 0.5f, foreground = true)
         return viewModel
     }
 
@@ -393,6 +392,9 @@ class GenerativeEraseToolTest {
             fillId: String,
             bitmap: Bitmap,
         ): Result<ImageRef> = Result.Success(ImageRef("/p/fill_$fillId.png"))
+
+        override suspend fun saveEnhanced(projectId: String, fileId: String, source: SourceImage): Result<ImageRef> =
+            Result.Success(ImageRef("/p/enhanced_$fileId.jpg"))
 
         override suspend fun saveOutpaintResult(
             projectId: String,

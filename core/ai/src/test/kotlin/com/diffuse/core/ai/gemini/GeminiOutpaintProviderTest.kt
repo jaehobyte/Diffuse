@@ -144,7 +144,7 @@ class GeminiOutpaintProviderTest {
         assertEquals(Result.Failure(AppError.Unsupported), outcome)
     }
 
-    /** Within 2% is the model rounding its own output, not moving the frame. */
+    /** A few percent off is the model rounding its own output, not moving the frame. */
     @Test
     fun `an answer within the aspect tolerance is accepted`() = runTest {
         // 200x199 is 0.5% off square, and comes back resampled onto the canvas that was asked for.
@@ -154,6 +154,19 @@ class GeminiOutpaintProviderTest {
 
         assertEquals(PADDED, (outcome as Result.Success).value.width)
     }
+
+    /** The live model answered a 9:24 request at 640×1632 — 4.6% off — with the layout in place. */
+    @Test
+    fun `an answer a few percent off, as the model's own sizes are, is resampled rather than refused`() =
+        runTest {
+            server.enqueue(imageResponse(NEARLY_SQUARE, NEARLY_SQUARE - NEARLY_SQUARE / 20, fill = PAINTED))
+
+            val outcome = provider.outpaint(image(), MARGINS)
+
+            val bitmap = (outcome as Result.Success).value
+            assertEquals(PADDED, bitmap.width)
+            assertEquals(PADDED, bitmap.height)
+        }
 
     /** T51's guard, over the border rather than a mask, at the same threshold. */
     @Test

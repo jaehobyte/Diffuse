@@ -116,6 +116,24 @@ class ProjectPersistenceTest {
         assertTrue(repository.observeAll().first().isEmpty())
     }
 
+    /** 적용 of a Topaz result: the stored file beside the source, reachable as a document's photo. */
+    @Test
+    fun `saveEnhanced writes a JPEG beside the source that a document can take as its photo`() = runTest {
+        val repository = repository()
+        val id = createProject(repository)
+
+        val saved = repository.saveEnhanced(id, "e1", sourceImage())
+
+        assertTrue("save failed: $saved", saved is Result.Success)
+        val file = File((saved as Result.Success).value.path)
+        assertEquals(files.enhancedFile(id, "e1", "jpg"), file)
+        assertTrue("file missing", file.isFile)
+        assertTrue("source missing", files.findSource(id)?.isFile == true)
+        val loaded = repository.load(id) as Result.Success
+        repository.save(loaded.value.copy(source = saved.value))
+        assertEquals(saved.value, (repository.load(id) as Result.Success).value.source)
+    }
+
     @Test
     fun `save then load round-trips the document`() = runTest {
         val repository = repository()

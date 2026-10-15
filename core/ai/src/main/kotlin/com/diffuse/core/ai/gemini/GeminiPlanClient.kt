@@ -145,13 +145,16 @@ internal class GeminiPlanClient(
     /**
      * specs/vibe_edit.md §5, §4.1: a crop wherever the model put it moves to the end of the local
      * steps, so the 자르기 tool can open on it; §19: a Topaz step, which is a hand-off and never a
-     * local step, goes after everything. `ProposalCheck` refuses a second of either. No other step
-     * is reordered — the model's order is the plan everywhere else — and every step keeps its id.
+     * local step, goes after everything; outpaint.md §3: an expand goes first, because an
+     * `Outpaint` is always the document's first operation. `ProposalCheck` refuses a second of
+     * each. No other step is reordered — the model's order is the plan everywhere else — and
+     * every step keeps its id.
      */
     private fun cropLast(proposal: PlanProposal): PlanProposal {
-        val (moved, kept) = proposal.workflow.partition { it.step is PlanStep.Crop || it.step is PlanStep.Topaz }
-        if (moved.isEmpty()) return proposal
-        return proposal.copy(workflow = kept + moved.sortedBy { it.step is PlanStep.Topaz })
+        val (expands, rest) = proposal.workflow.partition { it.step is PlanStep.Expand }
+        val (moved, kept) = rest.partition { it.step is PlanStep.Crop || it.step is PlanStep.Topaz }
+        if (expands.isEmpty() && moved.isEmpty()) return proposal
+        return proposal.copy(workflow = expands + kept + moved.sortedBy { it.step is PlanStep.Topaz })
     }
 
     /**

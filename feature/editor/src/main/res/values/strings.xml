@@ -15,7 +15,6 @@
     <string name="editor_tool_mix">혼합</string>
     <string name="editor_tool_crop">자르기</string>
     <string name="editor_tool_detail">디테일</string>
-    <string name="editor_tool_select">선택</string>
     <string name="editor_tool_erase">지우기</string>
     <string name="editor_tool_fill">채우기</string>
     <string name="editor_tool_expand">확대</string>
@@ -68,6 +67,7 @@
     <string name="direct_step_cutout">선택 영역 밖 지우기 (투명)</string>
     <string name="direct_step_fill">선택 영역에 %1$s 채우기</string>
     <string name="direct_step_crop">%1$s 비율로 자르기</string>
+    <string name="direct_step_expand">%1$s 비율로 확대</string>
     <string name="direct_step_style">%1$s 스타일</string>
 
     <!-- specs/vibe_edit.md §14: example sentences (input aid only) and 보정 추천. -->
@@ -135,14 +135,14 @@
     <string name="direct_step_topaz_options">%1$d배 · 얼굴 복원 %2$s</string>
     <string name="direct_step_topaz_face_on">켬</string>
     <string name="direct_step_topaz_face_off">끔</string>
-    <string name="direct_review_topaz_note">Topaz는 사진 전체를 원격으로 처리하는 유료 작업이에요. 결과는 이 화면에서 비교한 뒤 고해상도 저장이나 새 편집본으로 남겨요</string>
-    <string name="direct_review_paid">지우기·채우기는 실행 때 Gemini 생성 호출을 사용해요(유료). 같은 입력이면 다시 켜도 결과를 재사용하고, 비교나 되돌리기로는 다시 호출하지 않아요</string>
+    <string name="direct_review_topaz_note">Topaz는 사진 전체를 원격으로 처리하는 유료 작업이에요. 결과는 이 화면에서 비교한 뒤 적용하거나 고해상도로 저장해요</string>
+    <string name="direct_review_paid">지우기·채우기·확대는 실행 때 Gemini 생성 호출을 사용해요(유료). 같은 입력이면 다시 켜도 결과를 재사용하고, 비교나 되돌리기로는 다시 호출하지 않아요</string>
     <string name="direct_preview_progress">보정을 적용하는 중 (%1$d/%2$d)</string>
     <string name="direct_run">선택한 보정 실행</string>
     <string name="direct_run_again">선택한 보정 다시 실행</string>
     <string name="direct_run_topaz_note">실행하면 선택한 보정을 차례로 적용하고 마지막에 Topaz 화질 개선까지 자동으로 진행해요. 이때 크레딧이 사용돼요</string>
     <string name="direct_topaz_progress">화질 개선 · %1$s (%2$d/%3$d)</string>
-    <string name="direct_topaz_done">Topaz 화질 개선까지 반영된 결과예요. 새 편집본 없이 여기서 전후를 비교할 수 있어요</string>
+    <string name="direct_topaz_done">Topaz 화질 개선까지 반영된 결과예요. 여기서 전후를 비교한 뒤 적용할 수 있어요</string>
     <string name="direct_topaz_failed_keep">화질 개선 항목을 끄면 보정 결과를 검토하고 적용할 수 있어요. 다시 실행하면 새로 요청해요</string>
     <string name="direct_topaz_pending">화질 개선 결과가 아직 없어요. ‘선택한 보정 다시 실행’을 누르면 지금 결과로 한 번 요청해요</string>
     <string name="direct_topaz_blocked">이 결과에는 화질 개선을 실행할 수 없어요. 항목의 이유를 확인하거나 끄면 보정 결과를 적용할 수 있어요</string>
@@ -185,16 +185,7 @@
     <string name="direct_item_topaz_unavailable">이 사진에는 이 화질 개선을 실행할 수 없어요. 이 항목을 끄면 나머지 보정은 적용할 수 있어요</string>
 
     <!-- specs/selection_tool.md -->
-    <string name="select_title">선택</string>
     <string name="select_preparing">이미지를 분석하는 중</string>
-    <string name="select_mode_add">추가</string>
-    <string name="select_mode_subtract">빼기</string>
-    <string name="select_invert">반전</string>
-    <string name="select_clear">지우기</string>
-    <string name="select_cutout">배경 지우기</string>
-    <string name="select_low_confidence">선택이 불확실해요. 점을 더 추가해보세요.</string>
-    <string name="select_not_found">찾지 못했어요. 다른 단어로 해보세요.</string>
-    <string name="select_prompt_working">영역을 찾는 중</string>
     <string name="select_hint">사진을 탭해 영역을 선택하세요. 길게 누르면 제외돼요.</string>
     <string name="select_unavailable_not_configured">서버 주소를 먼저 설정해주세요</string>
     <string name="select_unavailable_offline">서버에 연결할 수 없어요</string>
@@ -204,6 +195,7 @@
     <!-- specs/prompt_input.md §3 -->
     <string name="prompt_mic_permission">마이크 권한이 필요해요</string>
     <string name="prompt_voice_failed">음성을 알아듣지 못했어요</string>
+    <string name="direct_listening">듣고 있어요. 무엇을 바꿀까요?</string>
 
     <!-- specs/segmentation.md §6 -->
     <string name="sam3_settings_title">서버 설정</string>
@@ -488,8 +480,8 @@
     <string name="topaz_estimate_checking">예상 크레딧 확인 중</string>
     <string name="topaz_estimate_known">예상 %1$d 크레딧</string>
     <string name="topaz_estimate_unknown">예상 크레딧 확인 불가, 실행 시 크레딧 사용</string>
-    <string name="topaz_reedit_note">다시 편집하면 긴 변 최대 4096px로 열립니다. 원래 결과는 고해상도 저장을 이용하세요</string>
-    <string name="topaz_copy_note">새 편집본에는 지금까지의 조정이 픽셀에 반영돼요. 이전 조정값을 이어서 바꿀 수는 없어요</string>
+    <string name="topaz_reedit_note">적용하면 긴 변 최대 4096px로 이어서 편집해요. 원래 해상도는 고해상도 저장을 이용하세요</string>
+    <string name="topaz_adopt_note">적용하면 지금까지의 조정이 사진에 합쳐진 채로 이어서 편집해요. 되돌리기로 되돌릴 수 있어요</string>
     <string name="topaz_needs_key">설정에서 Topaz API 키를 입력해주세요</string>
     <string name="topaz_open_settings">서버 설정</string>
     <string name="topaz_blocked_alpha">투명한 부분이 있는 사진은 처리할 수 없어요</string>
@@ -501,11 +493,10 @@
     <string name="topaz_phase_processing">Topaz에서 처리 중</string>
     <string name="topaz_phase_downloading">결과 받는 중</string>
     <string name="topaz_phase_saving">저장 중</string>
-    <string name="topaz_phase_opening">새 편집본 만드는 중</string>
+    <string name="topaz_phase_adopting">적용하는 중</string>
     <string name="topaz_progress">처리 중 %1$d%%</string>
     <string name="topaz_run">실행</string>
     <string name="topaz_close">닫기</string>
-    <string name="topaz_open_copy">새 편집본으로 열기</string>
     <string name="topaz_save">고해상도 저장</string>
     <string name="topaz_save_again">다시 저장</string>
     <string name="topaz_result_size">결과 %1$d×%2$d</string>
@@ -519,7 +510,7 @@
     <string name="topaz_cancelled">작업을 취소했어요. 이미 처리된 만큼 크레딧이 사용될 수 있어요</string>
     <string name="topaz_saved">갤러리에 저장했어요</string>
     <string name="topaz_save_failed">저장하지 못했어요. 다시 저장해도 크레딧은 쓰지 않아요</string>
-    <string name="topaz_open_failed">새 편집본을 만들지 못했어요</string>
+    <string name="topaz_adopt_failed">결과를 적용하지 못했어요</string>
     <string name="topaz_prepare_failed">사진을 준비하지 못했어요</string>
     <string name="topaz_error_key">Topaz API 키를 확인해주세요</string>
     <string name="topaz_error_credits">Topaz 크레딧이 부족해요</string>

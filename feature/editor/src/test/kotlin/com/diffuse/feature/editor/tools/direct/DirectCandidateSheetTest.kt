@@ -176,7 +176,7 @@ class DirectCandidateSheetTest {
     }
 
     @Test
-    fun `a Topaz result is compared here, saved in full or opened as a new copy`() {
+    fun `a Topaz result is compared here, saved in full or applied`() {
         show(ready(TOPAZ_PLAN).copy(candidate = review().copy(topaz = RESULT, resolved = listOf("sky"))))
 
         compose.onNodeWithText("Topaz 화질 개선까지 반영된 결과예요", substring = true).performScrollTo().assertExists()
@@ -184,7 +184,7 @@ class DirectCandidateSheetTest {
         compose.onNodeWithText("AI가 찾은 대상: sky", substring = true).performScrollTo().assertExists()
         compose.onNodeWithTag(DirectCompareTestTag).performScrollTo().assertExists()
         compose.onNodeWithTag(DirectSaveTestTag).performScrollTo().performClick()
-        compose.onNodeWithText("새 편집본으로 열기").assertIsEnabled().performClick()
+        compose.onNodeWithText("적용").assertIsEnabled().performClick()
 
         assertEquals(listOf("save", "apply"), calls)
     }

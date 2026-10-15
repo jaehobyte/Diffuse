@@ -304,11 +304,9 @@ class DirectToolTest {
     @Test
     fun `a run containing a Select clears the selection session`() = runTest {
         val viewModel = opened()
-        // The 선택 tool opened first, so it is holding a session.
-        viewModel.onToolClick(Tool.Select)
-        viewModel.cancelSheet()
+        // A tap on the photo opened a session earlier, so one is being held.
+        viewModel.selection.open(Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888))
         assertNotNull(viewModel.uiState.value.selection.session)
-        viewModel.onToolClick(Tool.Direct)
         viewModel.direct.submit(REQUEST)
 
         viewModel.applySheet()

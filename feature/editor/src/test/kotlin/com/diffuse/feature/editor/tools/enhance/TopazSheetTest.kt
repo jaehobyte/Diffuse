@@ -63,7 +63,7 @@ class TopazSheetTest {
         onEstimate = { calls += "estimate" },
         onRun = { calls += "run" },
         onSave = { calls += "save" },
-        onOpenCopy = { calls += "copy" },
+        onAdopt = { calls += "adopt" },
         onCompare = { calls += "compare:$it" },
         onOpenSettings = { calls += "settings" },
         onClose = { calls += "close" },
@@ -161,17 +161,17 @@ class TopazSheetTest {
     // ---- result -----------------------------------------------------------
 
     @Test
-    fun `a result is 닫기 and 새 편집본으로 열기, with 고해상도 저장 beside compare`() {
+    fun `a result is 닫기 and 적용, with 고해상도 저장 beside compare`() {
         show(withResult)
 
         compose.onNodeWithText("닫기").assertIsDisplayed().performClick()
-        compose.onNodeWithText("새 편집본으로 열기").assertIsEnabled().performClick()
+        compose.onNodeWithText("적용").assertIsEnabled().performClick()
         compose.onNodeWithTag(TopazSaveTestTag).performScrollTo().performClick()
         compose.onNodeWithText("결과 8192×6144").assertExists()
-        compose.onNodeWithText("다시 편집하면 긴 변 최대 4096px로 열립니다", substring = true).assertExists()
-        compose.onNodeWithText("이전 조정값을 이어서 바꿀 수는 없어요", substring = true).assertExists()
+        compose.onNodeWithText("긴 변 최대 4096px로 이어서 편집해요", substring = true).assertExists()
+        compose.onNodeWithText("되돌리기로 되돌릴 수 있어요", substring = true).assertExists()
         compose.onNodeWithText("실행").assertDoesNotExist()
-        assertEquals(listOf("close", "copy", "save"), calls)
+        assertEquals(listOf("close", "adopt", "save"), calls)
     }
 
     @Test
@@ -250,7 +250,7 @@ class TopazSheetTest {
 
         compose.onNodeWithText("이전 설정의 결과예요", substring = true).performScrollTo().assertExists()
         compose.onNodeWithText("실행").assertIsEnabled()
-        compose.onNodeWithText("새 편집본으로 열기").assertDoesNotExist()
+        compose.onNodeWithText("적용").assertDoesNotExist()
     }
 
     @Test
@@ -258,7 +258,7 @@ class TopazSheetTest {
     fun `at twice the font size the sheet stays within 45 percent and the actions stay reachable`() {
         show(withResult)
 
-        compose.onNodeWithText("새 편집본으로 열기").assertIsDisplayed()
+        compose.onNodeWithText("적용").assertIsDisplayed()
         compose.onNodeWithTag(TopazSaveTestTag).performScrollTo().assertIsDisplayed()
         val screen = ApplicationProvider.getApplicationContext<Context>().resources.displayMetrics.heightPixels
         val sheet = compose.onNodeWithTag(TopazSheetTestTag).fetchSemanticsNode().size.height
