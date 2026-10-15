@@ -187,10 +187,16 @@ internal object ProposalDecoder {
         FN_ERASE_SELECTION -> listOf(PlanStep.Erase(args.required(ARG_TARGET)))
         FN_CUT_OUT_SELECTION -> listOf(PlanStep.CutOut(args.required(ARG_TARGET)))
         FN_FILL_SELECTION -> listOf(PlanStep.Fill(args.required(ARG_PROMPT), args.required(ARG_TARGET)))
-        FN_CROP_RATIO -> listOf(PlanStep.Crop(cropRatioOf(args.required(ARG_RATIO)) ?: fail("unknown ratio")))
+        FN_CROP_RATIO, FN_EXPAND_TO_RATIO -> listOf(ratioStep(tool, args))
         FN_APPLY_STYLE -> listOf(style(args))
         FN_TOPAZ_ENHANCE -> listOf(topaz(args))
         else -> fail("unknown tool")
+    }
+
+    /** §4.1 and outpaint.md: the same closed ratio, removed from the frame or added around it. */
+    private fun ratioStep(tool: String, args: JsonObject): PlanStep {
+        val ratio = cropRatioOf(args.required(ARG_RATIO)) ?: fail("unknown ratio")
+        return if (tool == FN_CROP_RATIO) PlanStep.Crop(ratio) else PlanStep.Expand(ratio)
     }
 
     private fun adjust(args: JsonObject, context: PlanContext): PlanStep.Adjust {
@@ -317,7 +323,7 @@ internal object ProposalCheck {
      * @return the first rule [proposal] breaks for a request whose text is [requestText], or null.
      */
     fun violation(proposal: PlanProposal, requestText: String, context: PlanContext = PlanContext()): String? =
-        envelope(proposal, requestText) ?: topazJob(proposal, context) ?: selectionViolation(proposal, context)
+        envelope(proposal, requestText, context) ?: topazJob(proposal, context) ?: selectionViolation(proposal, context)
 
     /**
      * specs/vibe_edit.md §19: the rules that hold for any part of a proposal — the ones a user's
@@ -331,8 +337,8 @@ internal object ProposalCheck {
             ?: constraints(proposal)
             ?: StateSimulation(context).violation(proposal.workflow.map { it.step })
 
-    @Suppress("CyclomaticComplexMethod")
-    private fun envelope(proposal: PlanProposal, requestText: String): String? {
+    @Suppress("CyclomaticComplexMethod", "LongMethod")
+    private fun envelope(proposal: PlanProposal, requestText: String, context: PlanContext): String? {
         val ids = proposal.observations.map { it.id }
         val goalIds = proposal.goals.map { it.id }
         val steps = proposal.workflow
@@ -349,6 +355,14 @@ internal object ProposalCheck {
             requestText.isBlank() && proposal.direction?.source == GoalSource.User ->
                 "a user direction without a request"
             steps.count { it.step is PlanStep.Crop } > 1 -> "more than one crop"
+            steps.count { it.step is PlanStep.Expand } > 1 -> "more than one expand"
+            steps.any { it.step is PlanStep.Expand } && steps.any { it.step is PlanStep.Crop } -> "expand with a crop"
+            steps.any { it.step is PlanStep.Expand } && steps.any { it.step is PlanStep.CutOut } ->
+                "expand with a cut-out"
+            // outpaint.md §3: an `Outpaint` goes under every stored mask and patch, so it is refused
+            // for a photo that already holds one rather than re-based over it.
+            steps.any { it.step is PlanStep.Expand } && !context.expandable ->
+                "expand on a photo already holding a selection"
             steps.count { it.step is PlanStep.Style } > 1 -> "more than one style"
             steps.count { it.step is PlanStep.Topaz } > 1 -> "more than one topaz"
             // §19: a default goal may name any tool; what it may not do is leave its scope.
@@ -420,7 +434,7 @@ internal object ProposalCheck {
                     if (label !in declared) return "an undeclared target"
                     if (label != current) return "${step.name} on a selection that is not the current one"
                 }
-                is PlanStep.Crop, is PlanStep.Style, is PlanStep.Topaz -> Unit
+                is PlanStep.Crop, is PlanStep.Expand, is PlanStep.Style, is PlanStep.Topaz -> Unit
             }
         }
         return null
@@ -455,8 +469,8 @@ internal object ProposalCheck {
 
     private fun GoalScope.allows(step: PlanStep): Boolean = when (this) {
         GoalScope.Subject -> step is PlanStep.Select || step.consumesSelection
-        GoalScope.Global -> step is PlanStep.Style || step is PlanStep.Crop || step is PlanStep.Topaz ||
-            (step is PlanStep.Adjust && !step.masked)
+        GoalScope.Global -> step is PlanStep.Style || step is PlanStep.Crop || step is PlanStep.Expand ||
+            step is PlanStep.Topaz || (step is PlanStep.Adjust && !step.masked)
         GoalScope.ColorRange -> step is PlanStep.Adjust && !step.masked && step.kind.hsl != null
     }
 
@@ -467,7 +481,7 @@ internal object ProposalCheck {
         get() = when (this) {
             is PlanStep.Adjust -> masked
             is PlanStep.Erase, is PlanStep.CutOut, is PlanStep.Fill -> true
-            is PlanStep.Select, is PlanStep.Crop, is PlanStep.Style, is PlanStep.Topaz -> false
+            is PlanStep.Select, is PlanStep.Crop, is PlanStep.Expand, is PlanStep.Style, is PlanStep.Topaz -> false
         }
 
     private val PlanStep.consumed: String?
@@ -481,7 +495,7 @@ internal object ProposalCheck {
     private fun PlanStep.uses(label: String): Boolean = consumes(label)
 
     private val PlanStep.isGenerative: Boolean
-        get() = this is PlanStep.Erase || this is PlanStep.Fill || this is PlanStep.Topaz
+        get() = this is PlanStep.Erase || this is PlanStep.Fill || this is PlanStep.Expand || this is PlanStep.Topaz
 
     private val PlanStep.changesHue: Boolean
         get() = this is PlanStep.Style ||

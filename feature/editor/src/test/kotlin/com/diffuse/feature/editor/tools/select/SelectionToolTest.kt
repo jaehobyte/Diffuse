@@ -1,8 +1,5 @@
 package com.diffuse.feature.editor.tools.select
 
-import com.diffuse.core.ai.FakeTopazProvider
-import com.diffuse.feature.editor.tools.enhance.testTopazSettings
-import com.diffuse.feature.editor.tools.enhance.testTopazStorage
 import android.graphics.Bitmap
 import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
@@ -14,6 +11,7 @@ import com.diffuse.core.ai.FakeMatchStyleProvider
 import com.diffuse.core.ai.FakeOutpaintProvider
 import com.diffuse.core.ai.FakePlanProvider
 import com.diffuse.core.ai.FakeSegmentationProvider
+import com.diffuse.core.ai.FakeTopazProvider
 import com.diffuse.core.ai.MaskBitmaps
 import com.diffuse.core.ai.gemini.GeminiSettings
 import com.diffuse.core.ai.sam3.Sam3Settings
@@ -30,16 +28,18 @@ import com.diffuse.core.imaging.model.Operation
 import com.diffuse.core.imaging.render.Renderer
 import com.diffuse.feature.editor.EditorAi
 import com.diffuse.feature.editor.EditorViewModel
+import com.diffuse.feature.editor.R
 import com.diffuse.feature.editor.TestDispatchers
-import com.diffuse.feature.editor.Tool
+import com.diffuse.feature.editor.tools.enhance.testTopazSettings
+import com.diffuse.feature.editor.tools.enhance.testTopazStorage
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
-import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -54,7 +54,8 @@ import org.junit.runner.RunWith
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * specs/selection_tool.md §10. Everything runs on `FakeSegmentationProvider`; no test outside
+ * specs/selection_tool.md §10, as the tool stands without its sheet: a tap on the photo at the
+ * AI level is the whole tool. Everything runs on `FakeSegmentationProvider`; no test outside
  * `core:ai` may touch a socket (CLAUDE.md hard limits).
  */
 @RunWith(AndroidJUnit4::class)
@@ -62,7 +63,6 @@ import org.robolectric.annotation.GraphicsMode
 class SelectionToolTest {
 
     private val provider = FakeSegmentationProvider(openDelayMs = 0)
-    private val eraseProvider = FakeEraseProvider()
     private lateinit var repository: RecordingRepository
     private lateinit var settings: Sam3Settings
     private lateinit var geminiSettings: GeminiSettings
@@ -83,7 +83,7 @@ class SelectionToolTest {
     // ---- availability ----------------------------------------------------
 
     @Test
-    fun `the tool is disabled while the provider is unavailable`() = runTest {
+    fun `selection is disabled while the provider is unavailable`() = runTest {
         provider.setAvailability(Availability.Unavailable(AppError.Unavailable))
         val viewModel = viewModel()
 
@@ -91,20 +91,18 @@ class SelectionToolTest {
     }
 
     @Test
-    fun `tapping an unreachable tool explains itself instead of opening`() = runTest {
+    fun `a tap the backend cannot serve explains itself instead of selecting`() = runTest {
         provider.setAvailability(Availability.Unavailable(AppError.Unavailable))
         val viewModel = viewModel()
 
-        viewModel.onToolClick(Tool.Select)
+        viewModel.selectOnCanvas(0.5f, 0.5f, foreground = true)
 
         val selection = viewModel.uiState.value.selection
-        assertNull("the selection sheet must not open", viewModel.uiState.value.selectedTool)
+        assertTrue(selection.points.isEmpty())
+        assertEquals(0, provider.openCount)
         // Which of the two channels it uses depends on whether the backend ever answered; the
-        // two tests above pin that. What matters here is that the user is not left with nothing.
-        assertTrue(
-            "the user was told nothing",
-            selection.showSettings || selection.message != null,
-        )
+        // tests below pin that. What matters here is that the user is not left with nothing.
+        assertTrue("the user was told nothing", selection.showSettings || selection.message != null)
     }
 
     @Test
@@ -112,7 +110,7 @@ class SelectionToolTest {
         provider.setAvailability(Availability.Unavailable(AppError.Invalid("not configured")))
         val viewModel = viewModel()
 
-        viewModel.onToolClick(Tool.Select)
+        viewModel.selectOnCanvas(0.5f, 0.5f, foreground = true)
 
         assertTrue(viewModel.uiState.value.selection.showSettings)
         assertNull(viewModel.uiState.value.selection.message)
@@ -130,22 +128,18 @@ class SelectionToolTest {
             provider.setAvailability(Availability.Unavailable(AppError.Unavailable))
             val viewModel = viewModel()
 
-            viewModel.onToolClick(Tool.Select)
+            viewModel.selectOnCanvas(0.5f, 0.5f, foreground = true)
 
-            assertTrue(
-                "no way to fix a wrong address",
-                viewModel.uiState.value.selection.showSettings,
-            )
+            assertTrue("no way to fix a wrong address", viewModel.uiState.value.selection.showSettings)
         }
 
     @Test
     fun `a backend that worked before is treated as a blip, not a misconfiguration`() = runTest {
         val viewModel = viewModel()
-        viewModel.onToolClick(Tool.Select)
-        viewModel.cancelSheet()
+        viewModel.selectOnCanvas(0.5f, 0.5f, foreground = true)
 
         provider.setAvailability(Availability.Unavailable(AppError.Unavailable))
-        viewModel.onToolClick(Tool.Select)
+        viewModel.selectOnCanvas(0.2f, 0.2f, foreground = true)
 
         assertFalse(
             "a transient outage should not throw the settings sheet at the user",
@@ -163,57 +157,90 @@ class SelectionToolTest {
     @Test
     fun `a rejected token offers the settings sheet even though the server is up`() = runTest {
         val viewModel = viewModel()
-        viewModel.onToolClick(Tool.Select)
-        viewModel.cancelSheet()
+        viewModel.selectOnCanvas(0.5f, 0.5f, foreground = true)
 
         provider.setAvailability(Availability.Unavailable(AppError.Unauthorized))
-        viewModel.onToolClick(Tool.Select)
+        viewModel.selectOnCanvas(0.2f, 0.2f, foreground = true)
 
-        assertTrue(
-            "no way to correct the token",
-            viewModel.uiState.value.selection.showSettings,
-        )
+        assertTrue("no way to correct the token", viewModel.uiState.value.selection.showSettings)
+    }
+
+    @Test
+    fun `a transient outage re-probes on the next tap instead of staying greyed`() = runTest {
+        val viewModel = viewModel()
+        provider.setAvailability(Availability.Unavailable(AppError.Unavailable))
+        val probesBefore = provider.refreshCount
+
+        viewModel.selectOnCanvas(0.5f, 0.5f, foreground = true)
+
+        assertNotNull("the user is told", viewModel.uiState.value.selection.message)
+        assertTrue("and the backend is re-probed rather than left greyed", provider.refreshCount > probesBefore)
     }
 
     // ---- sessions --------------------------------------------------------
 
     @Test
-    fun `the session is opened once per editor session, not once per sheet`() = runTest {
+    fun `the session is opened once per editor session, not once per tap`() = runTest {
         val viewModel = viewModel()
 
-        viewModel.onToolClick(Tool.Select)
-        viewModel.cancelSheet()
-        viewModel.onToolClick(Tool.Select)
+        viewModel.selectOnCanvas(0.5f, 0.5f, foreground = true)
+        viewModel.selectOnCanvas(0.2f, 0.2f, foreground = true)
 
         assertEquals(1, provider.openCount)
     }
 
-    /**
-     * The server's session cache is 4 deep with a 120s TTL. A second upload while the first is
-     * still in flight leaks a session server-side and, repeated, trips the rate limiter — which
-     * is exactly what happened on the first device run.
-     */
-    /**
-     * Giving up on a slow upload does not un-create the session the server already made. Left
-     * unreleased, four of those fill its cache and the fifth attempt is rate-limited — which is
-     * what took the tool offline on the first device run.
-     */
+    // These read the controller's own state: with a queued dispatcher the ViewModel's collector
+    // has not run yet, and running it to idle would finish the upload being waited on.
+
+    /** The first tap opens the session and waits on it, shown; a second tap in that window does not re-open. */
     @Test
-    fun `cancelling a slow open releases the session the server already made`() = runTest {
+    fun `the first tap opens the session, shows progress and is segmented once it is ready`() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val slow = FakeSegmentationProvider(openDelayMs = 5_000)
         val viewModel = viewModel(slow)
         advanceUntilIdle()
+        assertEquals("nothing is uploaded before the tap", 0, slow.openCount)
 
-        viewModel.onToolClick(Tool.Select)
+        viewModel.selectOnCanvas(0.5f, 0.5f, foreground = true)
         advanceTimeBy(1_000)
+        assertTrue(viewModel.selection.state.value.preparing)
+        assertTrue("the tap waits on the upload, and sees it", viewModel.selection.state.value.working)
+        assertNotNull(viewModel.selection.state.value.pending)
+
+        viewModel.selectOnCanvas(0.6f, 0.6f, foreground = true)
+        assertEquals(
+            "the newer tap replaces the kept one",
+            PendingPoint(0.6f, 0.6f, true),
+            viewModel.selection.state.value.pending,
+        )
+        advanceUntilIdle()
+
+        val selection = viewModel.selection.state.value
+        assertEquals("one upload, not two", 1, slow.openCount)
+        assertNull(selection.pending)
+        assertEquals(listOf(true), selection.labels)
+        assertNotNull("the kept tap was segmented", selection.mask)
+        assertFalse(selection.working)
+        assertEquals("and committed", 1, repository.savedMasks.size)
+    }
+
+    @Test
+    fun `cancelling while a tap is pending drops the tap`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val slow = FakeSegmentationProvider(openDelayMs = 5_000)
+        val viewModel = viewModel(slow)
+        advanceUntilIdle()
+        viewModel.selectOnCanvas(0.5f, 0.5f, foreground = true)
+
         viewModel.selection.cancelWork()
         advanceUntilIdle()
 
-        assertTrue(
-            "a session was left behind on the server",
-            slow.openSessions.isEmpty(),
-        )
+        val selection = viewModel.selection.state.value
+        assertNull(selection.pending)
+        assertNull(selection.mask)
+        assertTrue(selection.points.isEmpty())
+        assertFalse(selection.working)
+        assertTrue("a session was left behind on the server", slow.openSessions.isEmpty())
     }
 
     /** A ticket, not a flag: re-opening must not make the abandoned upload's session wanted again. */
@@ -223,12 +250,11 @@ class SelectionToolTest {
         val slow = FakeSegmentationProvider(openDelayMs = 5_000)
         val viewModel = viewModel(slow)
         advanceUntilIdle()
-        val preview = Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888)
 
-        viewModel.selection.open(preview)
+        viewModel.selection.open(preview())
         advanceTimeBy(1_000)
         viewModel.selection.cancelWork()
-        viewModel.selection.open(preview)
+        viewModel.selection.open(preview())
         advanceUntilIdle()
 
         val session = viewModel.uiState.value.selection.session
@@ -236,10 +262,25 @@ class SelectionToolTest {
         assertEquals("a session was left behind on the server", listOf(session), slow.openSessions)
     }
 
+    /** An upload the tap started and that failed says so, and drops the tap it was carrying. */
+    @Test
+    fun `a failed open says so and keeps no pending tap`() = runTest {
+        val viewModel = viewModel()
+        provider.failNext(AppError.Unavailable)
+
+        viewModel.selectOnCanvas(0.5f, 0.5f, foreground = true)
+
+        val selection = viewModel.uiState.value.selection
+        assertEquals(R.string.select_failed, selection.message)
+        assertFalse(selection.preparing)
+        assertNull(selection.pending)
+        assertNull(selection.mask)
+    }
+
     @Test
     fun `leaving the editor releases the session`() = runTest {
         val viewModel = viewModel()
-        viewModel.onToolClick(Tool.Select)
+        viewModel.selectOnCanvas(0.5f, 0.5f, foreground = true)
         assertEquals(1, provider.openSessions.size)
 
         viewModel.onLeave()
@@ -247,48 +288,31 @@ class SelectionToolTest {
         assertTrue("the session was left open on the server", provider.openSessions.isEmpty())
     }
 
-    /**
-     * 429 and a dropped connection both arrive as `Unavailable`, and both are transient. Latching
-     * the tool off until the settings change leaves the user with a permanently grey button.
-     */
-    @Test
-    fun `a transient outage re-probes on the next tap instead of staying greyed`() = runTest {
-        val viewModel = viewModel()
-        provider.setAvailability(Availability.Unavailable(AppError.Unavailable))
-        val probesBefore = provider.refreshCount
-
-        viewModel.onToolClick(Tool.Select)
-
-        assertNotNull("the user is told", viewModel.uiState.value.selection.message)
-        assertTrue(
-            "and the backend is re-probed rather than left greyed",
-            provider.refreshCount > probesBefore,
-        )
-    }
-
-    // ---- points ----------------------------------------------------------
+    // ---- taps ------------------------------------------------------------
 
     @Test
-    fun `a tap produces a mask`() = runTest {
+    fun `a tap produces a mask and commits it as one Mask op`() = runTest {
         val viewModel = viewModel()
-        viewModel.onToolClick(Tool.Select)
 
-        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
+        viewModel.selectOnCanvas(0.5f, 0.5f, foreground = true)
 
-        val selection = viewModel.uiState.value.selection
-        assertEquals(1, selection.points.size)
-        assertEquals(listOf(true), selection.labels)
-        assertNotNull(selection.mask)
+        val state = viewModel.uiState.value
+        assertEquals(listOf(true), state.selection.labels)
+        assertNotNull(state.selection.mask)
+        assertEquals(1, repository.savedMasks.size)
+        val masks = state.document!!.operations.filterIsInstance<Operation.Mask>()
+        assertEquals(1, masks.size)
+        assertEquals(masks.single().id, state.document.activeMaskId)
+        assertTrue("one tap is one undo", state.canUndo)
     }
 
     @Test
     fun `a long press adds a background point and shrinks the mask`() = runTest {
         val viewModel = viewModel()
-        viewModel.onToolClick(Tool.Select)
-        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
+        viewModel.selectOnCanvas(0.5f, 0.5f, foreground = true)
         val before = MaskBitmaps.coverage(viewModel.uiState.value.selection.mask!!)
 
-        viewModel.selection.addPoint(0.52f, 0.5f, foreground = false)
+        viewModel.selectOnCanvas(0.52f, 0.5f, foreground = false)
 
         val selection = viewModel.uiState.value.selection
         assertEquals(listOf(true, false), selection.labels)
@@ -296,291 +320,50 @@ class SelectionToolTest {
     }
 
     @Test
-    fun `undo drops the last point and re-segments`() = runTest {
+    fun `each refinement is one more history entry and the newest mask is the active one`() = runTest {
         val viewModel = viewModel()
-        viewModel.onToolClick(Tool.Select)
-        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
-        val oneCoverage = MaskBitmaps.coverage(viewModel.uiState.value.selection.mask!!)
-        viewModel.selection.addPoint(0.52f, 0.5f, foreground = false)
+        viewModel.selectOnCanvas(0.5f, 0.5f, foreground = true)
 
-        viewModel.undo()
-
-        val selection = viewModel.uiState.value.selection
-        assertEquals(1, selection.points.size)
-        assertEquals(oneCoverage, MaskBitmaps.coverage(selection.mask!!), 0f)
-    }
-
-    @Test
-    fun `undoing the only point clears the mask instead of prompting with nothing`() = runTest {
-        val viewModel = viewModel()
-        viewModel.onToolClick(Tool.Select)
-        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
-
-        viewModel.undo()
-
-        assertNull(viewModel.uiState.value.selection.mask)
-        assertTrue(viewModel.uiState.value.selection.points.isEmpty())
-    }
-
-    @Test
-    fun `undo leaves the document alone while the sheet is open`() = runTest {
-        val viewModel = viewModel()
-        viewModel.onToolClick(Tool.Select)
-        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
-
-        viewModel.undo()
-
-        assertEquals(emptyList<Operation>(), viewModel.uiState.value.document?.operations)
-    }
-
-    // ---- 반전 / 지우기 -----------------------------------------------------
-
-    @Test
-    fun `invert flips the mask and is its own inverse`() = runTest {
-        val viewModel = viewModel()
-        viewModel.onToolClick(Tool.Select)
-        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
-        val original = MaskBitmaps.coverage(viewModel.uiState.value.selection.mask!!)
-
-        viewModel.selection.invert()
-        val inverted = MaskBitmaps.coverage(viewModel.uiState.value.selection.mask!!)
-        viewModel.selection.invert()
-
-        assertEquals(1f - original, inverted, 0.001f)
-        assertEquals(original, MaskBitmaps.coverage(viewModel.uiState.value.selection.mask!!), 0f)
-    }
-
-    @Test
-    fun `a phrase typed while a tap is segmenting survives its answer`() = runTest {
-        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
-        val viewModel = viewModel()
-        advanceUntilIdle()
-        viewModel.onToolClick(Tool.Select)
-        advanceUntilIdle()
-
-        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
-        viewModel.selection.setPhrase("하늘")
-        advanceUntilIdle()
-
-        val selection = viewModel.uiState.value.selection
-        assertNotNull(selection.mask)
-        assertEquals("하늘", selection.phrase)
-    }
-
-    @Test
-    fun `invert ends the run a tap in flight was for, so its answer cannot undo the flip`() = runTest {
-        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
-        val viewModel = viewModel()
-        advanceUntilIdle()
-        viewModel.onToolClick(Tool.Select)
-        advanceUntilIdle()
-        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
-        advanceUntilIdle()
-        val before = MaskBitmaps.coverage(viewModel.uiState.value.selection.mask!!)
-
-        viewModel.selection.addPoint(0.2f, 0.2f, foreground = true)
-        viewModel.selection.invert()
-        advanceUntilIdle()
-
-        val selection = viewModel.uiState.value.selection
-        assertFalse(selection.busy)
-        assertEquals(1f - before, MaskBitmaps.coverage(selection.mask!!), 0.001f)
-    }
-
-    @Test
-    fun `clear drops the selection but keeps the session`() = runTest {
-        val viewModel = viewModel()
-        viewModel.onToolClick(Tool.Select)
-        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
-
-        viewModel.selection.clear()
-
-        val selection = viewModel.uiState.value.selection
-        assertNull(selection.mask)
-        assertTrue(selection.points.isEmpty())
-        assertNotNull(selection.session)
-    }
-
-    // ---- apply / cancel --------------------------------------------------
-
-    @Test
-    fun `apply writes one mask file and one Mask op, and makes it active`() = runTest {
-        val viewModel = viewModel()
-        viewModel.onToolClick(Tool.Select)
-        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
-
-        viewModel.applySheet()
+        viewModel.selectOnCanvas(0.52f, 0.5f, foreground = false)
 
         val document = viewModel.uiState.value.document!!
         val masks = document.operations.filterIsInstance<Operation.Mask>()
-        assertEquals(1, masks.size)
-        assertEquals(masks.single().id, document.activeMaskId)
-        assertEquals(1, repository.savedMasks.size)
-        assertEquals(masks.single().id, repository.savedMasks.single())
-        assertNull(viewModel.uiState.value.selectedTool)
+        assertEquals(2, masks.size)
+        assertEquals(masks.last().id, document.activeMaskId)
+        assertEquals(2, repository.savedMasks.size)
     }
 
     @Test
-    fun `a failed mask write leaves the sheet open with the selection intact`() = runTest {
-        repository.failMaskWrite = true
+    fun `undo takes back one tap and ends the run`() = runTest {
         val viewModel = viewModel()
-        viewModel.onToolClick(Tool.Select)
-        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
-
-        viewModel.applySheet()
-
-        assertEquals(Tool.Select, viewModel.uiState.value.selectedTool)
-        assertNotNull(viewModel.uiState.value.selection.mask)
-        assertNotNull(viewModel.uiState.value.selection.message)
-        assertEquals(emptyList<Operation>(), viewModel.uiState.value.document?.operations)
-    }
-
-    @Test
-    fun `cancel leaves the document untouched`() = runTest {
-        val viewModel = viewModel()
-        viewModel.onToolClick(Tool.Select)
-        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
-
-        viewModel.cancelSheet()
-
-        assertEquals(emptyList<Operation>(), viewModel.uiState.value.document?.operations)
-        assertNull(viewModel.uiState.value.selection.mask)
-        assertNull(viewModel.uiState.value.selectedTool)
-    }
-
-    @Test
-    fun `배경 지우기 writes the mask and the cut-out as one history entry`() = runTest {
-        val viewModel = viewModel()
-        viewModel.onToolClick(Tool.Select)
-        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
-
-        viewModel.applySelection(cutOut = true)
-
-        val document = viewModel.uiState.value.document!!
-        val maskId = document.operations.filterIsInstance<Operation.Mask>().single().id
-        assertEquals(maskId, document.cutOuts().single().maskId)
-        assertTrue(document.hasAlpha)
-        assertNull(viewModel.uiState.value.selectedTool)
-    }
-
-    @Test
-    fun `undo takes back the mask and the cut-out together`() = runTest {
-        val viewModel = viewModel()
-        viewModel.onToolClick(Tool.Select)
-        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
-        viewModel.applySelection(cutOut = true)
+        viewModel.selectOnCanvas(0.5f, 0.5f, foreground = true)
+        viewModel.selectOnCanvas(0.52f, 0.5f, foreground = false)
+        val first = viewModel.uiState.value.document!!.operations.filterIsInstance<Operation.Mask>().first()
 
         viewModel.undo()
 
-        val document = viewModel.uiState.value.document!!
-        assertEquals(emptyList<Operation>(), document.operations)
-        assertNull(document.activeMaskId)
-        assertFalse(document.hasAlpha)
+        val state = viewModel.uiState.value
+        assertEquals(first.id, state.document!!.activeMaskId)
+        assertTrue("the run's points are gone", state.selection.points.isEmpty())
+        assertNull(state.selection.mask)
+
+        // The next tap starts a new selection rather than refining stale points.
+        viewModel.selectOnCanvas(0.3f, 0.3f, foreground = true)
+        assertEquals(listOf(true), viewModel.uiState.value.selection.labels)
     }
 
-    // ---- prompt (specs/prompt_input.md 4) --------------------------------
-
+    /** A run of only exclusions selects nothing, and nothing is what gets committed. */
     @Test
-    fun `a phrase segments every instance and merges them as one`() = runTest {
+    fun `a long press alone selects nothing and commits nothing`() = runTest {
         val viewModel = viewModel()
-        viewModel.onToolClick(Tool.Select)
 
-        viewModel.selection.submitPhrase("사람")
+        viewModel.selectOnCanvas(0.5f, 0.5f, foreground = false)
 
-        val selection = viewModel.uiState.value.selection
-        assertNotNull(selection.mask)
-        // The fake returns two circles; their union is what merged.
-        assertTrue(MaskBitmaps.coverage(selection.mask!!) > 0f)
-        assertFalse(selection.notFound)
-    }
-
-    @Test
-    fun `the bar clears only after a successful merge`() = runTest {
-        val viewModel = viewModel()
-        viewModel.onToolClick(Tool.Select)
-        viewModel.selection.setPhrase("사람")
-
-        viewModel.selection.submitPhrase("사람")
-
-        assertEquals("", viewModel.uiState.value.selection.phrase)
-    }
-
-    @Test
-    fun `a phrase adds to what points already selected`() = runTest {
-        val viewModel = viewModel()
-        viewModel.onToolClick(Tool.Select)
-        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
-        val afterPoint = MaskBitmaps.coverage(viewModel.uiState.value.selection.mask!!)
-
-        viewModel.selection.submitPhrase("하늘")
-
-        assertTrue(MaskBitmaps.coverage(viewModel.uiState.value.selection.mask!!) > afterPoint)
-    }
-
-    @Test
-    fun `a phrase in subtract mode takes its instances out`() = runTest {
-        val viewModel = viewModel()
-        viewModel.onToolClick(Tool.Select)
-        viewModel.selection.submitPhrase("사람")
-        val added = MaskBitmaps.coverage(viewModel.uiState.value.selection.mask!!)
-
-        viewModel.selection.setMode(MergeMode.Subtract)
-        viewModel.selection.submitPhrase("사람")
-
-        assertNull(viewModel.uiState.value.selection.mask)
-        assertTrue(added > 0f)
-    }
-
-    @Test
-    fun `an absent concept is a hint, not a failure, and keeps the phrase`() = runTest {
-        val viewModel = viewModel()
-        viewModel.onToolClick(Tool.Select)
-
-        viewModel.selection.submitPhrase("없음")
-
-        val selection = viewModel.uiState.value.selection
-        assertTrue(selection.notFound)
-        assertNull(selection.message)
-        assertEquals("없음", selection.phrase)
-    }
-
-    @Test
-    fun `a failed phrase keeps the text so the user can retry`() = runTest {
-        val viewModel = viewModel()
-        viewModel.onToolClick(Tool.Select)
-        provider.failNext(AppError.Unavailable)
-
-        viewModel.selection.submitPhrase("사람")
-
-        val selection = viewModel.uiState.value.selection
-        assertEquals("사람", selection.phrase)
-        assertNotNull(selection.message)
-        assertNull(selection.mask)
-    }
-
-    @Test
-    fun `a blank phrase never reaches the provider`() = runTest {
-        val viewModel = viewModel()
-        viewModel.onToolClick(Tool.Select)
-
-        viewModel.selection.submitPhrase("   ")
-
-        assertFalse(viewModel.uiState.value.selection.phraseBusy)
-        assertNull(viewModel.uiState.value.selection.mask)
-    }
-
-    @Test
-    fun `cancelling a phrase leaves what was already accumulated`() = runTest {
-        val viewModel = viewModel()
-        viewModel.onToolClick(Tool.Select)
-        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
-        val before = MaskBitmaps.coverage(viewModel.uiState.value.selection.mask!!)
-
-        viewModel.selection.cancelWork()
-
-        val selection = viewModel.uiState.value.selection
-        assertEquals(before, MaskBitmaps.coverage(selection.mask!!), 0f)
-        assertFalse(selection.working)
+        val state = viewModel.uiState.value
+        assertEquals(listOf(false), state.selection.labels)
+        assertNull(state.selection.mask)
+        assertTrue(state.document!!.operations.isEmpty())
+        assertTrue(repository.savedMasks.isEmpty())
     }
 
     // ---- failures --------------------------------------------------------
@@ -588,83 +371,36 @@ class SelectionToolTest {
     @Test
     fun `a failed prompt keeps the mask the user already had`() = runTest {
         val viewModel = viewModel()
-        viewModel.onToolClick(Tool.Select)
-        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
+        viewModel.selectOnCanvas(0.5f, 0.5f, foreground = true)
         val before = viewModel.uiState.value.selection.mask
         provider.failNext(AppError.Unavailable)
 
-        viewModel.selection.addPoint(0.2f, 0.2f, foreground = true)
+        viewModel.selectOnCanvas(0.2f, 0.2f, foreground = true)
 
         assertEquals(before, viewModel.uiState.value.selection.mask)
         assertNotNull(viewModel.uiState.value.selection.message)
-    }
-
-    // ---- merging (specs/selection_tool.md 4) -----------------------------
-
-    @Test
-    fun `switching mode ends the run, so the next tap builds a new selection`() = runTest {
-        val viewModel = viewModel()
-        viewModel.onToolClick(Tool.Select)
-        viewModel.selection.addPoint(0.3f, 0.3f, foreground = true)
-        val added = MaskBitmaps.coverage(viewModel.uiState.value.selection.mask!!)
-
-        viewModel.selection.setMode(MergeMode.Subtract)
-
-        val selection = viewModel.uiState.value.selection
-        assertTrue(selection.points.isEmpty())
-        assertEquals(added, MaskBitmaps.coverage(selection.base!!), 0f)
+        assertEquals(1, repository.savedMasks.size)
     }
 
     @Test
-    fun `a subtract-mode tap takes its own result out of the selection`() = runTest {
+    fun `a failed mask write leaves the document untouched and says so`() = runTest {
         val viewModel = viewModel()
-        viewModel.onToolClick(Tool.Select)
-        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
-        val added = MaskBitmaps.coverage(viewModel.uiState.value.selection.mask!!)
+        repository.failMaskWrite = true
 
-        viewModel.selection.setMode(MergeMode.Subtract)
-        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
+        viewModel.selectOnCanvas(0.5f, 0.5f, foreground = true)
 
-        assertNull(viewModel.uiState.value.selection.mask)
-        assertTrue(added > 0f)
+        val state = viewModel.uiState.value
+        assertTrue(state.document!!.operations.isEmpty())
+        assertNotNull(state.selection.message)
     }
 
-    @Test
-    fun `undo with an empty run takes back one whole merge`() = runTest {
-        val viewModel = viewModel()
-        viewModel.onToolClick(Tool.Select)
-        viewModel.selection.addPoint(0.3f, 0.3f, foreground = true)
-        val afterFirst = MaskBitmaps.coverage(viewModel.uiState.value.selection.mask!!)
-        viewModel.selection.setMode(MergeMode.Subtract)
-        viewModel.selection.setMode(MergeMode.Add)
-        viewModel.selection.addPoint(0.7f, 0.7f, foreground = true)
-        viewModel.undo()
-
-        // The run is empty now, so the next undo unwinds the merge itself.
-        viewModel.undo()
-
-        assertEquals(afterFirst, MaskBitmaps.coverage(viewModel.uiState.value.selection.mask!!), 0f)
-    }
-
-    @Test
-    fun `invert flips the whole accumulated selection`() = runTest {
-        val viewModel = viewModel()
-        viewModel.onToolClick(Tool.Select)
-        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
-        val before = MaskBitmaps.coverage(viewModel.uiState.value.selection.mask!!)
-
-        viewModel.selection.invert()
-
-        val selection = viewModel.uiState.value.selection
-        assertEquals(1f - before, MaskBitmaps.coverage(selection.mask!!), 0.001f)
-        assertEquals(selection.mask, selection.base)
-    }
+    // ---- settings --------------------------------------------------------
 
     @Test
     fun `saving settings closes the sheet and re-probes`() = runTest {
         provider.setAvailability(Availability.Unavailable(AppError.Invalid("not configured")))
         val viewModel = viewModel()
-        viewModel.onToolClick(Tool.Select)
+        viewModel.selectOnCanvas(0.5f, 0.5f, foreground = true)
 
         viewModel.selection.saveSettings("http://10.0.2.2:8080", "tok", "AIza-key", "")
 
@@ -700,6 +436,8 @@ class SelectionToolTest {
         assertEquals("", geminiSettings.config.value.apiKey)
     }
 
+    private fun preview() = Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888)
+
     // ---- fixtures --------------------------------------------------------
 
     private fun viewModel(
@@ -710,7 +448,7 @@ class SelectionToolTest {
         renderer = FakeRenderer(),
         ai = EditorAi(
             segmentation,
-            eraseProvider,
+            FakeEraseProvider(),
             FakeFillProvider(),
             FakeOutpaintProvider(),
             FakePlanProvider(),
@@ -741,7 +479,6 @@ class SelectionToolTest {
 
     private class RecordingRepository : ProjectRepository {
         val savedMasks = mutableListOf<String>()
-        val savedErases = mutableListOf<String>()
         var failMaskWrite = false
         private var document = EditDocument(
             id = PROJECT_ID,
@@ -772,16 +509,16 @@ class SelectionToolTest {
             projectId: String,
             eraseId: String,
             bitmap: Bitmap,
-        ): Result<ImageRef> {
-            savedErases += eraseId
-            return Result.Success(ImageRef("/projects/$projectId/erase_$eraseId.png"))
-        }
+        ): Result<ImageRef> = Result.Success(ImageRef("/projects/$projectId/erase_$eraseId.png"))
 
         override suspend fun saveFillResult(
             projectId: String,
             fillId: String,
             bitmap: Bitmap,
         ): Result<ImageRef> = Result.Success(ImageRef("/projects/$projectId/fill_$fillId.png"))
+
+        override suspend fun saveEnhanced(projectId: String, fileId: String, source: SourceImage): Result<ImageRef> =
+            Result.Success(ImageRef("/p/enhanced_$fileId.jpg"))
 
         override suspend fun saveOutpaintResult(
             projectId: String,

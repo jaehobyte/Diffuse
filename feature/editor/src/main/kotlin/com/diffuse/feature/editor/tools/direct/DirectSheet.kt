@@ -275,7 +275,7 @@ private fun Steps(proposal: PlanProposal, state: DirectState, onToggle: (String)
         if (state.topazStep != null && state.candidate == null) {
             Line(stringResource(R.string.direct_run_topaz_note), Modifier.testTag(DirectRunNoteTestTag))
         }
-        if (items.any { it.step is PlanStep.Erase || it.step is PlanStep.Fill }) {
+        if (items.any { it.step is PlanStep.Erase || it.step is PlanStep.Fill || it.step is PlanStep.Expand }) {
             Secondary(stringResource(R.string.direct_review_paid))
         }
     }
@@ -332,7 +332,7 @@ private fun ItemRow(
 /** §19: what an item costs, said on the item — generated patches and the Topaz run. */
 @StringRes
 private fun costRes(step: PlanStep): Int? = when {
-    step is PlanStep.Erase || step is PlanStep.Fill -> R.string.direct_item_generative
+    step is PlanStep.Erase || step is PlanStep.Fill || step is PlanStep.Expand -> R.string.direct_item_generative
     step is PlanStep.Topaz && step.purpose.generative -> R.string.direct_item_topaz_generative
     step is PlanStep.Topaz -> R.string.direct_item_topaz
     else -> null
@@ -354,7 +354,7 @@ private fun targetName(step: PlanStep, goal: PlanGoal?, phrases: Map<String, Str
         is PlanStep.Erase -> step.target
         is PlanStep.CutOut -> step.target
         is PlanStep.Fill -> step.target
-        is PlanStep.Select, is PlanStep.Crop, is PlanStep.Style, is PlanStep.Topaz -> null
+        is PlanStep.Select, is PlanStep.Crop, is PlanStep.Expand, is PlanStep.Style, is PlanStep.Topaz -> null
     }
     val existing = (step as? PlanStep.Adjust)?.target is PlanTarget.Existing
     return when {
@@ -471,7 +471,7 @@ private fun TopazLines(candidate: CandidateState, state: DirectState) {
         result != null -> {
             Line(stringResource(R.string.direct_topaz_done))
             Secondary(stringResource(R.string.topaz_result_size, result.width, result.height))
-            Secondary(stringResource(R.string.topaz_copy_note))
+            Secondary(stringResource(R.string.topaz_adopt_note))
         }
         candidate.topazFailure != null -> {
             Line(stringResource(messageFor(candidate.topazFailure)))
@@ -483,16 +483,16 @@ private fun TopazLines(candidate: CandidateState, state: DirectState) {
 
 /**
  * The primary's words: null is `EditSheet`'s own 적용. §19: one 선택한 보정 실행 runs everything
- * chosen; a Topaz result is kept as 새 편집본으로 열기 (고해상도 저장 is the review's secondary), and
- * a candidate whose remote part must run again says 선택한 보정 다시 실행.
+ * chosen; a result, with or without Topaz, is kept by 적용 (고해상도 저장 is the review's
+ * secondary), and a candidate whose remote part must run again says 선택한 보정 다시 실행.
  */
 @StringRes
 private fun primaryLabel(state: DirectState): Int? = when (state.candidate?.phase) {
     CandidatePhase.Confirming -> R.string.direct_confirm_yes
-    CandidatePhase.Review -> when {
-        state.topazStep == null -> null
-        state.candidate.topaz != null -> R.string.topaz_open_copy
-        else -> R.string.direct_run_again
+    CandidatePhase.Review -> if (state.topazStep == null || state.candidate.topaz != null) {
+        null
+    } else {
+        R.string.direct_run_again
     }
     CandidatePhase.Running, CandidatePhase.Checking, null -> R.string.direct_run
     CandidatePhase.Stale -> R.string.direct_run_again
@@ -591,6 +591,11 @@ private fun itemLine(step: PlanStep, goal: PlanGoal?, phrases: Map<String, Strin
         // §4.1: the ratio reads in the same characters the 자르기 sheet is about to show.
         is PlanStep.Crop -> stringResource(
             R.string.direct_step_crop,
+            stringResource(presetLabelRes(step.ratio.preset)),
+        )
+        // outpaint.md in a plan: the same chip characters, the other way round.
+        is PlanStep.Expand -> stringResource(
+            R.string.direct_step_expand,
             stringResource(presetLabelRes(step.ratio.preset)),
         )
         // specs/style_match.md §6: the preset's own Korean, the same string the 스타일 tile shows.

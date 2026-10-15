@@ -44,10 +44,10 @@ fun ToolSheetHost(
             document, onValueChange, onValueChangeFinished, onCancel, onApply, modifier, maskOption,
             onAiShortcut?.let { { it(TopazGroup.Enhance) } },
         )
-        // Crop, Select, Fill, Expand, 화질 개선, Style, Direct and 멀티샷 carry their own state,
-        // so the route hosts them alongside the editor's. Erase has no sheet at all: tapping it
-        // runs (generative_erase.md §5).
-        Tool.Crop, Tool.Select, Tool.Erase, Tool.Fill, Tool.Expand, Tool.Enhance, Tool.Style,
+        // Crop, Fill, Expand, 화질 개선, Style, Direct and 멀티샷 carry their own state, so the
+        // route hosts them alongside the editor's. Erase has no sheet at all: tapping it runs
+        // (generative_erase.md §5).
+        Tool.Crop, Tool.Erase, Tool.Fill, Tool.Expand, Tool.Enhance, Tool.Style,
         Tool.Direct, Tool.MultiShot,
         null,
         -> Unit

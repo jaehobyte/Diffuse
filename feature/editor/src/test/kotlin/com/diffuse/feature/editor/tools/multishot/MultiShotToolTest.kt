@@ -169,8 +169,8 @@ class MultiShotToolTest {
     @Test
     fun `the selection tool's session is released before the photo is sent, and ours on 적용`() = runTest {
         val viewModel = viewModel()
-        viewModel.onToolClick(Tool.Select)
-        viewModel.cancelSheet()
+        // A tap on the photo opened a session earlier, so one is being held.
+        viewModel.selection.open(Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888))
         assertEquals(1, segmentation.openSessions.size)
 
         viewModel.onToolClick(Tool.MultiShot)
@@ -328,6 +328,9 @@ class MultiShotToolTest {
 
         override suspend fun saveFillResult(projectId: String, fillId: String, bitmap: Bitmap): Result<ImageRef> =
             Result.Success(ImageRef("/p/fill_$fillId.png"))
+
+        override suspend fun saveEnhanced(projectId: String, fileId: String, source: SourceImage): Result<ImageRef> =
+            Result.Success(ImageRef("/p/enhanced_$fileId.jpg"))
 
         override suspend fun saveOutpaintResult(
             projectId: String,

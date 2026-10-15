@@ -18,6 +18,7 @@ import com.diffuse.core.common.Result
 import com.diffuse.core.data.TopazSessionFiles
 import com.diffuse.core.data.TopazWorkspace
 import com.diffuse.core.imaging.model.EditDocument
+import com.diffuse.core.imaging.model.ImageRef
 import com.diffuse.feature.editor.R
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -46,14 +47,20 @@ interface TopazHost {
     /** §5: the file, byte for byte, into the gallery; never re-encoded. */
     suspend fun saveToGallery(file: File, mimeType: String, width: Int, height: Int): Result<Unit>
 
-    /** §5: a new project whose source is [file], at the working size. Returns its id. */
-    suspend fun createProject(file: File): Result<String>
+    /**
+     * 적용, §5 as it stands: [file] read at the working size and written into this project's
+     * folder, where it can become the document's photo. Nothing is applied yet.
+     */
+    suspend fun storeResult(file: File): Result<ImageRef>
 
-    /** A project created for a navigation that is no longer wanted. */
-    suspend fun discardProject(projectId: String)
+    /** A stored result nobody wants any more: cancelled or closed while it was being written. */
+    suspend fun discardResult(ref: ImageRef)
 
-    /** The new edit copy is open; this editor's sheet closes. */
-    fun onOpenedCopy()
+    /**
+     * The stored result becomes this project's photo as one history entry — the earlier
+     * operations are in its pixels, so the list starts over — and the sheet that asked is done.
+     */
+    fun adopt(ref: ImageRef)
 }
 
 /**
@@ -278,8 +285,8 @@ class TopazController(
                 reader?.cancel()
                 _state.value = _state.value.copy(phase = TopazPhase.Idle)
             }
-            // A create already under way finishes and is discarded; see [openCopy].
-            TopazPhase.Opening -> _state.value = _state.value.copy(phase = TopazPhase.Idle)
+            // A store already under way finishes and is discarded; see [adopt].
+            TopazPhase.Adopting -> _state.value = _state.value.copy(phase = TopazPhase.Idle)
             TopazPhase.Preparing -> {
                 runToken++
                 work?.cancel()
@@ -313,36 +320,32 @@ class TopazController(
     }
 
     /**
-     * §5: 새 편집본으로 열기. The project is created once; once creation has started it runs to
-     * the end, and a create nobody is waiting for any more is deleted rather than left in Browse.
+     * §5 as it stands: 적용. The result is stored in this project once; a store that has started
+     * runs to the end, and one nobody is waiting for any more is discarded. A stored result that
+     * is still wanted becomes the photo, and the sheet closes.
      */
-    fun openCopy() {
+    fun adopt() {
         val result = _state.value.result ?: return
-        // Created and waiting for the route: a second tap must not make a second project.
-        if (_state.value.phase != TopazPhase.Idle || _state.value.openedProjectId != null) return
-        _state.value = _state.value.copy(phase = TopazPhase.Opening)
+        if (_state.value.phase != TopazPhase.Idle) return
+        _state.value = _state.value.copy(phase = TopazPhase.Adopting)
         val token = runToken
         reader = scope.launch {
             withContext(NonCancellable) {
-                val created = host.createProject(result.file)
+                val stored = host.storeResult(result.file)
                 // Still wanted only if nobody cancelled, closed or re-ran in the meantime.
-                val wanted = token == runToken && _state.value.phase == TopazPhase.Opening
+                val wanted = token == runToken && _state.value.phase == TopazPhase.Adopting
                 when {
-                    created is Result.Success && wanted ->
-                        _state.value = _state.value.copy(phase = TopazPhase.Idle, openedProjectId = created.value)
-                    created is Result.Success -> host.discardProject(created.value)
+                    stored is Result.Success && wanted -> {
+                        // Closed first, so the document change below finds no open sheet to rebuild.
+                        close()
+                        host.adopt(stored.value)
+                    }
+                    stored is Result.Success -> host.discardResult(stored.value)
                     wanted -> _state.value =
-                        _state.value.copy(phase = TopazPhase.Idle, message = R.string.topaz_open_failed)
+                        _state.value.copy(phase = TopazPhase.Idle, message = R.string.topaz_adopt_failed)
                 }
             }
         }
-    }
-
-    /** The route navigated; the sheet in this editor is done. */
-    fun onNavigated() {
-        if (_state.value.openedProjectId == null) return
-        _state.value = _state.value.copy(openedProjectId = null)
-        host.onOpenedCopy()
     }
 
     /**
@@ -374,8 +377,8 @@ class TopazController(
         _state.value = TopazState(configured = _state.value.configured, message = _state.value.message)
         if (files != null) {
             scope.launch {
-                // A save stops and removes its pending row; a create cannot be cancelled and is
-                // waited for (it discards itself, see [openCopy]).
+                // A save stops and removes its pending row; a store cannot be cancelled and is
+                // waited for (it discards itself, see [adopt]).
                 pending?.cancelAndJoin()
                 processor.discard(files)
             }

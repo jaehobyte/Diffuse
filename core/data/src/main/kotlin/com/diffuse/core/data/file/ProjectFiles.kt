@@ -37,6 +37,13 @@ class ProjectFiles(private val filesDir: File) {
     fun retouchFile(projectId: String, retouchId: String): File =
         File(projectDir(projectId), "retouch_$retouchId.png")
 
+    /**
+     * A Topaz result the user applied: the project's photo from then on, at the working size,
+     * beside the original it replaces (specs/topaz_enhancement.md §5 as it stands).
+     */
+    fun enhancedFile(projectId: String, fileId: String, extension: String): File =
+        File(projectDir(projectId), "enhanced_$fileId.$extension")
+
     /** specs/multishot.md §7: one extracted subject per file, named by a fresh id per extraction. */
     fun shotFile(projectId: String, fileId: String): File =
         File(projectDir(projectId), "$SHOT_PREFIX$fileId.png")

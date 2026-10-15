@@ -16,6 +16,7 @@ import com.diffuse.core.imaging.model.ImageRef
 import com.diffuse.feature.editor.canvas.testImage
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -121,6 +122,26 @@ class EditorHistoryTest {
         undoButton().performClick()
         compose.waitForIdle()
         assertEquals(edited.operations, history.current.value.operations)
+    }
+
+    /** A reset document must still load: the active selection is dropped with its `Mask` op. */
+    @Test
+    fun `reset drops the active selection with its mask, and undo brings both back`() {
+        showShell()
+        val selected = document.withMask(ImageRef("/p/mask_m1.png"), id = "m1")
+        history.push(selected)
+        compose.waitForIdle()
+
+        resetButton().performClick()
+        compose.waitForIdle()
+        val reset = history.current.value
+        assertNull(reset.activeMaskId)
+        assertTrue(reset.operations.isEmpty())
+        assertTrue(reset.referencesResolve())
+
+        undoButton().performClick()
+        compose.waitForIdle()
+        assertEquals(selected, history.current.value)
     }
 
     private fun string(resId: Int): String =

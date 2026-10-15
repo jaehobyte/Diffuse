@@ -147,6 +147,25 @@ class PlanScenarioTest {
         assertEquals("Crop under KeepFrame", violation(frame, "구도 전부 유지하고 스토리로"))
     }
 
+    /** outpaint.md in a plan: never beside a crop or a cut-out, never on a photo holding a selection. */
+    @Test
+    fun `an expand is refused with a crop, under keep background and on a photo with a selection`() {
+        val expand = """{"tool":"expand_to_ratio","goal_id":"g1","args":{"ratio":"story_9_16"}}"""
+        val crop = """{"tool":"crop_ratio","goal_id":"g1","args":{"ratio":"square"}}"""
+
+        assertEquals("expand with a crop", violation(ready(goals("global"), steps(expand, crop)), "스토리로"))
+        assertEquals(
+            "Expand under KeepBackground",
+            violation(ready(goals("global"), steps(expand), constraint("keep_background")), "배경 그대로 스토리로"),
+        )
+        assertNull(violation(ready(goals("global"), steps(expand), constraint("keep_frame")), "구도 유지, 스토리로"))
+        assertEquals(
+            "expand on a photo already holding a selection",
+            violation(ready(goals("global"), steps(expand)), "스토리로", PlanContext(expandable = false)),
+        )
+        assertNull(violation(ready(goals("global"), steps(expand)), "스토리로"))
+    }
+
     /** §17: three strengths of "keep the colours", and the brightness a colour rule still allows. */
     @Test
     fun `colour constraints refuse by strength`() {

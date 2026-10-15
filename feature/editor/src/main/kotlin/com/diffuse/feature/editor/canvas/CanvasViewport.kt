@@ -39,6 +39,12 @@ data class OverlayTransform(
     val straightenDeg: Float = 0f,
     /** specs/outpaint.md §3: fractions of the photo's own width and height, added per side. */
     val margins: Margins = Margins.None,
+    /**
+     * specs/outpaint.md §6: "the photo shrinks to leave room". While 확대 is open the canvas fits
+     * the frame with a wider margin, so an edge handle has somewhere to be dragged to even when
+     * the photo would otherwise touch the screen's edge.
+     */
+    val roomForHandles: Boolean = false,
 ) {
     val angleDeg: Float get() = quarterTurns * QUARTER_TURN + straightenDeg
 

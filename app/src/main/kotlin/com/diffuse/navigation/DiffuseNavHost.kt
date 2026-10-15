@@ -77,9 +77,6 @@ fun DiffuseNavHost(
                 exporter = exporter,
                 settingsStore = exportSettingsStore,
                 onBack = { navController.popBackStack() },
-                // specs/topaz_enhancement.md §5: a new edit copy is pushed over this editor, so
-                // back returns to the original with its history intact.
-                onOpenProject = { projectId -> navController.navigate(EditorRouteKey(projectId)) },
             )
         }
     }
@@ -91,7 +88,6 @@ internal fun EditorWithExport(
     exporter: Exporter,
     settingsStore: ExportSettingsStore,
     onBack: () -> Unit,
-    onOpenProject: (String) -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
@@ -138,7 +134,6 @@ internal fun EditorWithExport(
                 sheetOpen = true
             },
             viewModel = viewModel,
-            onOpenProject = onOpenProject,
         )
         if (sheetOpen) {
             ExportSheetSlot(

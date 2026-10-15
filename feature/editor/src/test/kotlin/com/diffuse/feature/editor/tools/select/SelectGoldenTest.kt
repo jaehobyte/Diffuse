@@ -15,7 +15,6 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.diffuse.core.ui.ScreenshotOptions
-import com.diffuse.core.ui.components.PromptBar
 import com.diffuse.core.ui.theme.AppTheme
 import com.diffuse.core.ui.theme.ThemeMode
 import com.diffuse.core.ui.theme.Tokens
@@ -31,7 +30,7 @@ import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
-/** specs/selection_tool.md §10, the two screenshot goldens T30 names. */
+/** specs/selection_tool.md §10, the canvas goldens T30 names; the sheet went with the 선택 item. */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(qualifiers = RobolectricDeviceQualifiers.Pixel6a)
@@ -39,34 +38,6 @@ class SelectGoldenTest {
 
     @get:Rule
     val compose = createComposeRule()
-
-    @Test
-    fun selectSheetOpen() {
-        compose.setContent {
-            AppTheme(ThemeMode.Edit) {
-                Box(modifier = Modifier.fillMaxSize().background(Tokens.editBackground)) {
-                    Box(modifier = Modifier.align(Alignment.BottomCenter)) {
-                        SelectSheet(
-                            state = SelectionState(
-                                mask = circleMask(),
-                                points = listOf(PointF(0.5f, 0.5f)),
-                                labels = listOf(true),
-                            ),
-                            onModeChange = {},
-                            onInvert = {},
-                            onClear = {},
-                            onCutOut = {},
-                            onCancel = {},
-                            onApply = {},
-                        )
-                    }
-                }
-            }
-        }
-        compose.waitForIdle()
-
-        capture("select_sheet_open")
-    }
 
     @Test
     fun selectMaskPreview() {
@@ -115,38 +86,6 @@ class SelectGoldenTest {
         compose.waitForIdle()
 
         capture("select_mask_merged")
-    }
-
-    @Test
-    fun selectPromptResult() {
-        compose.setContent {
-            AppTheme(ThemeMode.Edit) {
-                Box(modifier = Modifier.fillMaxSize().background(Tokens.editBackground)) {
-                    Box(modifier = Modifier.align(Alignment.BottomCenter)) {
-                        SelectSheet(
-                            state = SelectionState(mask = circleMask(), notFound = true),
-                            onModeChange = {},
-                            onInvert = {},
-                            onClear = {},
-                            onCutOut = {},
-                            onCancel = {},
-                            onApply = {},
-                            promptBar = {
-                                PromptBar(
-                                    value = "노란 버스",
-                                    onValueChange = {},
-                                    onSubmit = {},
-                                    onMicClick = {},
-                                )
-                            },
-                        )
-                    }
-                }
-            }
-        }
-        compose.waitForIdle()
-
-        capture("select_prompt_result")
     }
 
     /** Matches the preview bitmap's 400×300, so the overlay lands exactly on the photo. */

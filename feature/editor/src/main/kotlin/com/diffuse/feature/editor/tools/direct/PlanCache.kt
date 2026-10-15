@@ -40,6 +40,14 @@ class PlanCache {
     private val selections = mutableMapOf<PlanStep.Select, Selected>()
     private val generated = mutableMapOf<Key, List<Operation>>()
 
+    /**
+     * outpaint.md §3 in a plan: the one `Outpaint` an expand step paid for. Keyed by the step
+     * alone — it is always the first step, built from the bare source, so nothing before it can
+     * change its input — and reapplied through `withOutpaint`, which keeps it first and re-bases
+     * a crop; `reapply`'s append would not.
+     */
+    private val outpaints = mutableMapOf<PlanStep.Expand, Operation.Outpaint>()
+
     @Synchronized
     fun selection(step: PlanStep.Select): Selected? = selections[step]
 
@@ -57,9 +65,18 @@ class PlanCache {
     }
 
     @Synchronized
+    fun outpaint(step: PlanStep.Expand): Operation.Outpaint? = outpaints[step]
+
+    @Synchronized
+    fun putOutpaint(step: PlanStep.Expand, outpaint: Operation.Outpaint) {
+        outpaints[step] = outpaint
+    }
+
+    @Synchronized
     fun clear() {
         selections.clear()
         generated.clear()
+        outpaints.clear()
     }
 
     companion object {

@@ -9,7 +9,9 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.diffuse.core.ai.Margins as RequestMargins
 import com.diffuse.core.ai.speech.SpeechInput
+import com.diffuse.core.common.AppError
 import com.diffuse.core.common.DispatcherProvider
 import com.diffuse.core.common.Result
 import com.diffuse.core.common.newId
@@ -173,31 +175,67 @@ class EditorViewModel @Inject constructor(
             override suspend fun saveToGallery(file: File, mimeType: String, width: Int, height: Int) =
                 topazStorage.saver.save(file, mimeType, width, height)
 
-            /** §5: the result is read through `ImageLoader`, so the copy opens at the working size. */
-            override suspend fun createProject(file: File): Result<String> =
+            /** §5: the result is read through `ImageLoader`, so it is stored at the working size. */
+            override suspend fun storeResult(file: File): Result<ImageRef> =
                 when (val loaded = loader.load(Uri.fromFile(file))) {
                     is Result.Failure -> loaded
-                    is Result.Success -> repository.create(loaded.value)
+                    is Result.Success -> repository.saveEnhanced(projectId, newId(), loaded.value)
                 }
 
-            override suspend fun discardProject(projectId: String) {
-                repository.delete(projectId)
+            override suspend fun discardResult(ref: ImageRef) {
+                repository.discardFiles(projectId, setOf(ref.path))
             }
 
-            override fun onOpenedCopy() = cancelSheet()
+            /**
+             * One history entry whose photo is the result and whose list starts over: the earlier
+             * operations are in its pixels, and the selection they named is gone with them. Undo
+             * returns to the photo and operations as they were.
+             */
+            override fun adopt(ref: ImageRef) {
+                val stack = history ?: return
+                sheetBaseline = null
+                _uiState.value = _uiState.value.copy(selectedTool = null)
+                stack.push(stack.current.value.copy(source = ref, operations = emptyList(), activeMaskId = null))
+            }
         },
         dispatchers = dispatchers,
     )
     private var previewJob: Job? = null
 
-    /** specs/selection_tool.md: the tool owns its own state, session and undo stack. */
-    val selection = SelectionController(
+    /**
+     * specs/selection_tool.md: the session and the point run a tap on the photo refines (see
+     * [selectOnCanvas]). Every mask a run produces is committed here the moment it lands — §6
+     * as it stands without a sheet: the mask becomes a file and one history entry, so 지우기,
+     * 채우기 and the masked adjustments can use it at once. Each refinement of the run is one
+     * more entry, so Undo takes back one tap. Written first, so a failed write leaves the
+     * document without a mask file that is not there.
+     */
+    val selection: SelectionController = SelectionController(
         ai.segmentation,
         ai.sam3Settings,
         ai.geminiSettings,
         ai.topazSettings,
         viewModelScope,
+        onSegmented = { mask ->
+            val stack = history
+            val maskId = newId()
+            if (stack != null) {
+                viewModelScope.launch {
+                    when (val saved = repository.saveMask(projectId, maskId, mask)) {
+                        is Result.Success -> {
+                            // Before the push: [observe] reads it to tell this commit from an undo.
+                            committedMaskId = maskId
+                            stack.push(stack.current.value.withMask(saved.value, maskId))
+                        }
+                        is Result.Failure -> selection.showMessage(R.string.select_failed)
+                    }
+                }
+            }
+        },
     )
+
+    /** The mask the current tap run last committed; see [observe]. */
+    private var committedMaskId: String? = null
 
     /** specs/prompt_input.md §3: handed straight to the prompt bar; the VM never drives it. */
     val speech: SpeechInput = ai.speech
@@ -255,6 +293,26 @@ class EditorViewModel @Inject constructor(
             saveMask = { maskId, mask -> repository.saveMask(projectId, maskId, mask) },
             fillCommit = fillCommit,
             eraseCommit = eraseCommit,
+            // outpaint.md §3 in a plan: the bare source, the provider and the stored file, exactly
+            // as the 확대 sheet's 적용 commits them; the runner computed the margins.
+            expandCommit = { document, margins ->
+                val source = _uiState.value.source?.asAndroidBitmap()
+                if (source == null) {
+                    Result.Failure(AppError.Unavailable)
+                } else {
+                    val request = RequestMargins(margins.left, margins.top, margins.right, margins.bottom)
+                    when (val answer = ai.outpaint.outpaint(source, request)) {
+                        is Result.Failure -> answer
+                        is Result.Success -> {
+                            val id = newId()
+                            when (val saved = repository.saveOutpaintResult(projectId, id, answer.value)) {
+                                is Result.Failure -> saved
+                                is Result.Success -> Result.Success(document.withOutpaint(margins, saved.value, id))
+                            }
+                        }
+                    }
+                }
+            },
             // T70: per step, not per run — each step chains a new document, and the frame a
             // generative step is shown has to be the one it is actually editing.
             generativeInput = { document ->
@@ -498,6 +556,12 @@ class EditorViewModel @Inject constructor(
                     canCompare = document.canCompare(),
                     canReset = document.operations.isNotEmpty(),
                 )
+                // The active mask stopped being the one the tap run made — undo, a plan's own
+                // selection — so the run ends rather than refining points for a mask that is gone.
+                if (document.activeMaskId != committedMaskId) {
+                    committedMaskId = null
+                    selection.clear()
+                }
                 requestPreview(document)
             }
         }
@@ -562,7 +626,6 @@ class EditorViewModel @Inject constructor(
         val state = _uiState.value
         when {
             state.selectedTool == tool -> cancelSheet()
-            tool == Tool.Select && !selection.onToolTapped() -> Unit
             tool in GENERATIVE_TOOLS -> onGenerativeToolTapped(state, tool)
             tool == Tool.Enhance -> openTopaz(TopazGroup.Enhance)
             // specs/vibe_edit.md §10: a blank key opens the 서버 설정 sheet, through the same
@@ -586,7 +649,6 @@ class EditorViewModel @Inject constructor(
                         CropState.from(document, aspect)
                     },
                 )
-                if (tool == Tool.Select) state.preview?.let { selection.open(it.asAndroidBitmap()) }
                 // specs/style_match.md §7: the tiles are the user's own photograph, so they can
                 // only be drawn once there is a document to draw them from.
                 if (tool == Tool.Style) style.open(document)
@@ -651,7 +713,6 @@ class EditorViewModel @Inject constructor(
         val open = state.selectedTool
         val unapplied = when (open) {
             null, Tool.Enhance -> false
-            Tool.Select -> state.selection.hasMask || state.selection.points.isNotEmpty()
             else -> state.document != sheetBaseline
         }
         if (unapplied) {
@@ -695,7 +756,6 @@ class EditorViewModel @Inject constructor(
             stack.push(baseline)
         }
         sheetBaseline = null
-        selection.closeSheet()
         fill.close()
         expand.close()
         style.close()
@@ -710,7 +770,6 @@ class EditorViewModel @Inject constructor(
     fun applySheet() {
         val state = _uiState.value
         when (state.selectedTool) {
-            Tool.Select -> applySelection()
             // specs/generative_fill.md §6: 적용 runs the model, and the sheet closes only once
             // the result is committed — a failure leaves it open with the prompt intact.
             //
@@ -773,45 +832,20 @@ class EditorViewModel @Inject constructor(
     }
 
     /**
-     * specs/selection_tool.md §6: the mask becomes a file and one history entry. Writing it
-     * first means a failed write leaves the sheet open with the selection intact, rather than
-     * a document pointing at a file that is not there.
-     *
-     * §8.2: `cutOut = true` applies the mask *and* the cut-out as one
-     * history entry. Public rather than wrapped in an `applyCutOut()`, because that wrapper was
-     * one line hiding a default argument and `EditorViewModel` is at detekt's function ceiling.
+     * The Photo Editor's way in: at the AI level, tapping the thing to select *is* selecting
+     * it (specs/selection_tool.md §2, with no sheet in between). The session is opened if the
+     * warm-up has not already, and the point is added — kept until the session is ready. A tap
+     * the backend cannot serve explains itself instead.
      */
-    fun applySelection(cutOut: Boolean = false) {
-        val stack = history ?: return
-        val mask = _uiState.value.selection.mask ?: return
-        val maskId = newId()
-        viewModelScope.launch {
-            when (val saved = repository.saveMask(projectId, maskId, mask)) {
-                is Result.Success -> {
-                    val applied = stack.current.value.withMask(saved.value, maskId)
-                    stack.push(if (cutOut) applied.withCutOut(maskId) else applied)
-                    sheetBaseline = null
-                    selection.closeSheet()
-                    _uiState.value = _uiState.value.copy(selectedTool = null)
-                }
-                is Result.Failure -> selection.showMessage(R.string.select_failed)
-            }
-        }
+    fun selectOnCanvas(x: Float, y: Float, foreground: Boolean) {
+        if (!selection.onPhotoTapped()) return
+        _uiState.value.preview?.let { selection.open(it.asAndroidBitmap()) }
+        selection.addPoint(x, y, foreground)
     }
 
     fun reset() = history?.resetToOriginal() ?: Unit
 
-    /**
-     * specs/selection_tool.md §4: while the select sheet is open the top-bar Undo drives the
-     * tool's own points, not the document. Points are not operations until Apply.
-     */
-    fun undo() {
-        if (_uiState.value.selectedTool == Tool.Select) {
-            selection.undoPoint()
-        } else {
-            history?.undo()
-        }
-    }
+    fun undo() = history?.undo() ?: Unit
 
     fun redo() = history?.redo() ?: Unit
 

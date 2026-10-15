@@ -77,13 +77,14 @@ class ToolStripLevelTest {
 
         assertEquals(
             listOf(
-                Tool.Select, Tool.Erase, Tool.Fill, Tool.Expand, Tool.Enhance, Tool.Style,
+                Tool.Erase, Tool.Fill, Tool.Expand, Tool.Enhance, Tool.Style,
                 Tool.MultiShot, Tool.Direct,
             ),
             ai,
         )
+        // 선택 is no longer an item: at this level the photo itself takes the tap.
         assertEquals(
-            listOf("선택", "지우기", "채우기", "확대", "화질 개선", "스타일", "멀티샷", "지시"),
+            listOf("지우기", "채우기", "확대", "화질 개선", "스타일", "멀티샷", "지시"),
             ai.map(::labelOf),
         )
     }
@@ -227,7 +228,6 @@ class ToolStripLevelTest {
         Tool.Mix -> "혼합"
         Tool.Crop -> "자르기"
         Tool.Detail -> "디테일"
-        Tool.Select -> "선택"
         Tool.Erase -> "지우기"
         Tool.Fill -> "채우기"
         Tool.Expand -> "확대"

@@ -1,5 +1,9 @@
 package com.diffuse.feature.editor
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -134,13 +138,41 @@ fun EditorScreen(
                 canvasOverlay = canvasOverlay,
                 onToolStripHeight = { toolStripHeightPx = it },
             )
-            if (busy) SelectionProgressOverlay(onCancel = onCancelWork, labelRes = busyLabelRes)
+            BusyOverlay(busy = busy, labelRes = busyLabelRes, onCancel = onCancelWork)
             if (sheet != null) SheetOverlay(sheet) { sheetHeightPx = it }
             SnackbarHost(
                 hostState = snackbarHost,
                 modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding(),
             )
         }
+    }
+}
+
+/** The Photo Editor fades its scrim in and out in about a third of a second. */
+private const val BUSY_FADE_MS = 300
+
+/**
+ * The working overlay, faded in and out, followed by one [ResultRevealSweep] when the work
+ * ends. The label is latched while busy so the fade-out keeps the last stage's text rather
+ * than crossfading to the idle default.
+ */
+@Composable
+private fun BusyOverlay(busy: Boolean, @androidx.annotation.StringRes labelRes: Int, onCancel: () -> Unit) {
+    var shownLabel by remember { mutableIntStateOf(labelRes) }
+    var wasBusy by remember { mutableStateOf(busy) }
+    var revealRun by remember { mutableIntStateOf(0) }
+    LaunchedEffect(busy, labelRes) {
+        if (busy) shownLabel = labelRes
+        if (wasBusy && !busy) revealRun++
+        wasBusy = busy
+    }
+    ResultRevealSweep(runKey = revealRun)
+    AnimatedVisibility(
+        visible = busy,
+        enter = fadeIn(tween(BUSY_FADE_MS)),
+        exit = fadeOut(tween(BUSY_FADE_MS)),
+    ) {
+        SelectionProgressOverlay(onCancel = onCancel, labelRes = shownLabel)
     }
 }
 

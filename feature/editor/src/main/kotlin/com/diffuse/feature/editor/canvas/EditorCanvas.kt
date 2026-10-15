@@ -38,6 +38,9 @@ import kotlin.math.roundToInt
 /** DESIGN.md §5: at least 16dp of editBackground around the photo. */
 private val CanvasMargin = 16.dp
 
+/** `OverlayTransform.roomForHandles`: a 48dp touch target's worth on every side, plus the usual. */
+private val HandleRoomMargin = 64.dp
+
 /** DESIGN.md §2: transparency checkerboard, 8dp cells. */
 private val CheckerCell = 8.dp
 
@@ -64,7 +67,9 @@ fun EditorCanvas(
     overlay: (@Composable BoxScope.() -> Unit)? = null,
 ) {
     val density = LocalDensity.current
-    val marginPx = with(density) { CanvasMargin.toPx() }
+    val marginPx = with(density) {
+        (if (overlayTransform.roomForHandles) HandleRoomMargin else CanvasMargin).toPx()
+    }
     val checkerPx = with(density) { CheckerCell.toPx() }
 
     var canvasSize by remember { mutableStateOf(Size.Zero) }

@@ -135,8 +135,6 @@ data class DirectState(
     val chosen: Set<String> = emptySet(),
     /** §19: why an item cannot run now, by item id — shown on its row; on, it blocks the primary. */
     val blocks: Map<String, TopazBlock> = emptyMap(),
-    /** One-shot: the new edit copy a Topaz result was opened as (D098). Consumed by the route. */
-    val openedProjectId: String? = null,
 ) {
 
     val enabled: Boolean get() = availability is Availability.Ready
@@ -149,9 +147,9 @@ data class DirectState(
     val running: Boolean
         get() = candidate?.phase == CandidatePhase.Running || candidate?.phase == CandidatePhase.Checking
 
-    /** §19: 고해상도 저장 or 새 편집본으로 열기 is reading the Topaz result. */
+    /** §19: 고해상도 저장 or 적용 is reading the Topaz result. */
     val keeping: Boolean
-        get() = candidate?.topazPhase == TopazPhase.Saving || candidate?.topazPhase == TopazPhase.Opening
+        get() = candidate?.topazPhase == TopazPhase.Saving || candidate?.topazPhase == TopazPhase.Adopting
 
     /** DESIGN.md §7: a sent 지시 plans behind the overlay. */
     val planning: Boolean get() = phase == ProposalPhase.Loading && proposals.mode == PlanMode.Direct
@@ -254,9 +252,9 @@ data class DirectState(
  * are used without asking; only an existing selection of unknown meaning waits on the overlay),
  * then the chosen Topaz step on that candidate's full render. The user compares the whole result
  * 전/후 on this screen, turns items off or on again (rebuilt from the same input), and keeps it:
- * without Topaz 적용 — one history entry, one undo — and with it D098's 고해상도 저장 or
- * 새 편집본으로 열기, which leave this document alone. Only `EditorViewModel` holds the
- * `HistoryStack`, so committing is the host's.
+ * without Topaz 적용 — one history entry, one undo — and with it 적용 as well: the result becomes
+ * this project's photo, also one entry (고해상도 저장 keeps the full file). Only `EditorViewModel`
+ * holds the `HistoryStack`, so committing is the host's.
  *
  * §19: a **proposal session** runs from the first run to the proposal's end (applied, invalidated
  * or closed). The selections, generated patches and Topaz results made in it are kept for reuse
@@ -329,11 +327,11 @@ class DirectController(
     private var topazFiles: TopazSessionFiles? = null
     private var topazRun = 0L
 
-    /** Every save or new copy still reading a Topaz result; the session's end waits for them all. */
+    /** Every save or 적용 still reading a Topaz result; the session's end waits for them all. */
     private val readers = mutableListOf<Job>()
 
-    /** Which 새 편집본으로 열기 is the one waited for: bumped by each tap and by its cancel. */
-    private var copySeq = 0
+    /** Which 적용 of a Topaz result is the one waited for: bumped by each tap and by its cancel. */
+    private var adoptSeq = 0
 
     /** specs/vibe_edit.md §14: the one planning request, for 보정 추천 and a sent 지시 alike. */
     val proposals = DirectProposals(
@@ -467,7 +465,7 @@ class DirectController(
             CandidatePhase.Confirming -> answerSelection(true)
             CandidatePhase.Review -> when {
                 state.topazStep == null -> adopt()
-                state.candidate.topaz != null -> openCopy()
+                state.candidate.topaz != null -> adoptTopaz()
                 else -> rerunTopaz()
             }
             CandidatePhase.Running, CandidatePhase.Checking -> Unit
@@ -775,7 +773,9 @@ class DirectController(
         val kinds = _state.value.proposal?.intent?.constraints.orEmpty().filter { it.explicit }.map { it.kind }.toSet()
         return buildSet {
             if (steps.any { it is PlanStep.Crop }) add(CandidateFinding.FrameCropped)
-            if (steps.any { it is PlanStep.Erase || it is PlanStep.Fill }) add(CandidateFinding.Generated)
+            if (steps.any { it is PlanStep.Erase || it is PlanStep.Fill || it is PlanStep.Expand }) {
+                add(CandidateFinding.Generated)
+            }
             val colourRule = ConstraintKind.KeepColors in kinds || ConstraintKind.KeepHue in kinds
             if (colourRule && steps.any { it is PlanStep.Adjust && it.kind in TONAL_KINDS }) {
                 add(CandidateFinding.TonalUnderColorRule)
@@ -833,50 +833,48 @@ class DirectController(
     }
 
     /**
-     * §19, D098 새 편집본으로 열기: the reviewed Topaz result becomes a new project, created once; this
-     * document and its history are untouched, and nothing is re-applied to the copy — the local
-     * edits are already in its pixels. A create nobody waits for any more (cancel, close, a new
-     * choice) is deleted rather than left in Browse; a failed one keeps the result for a retry that
-     * calls Topaz again never.
+     * §19 적용 with a Topaz result: the reviewed result, stored in this project at the working
+     * size, becomes its photo as one history entry — nothing is re-applied, the local edits are
+     * already in its pixels, and one undo returns to the input. The store runs to the end once
+     * started; one nobody waits for any more (cancel, close, a new choice) is discarded, and a
+     * failed one keeps the result for a retry that never calls Topaz again. Then, as [adopt]: the
+     * session ends and nothing opens after it.
      */
-    // Not keepable, stale: two ways the tap is not a copy.
+    // Not keepable, stale: two ways the tap is not an 적용.
     @Suppress("ReturnCount")
-    fun openCopy() {
+    fun adoptTopaz() {
         val state = _state.value
         val candidate = state.candidate?.takeIf { state.canApply && state.complete } ?: return
         val result = candidate.topaz ?: return
-        if (state.openedProjectId != null) return
         val input = base?.document
         if (input == null || !stillHolds(input, state.request)) return stale()
-        setCandidate(candidate.copy(topazPhase = TopazPhase.Opening))
+        setCandidate(candidate.copy(topazPhase = TopazPhase.Adopting))
         val mine = runSeq
-        val copy = ++copySeq
+        val attempt = ++adoptSeq
         read {
             withContext(NonCancellable) {
-                val created = topaz.host.createProject(result.file)
+                val stored = topaz.host.storeResult(result.file)
                 // Still wanted only if nobody cancelled, closed, chose again or tapped again since.
-                val wanted = mine == runSeq && copy == copySeq &&
-                    _state.value.candidate?.topazPhase == TopazPhase.Opening
+                val wanted = mine == runSeq && attempt == adoptSeq &&
+                    _state.value.candidate?.topazPhase == TopazPhase.Adopting
                 when {
-                    created is Result.Success && wanted -> _state.value = _state.value.copy(
-                        candidate = _state.value.candidate?.copy(topazPhase = null),
-                        openedProjectId = created.value,
-                    )
-                    created is Result.Success -> topaz.host.discardProject(created.value)
+                    stored is Result.Success && wanted -> finishWith(stored.value)
+                    stored is Result.Success -> topaz.host.discardResult(stored.value)
                     wanted -> _state.value = _state.value.copy(
                         candidate = _state.value.candidate?.copy(topazPhase = null),
-                        message = DirectMessage(R.string.topaz_open_failed),
+                        message = DirectMessage(R.string.topaz_adopt_failed),
                     )
                 }
             }
         }
     }
 
-    /** The route navigated to the copy; this editor's sheet is done (D098). */
-    fun onNavigated() {
-        if (_state.value.openedProjectId == null) return
-        _state.value = _state.value.copy(openedProjectId = null)
-        topaz.host.onOpenedCopy()
+    /** The stored result is the photo now; the proposal session is over, like [adopt]'s. */
+    private fun finishWith(ref: ImageRef) {
+        _state.value = _state.value.copy(candidate = null, request = "", requestSource = RequestSource.Typed)
+        endSession()
+        proposals.invalidate()
+        topaz.host.adopt(ref)
     }
 
     /**
@@ -992,8 +990,8 @@ class DirectController(
     /**
      * DESIGN.md §7: the overlay's cancel button. A cancelled run commits nothing (§18) — the
      * document is as it was, and the proposal and its choice stay reviewable; a Topaz job in flight
-     * is cancelled by the provider, best effort. A save stops; a copy already being created finishes
-     * and is deleted (see [openCopy]); the result stays.
+     * is cancelled by the provider, best effort. A save stops; a store already under way finishes
+     * and is discarded (see [adoptTopaz]); the result stays.
      */
     fun cancelWork() {
         val state = _state.value
@@ -1004,7 +1002,7 @@ class DirectController(
             }
             state.keeping -> {
                 if (state.candidate?.topazPhase == TopazPhase.Saving) readers.forEach { it.cancel() }
-                copySeq++
+                adoptSeq++
                 setCandidate(state.candidate?.copy(topazPhase = null))
             }
             else -> proposals.cancel()

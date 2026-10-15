@@ -62,6 +62,15 @@ sealed interface PlanStep {
     data class Crop(val ratio: CropRatio) : PlanStep
 
     /**
+     * specs/outpaint.md in a plan (2026-10-15): the same closed [ratio] as [Crop], reached by
+     * **adding** generated area outside the frame instead of removing what is inside it. The
+     * model chooses between the two from the photo; the margins are computed from the source's
+     * aspect, never received. Generative and paid. It always runs first, because an `Outpaint`
+     * is always the document's first operation, and never beside a crop or a cut-out.
+     */
+    data class Expand(val ratio: CropRatio) : PlanStep
+
+    /**
      * specs/style_match.md §6. The model names a **look**, never numbers: [style] is one of the
      * catalog's twelve ids and [intensity] is how much of it, 0…100 — a multiplier on the preset,
      * not a blend with the photo. The id resolves to a preset at the `feature:editor` boundary.
@@ -202,6 +211,11 @@ data class PlanContext(
     /** The document has an applied selection. */
     val hasSelection: Boolean = false,
     val cropped: Boolean = false,
+    /**
+     * outpaint.md §3: the document holds no stored selection, cut-out, generated patch, retouch
+     * or composite, so an `Outpaint` may still go under everything — `EditDocument.canOutpaint`.
+     */
+    val expandable: Boolean = true,
     val targets: List<PlanTargetState> = emptyList(),
     /** Every operation in render order; adjustments are listed in [adjustments] too. */
     val operations: List<OperationNote> = emptyList(),

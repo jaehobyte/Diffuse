@@ -52,6 +52,22 @@ data class Margins(
         val None = Margins()
 
         /**
+         * The margins that take a canvas of aspect [from] (width ÷ height) to aspect [to]: the
+         * short axis grows by the same amount on both of its sides, each side clamped, so a ratio
+         * further away than `MAX_MARGIN_FRACTION` allows is reached as far as it may be, never past.
+         */
+        fun toReach(from: Float, to: Float): Margins {
+            if (from <= 0f || to <= 0f) return None
+            return if (to > from) {
+                val each = (to / from - 1f) / 2f
+                Margins(left = each, right = each)
+            } else {
+                val each = (from / to - 1f) / 2f
+                Margins(top = each, bottom = each)
+            }.clamped()
+        }
+
+        /**
          * specs/outpaint.md §3: a `Crop.rect` is normalised against the canvas it was made on,
          * so committing or replacing an `Outpaint` moves it — pure arithmetic, no pixels.
          *
