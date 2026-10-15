@@ -11,6 +11,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
@@ -85,7 +87,13 @@ fun EditorRoute(
     // §4: system back closes the level before it leaves the screen.
     BackHandler(enabled = toolLevel != ToolGroup.Root) { toolLevel = ToolGroup.Root }
 
-    val pointTaps = pointTaps(state, viewModel)
+    // Opening the AI level warms the session, so a tap on the photo answers about as fast as
+    // the Photo Editor's. Nobody waits on it, so nothing is shown for it.
+    LaunchedEffect(toolLevel) {
+        if (toolLevel == ToolGroup.Ai) warmSelection(state, viewModel)
+    }
+
+    val pointTaps = pointTaps(state, viewModel, toolLevel)
     Box(modifier = modifier.fillMaxSize()) {
         EditorScreen(
             preview = shownPreview(state),
@@ -172,12 +180,17 @@ private fun topazFrame(state: EditorUiState) = state.topaz.result
 
 /**
  * specs/selection_tool.md §2 and multishot.md §2: the tools that claim a single-finger tap on the
- * photo — 선택, and 멀티샷 while an added photo's selection is being refined.
+ * photo — 선택, and 멀티샷 while an added photo's selection is being refined. At the AI level with
+ * nothing open, the photo itself takes the tap (see [selectOnCanvas]).
  */
-private fun pointTaps(state: EditorUiState, viewModel: EditorViewModel): CanvasPointTaps? = when {
+private fun pointTaps(state: EditorUiState, viewModel: EditorViewModel, level: ToolGroup): CanvasPointTaps? = when {
     state.selectedTool == Tool.Select -> CanvasPointTaps(
         onForeground = { viewModel.selection.addPoint(it.x, it.y, foreground = true) },
         onBackground = { viewModel.selection.addPoint(it.x, it.y, foreground = false) },
+    )
+    state.selectedTool == null && level == ToolGroup.Ai && !state.selection.showSettings -> CanvasPointTaps(
+        onForeground = { selectOnCanvas(viewModel, it, foreground = true) },
+        onBackground = { selectOnCanvas(viewModel, it, foreground = false) },
     )
     state.selectedTool == Tool.MultiShot && state.multiShot.selected?.status ==
         ShotStatus.Selecting -> CanvasPointTaps(
@@ -185,6 +198,24 @@ private fun pointTaps(state: EditorUiState, viewModel: EditorViewModel): CanvasP
         onBackground = { viewModel.multiShot.addPoint(it.x, it.y, include = false) },
     )
     else -> null
+}
+
+/**
+ * The Photo Editor's way in: tapping the thing to select *is* selecting it. At the AI level a tap
+ * on the photo is 선택's own tap one step earlier — it opens the sheet, or has the tool explain
+ * why it cannot, and then adds the point, kept until the session is ready if the warm-up is
+ * still on the wire.
+ */
+private fun selectOnCanvas(viewModel: EditorViewModel, point: Offset, foreground: Boolean) {
+    viewModel.onToolClick(Tool.Select)
+    if (viewModel.uiState.value.selectedTool != Tool.Select) return
+    viewModel.selection.addPoint(point.x, point.y, foreground)
+}
+
+/** The same open 선택 does on entry, on the same preview, with nobody shown waiting for it. */
+private fun warmSelection(state: EditorUiState, viewModel: EditorViewModel) {
+    if (!state.selection.enabled) return
+    state.preview?.let { viewModel.selection.open(it.asAndroidBitmap(), wait = false) }
 }
 
 /** DESIGN.md §7: the overlay's cancel button reaches whichever tool is working. */
@@ -275,6 +306,8 @@ private fun canvasOverlay(
         mask = state.selection.mask,
         points = state.selection.points,
         labels = state.selection.labels,
+        reveal = true,
+        busy = state.selection.busy,
     )
     // specs/outpaint.md §6: the pending area is the canvas's own checkerboard, drawn by
     // `OverlayTransform.margins`; the overlay itself is the four handles.

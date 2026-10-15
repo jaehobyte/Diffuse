@@ -266,6 +266,109 @@ class SelectionToolTest {
         )
     }
 
+    // ---- selecting from the preview ---------------------------------------
+
+    // These read the controller's own state: with a queued dispatcher the ViewModel's collector
+    // has not run yet, and running it to idle would finish the upload being waited on.
+
+    /** Opening the AI level warms the session; nothing is shown until someone waits on it. */
+    @Test
+    fun `warming the session shows no progress overlay until someone waits on it`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val slow = FakeSegmentationProvider(openDelayMs = 5_000)
+        val viewModel = viewModel(slow)
+        advanceUntilIdle()
+        val preview = Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888)
+
+        viewModel.selection.open(preview, wait = false)
+        advanceTimeBy(1_000)
+        assertTrue(viewModel.selection.state.value.preparing)
+        assertFalse("a silent warm-up earns no overlay", viewModel.selection.state.value.working)
+
+        viewModel.onToolClick(Tool.Select)
+        assertTrue("the sheet waits on the same upload", viewModel.selection.state.value.working)
+        advanceUntilIdle()
+
+        assertEquals("one upload, not two", 1, slow.openCount)
+        assertNotNull(viewModel.selection.state.value.session)
+        assertFalse(viewModel.selection.state.value.working)
+    }
+
+    @Test
+    fun `a tap before the session is ready waits for it and is segmented once it opens`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val slow = FakeSegmentationProvider(openDelayMs = 5_000)
+        val viewModel = viewModel(slow)
+        advanceUntilIdle()
+        val preview = Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888)
+        viewModel.selection.open(preview, wait = false)
+        advanceTimeBy(1_000)
+
+        viewModel.onToolClick(Tool.Select)
+        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
+        assertTrue("the tap is what the user is waiting on", viewModel.selection.state.value.working)
+        assertNotNull(viewModel.selection.state.value.pending)
+        advanceUntilIdle()
+
+        val selection = viewModel.selection.state.value
+        assertNull(selection.pending)
+        assertEquals(listOf(true), selection.labels)
+        assertNotNull("the kept tap was segmented", selection.mask)
+        assertFalse(selection.working)
+    }
+
+    @Test
+    fun `cancelling while a tap is pending drops the tap`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val slow = FakeSegmentationProvider(openDelayMs = 5_000)
+        val viewModel = viewModel(slow)
+        advanceUntilIdle()
+        viewModel.onToolClick(Tool.Select)
+        viewModel.selection.addPoint(0.5f, 0.5f, foreground = true)
+
+        viewModel.selection.cancelWork()
+        advanceUntilIdle()
+
+        val selection = viewModel.selection.state.value
+        assertNull(selection.pending)
+        assertNull(selection.mask)
+        assertTrue(selection.points.isEmpty())
+        assertFalse(selection.working)
+    }
+
+    /** The upload keeps going when the sheet closes, so the next open does not start another. */
+    @Test
+    fun `closing the sheet mid-upload keeps the upload for the next open`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val slow = FakeSegmentationProvider(openDelayMs = 5_000)
+        val viewModel = viewModel(slow)
+        advanceUntilIdle()
+
+        viewModel.onToolClick(Tool.Select)
+        advanceTimeBy(1_000)
+        viewModel.cancelSheet()
+        assertFalse("nobody is waiting any more", viewModel.selection.state.value.working)
+        viewModel.onToolClick(Tool.Select)
+        advanceUntilIdle()
+
+        assertEquals(1, slow.openCount)
+        assertEquals(1, slow.openSessions.size)
+        assertNotNull(viewModel.selection.state.value.session)
+    }
+
+    /** A warm-up nobody asked to see fails quietly; the tool explains itself when it is tapped. */
+    @Test
+    fun `a failed warm-up raises no snackbar`() = runTest {
+        val viewModel = viewModel()
+        provider.failNext(AppError.Unavailable)
+        val preview = Bitmap.createBitmap(SIZE, SIZE, Bitmap.Config.ARGB_8888)
+
+        viewModel.selection.open(preview, wait = false)
+
+        assertNull(viewModel.selection.state.value.message)
+        assertFalse(viewModel.selection.state.value.preparing)
+    }
+
     // ---- points ----------------------------------------------------------
 
     @Test

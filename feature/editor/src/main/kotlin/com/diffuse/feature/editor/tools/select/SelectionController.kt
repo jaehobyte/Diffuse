@@ -121,13 +121,22 @@ class SelectionController(
      * specs/selection_tool.md §9: the session is opened on the **current preview**, not the
      * source, so the mask lines up with what the user is looking at. Re-opening the sheet in the
      * same editor session reuses it.
+     *
+     * [wait] is whether the caller is waiting on the result: the sheet is, so it shows the
+     * progress overlay; the warm-up that opening the AI level starts is not, so it shows
+     * nothing. One upload serves both — a sheet opened over a warm-up waits on the warm-up.
      */
-    fun open(preview: Bitmap) {
+    fun open(preview: Bitmap, wait: Boolean = true) {
+        val current = _state.value
+        if (current.session != null) return
         // `preparing` as well as `session`: an upload takes seconds, and without this a second
         // tap in that window starts a second one.
-        if (_state.value.session != null || _state.value.preparing) return
+        if (current.preparing) {
+            if (wait && !current.waiting) _state.value = current.copy(waiting = true)
+            return
+        }
         val ticket = ++openTicket
-        _state.value = _state.value.copy(preparing = true)
+        _state.value = current.copy(preparing = true, waiting = wait)
         // Deliberately not held in `job`. Cancelling an upload that is already on the wire does
         // not un-create the session the server makes from it — it only loses the id, leaving an
         // orphan to occupy one of the backend's four slots until its TTL expires. So the call
@@ -139,11 +148,30 @@ class SelectionController(
             when {
                 opened is Result.Success && !wanted -> segmentation.close(opened.value)
                 !wanted -> Unit
-                opened is Result.Success ->
-                    _state.value = _state.value.copy(session = opened.value, preparing = false)
-                else -> _state.value = _state.value.copy(preparing = false, message = R.string.select_failed)
+                opened is Result.Success -> {
+                    _state.value = _state.value.copy(session = opened.value, preparing = false, waiting = false)
+                    replayPending()
+                }
+                else -> {
+                    val failed = _state.value
+                    _state.value = failed.copy(
+                        preparing = false,
+                        waiting = false,
+                        pending = null,
+                        // A warm-up nobody was watching fails quietly; the tool explains itself
+                        // when it is tapped.
+                        message = if (failed.waiting) R.string.select_failed else failed.message,
+                    )
+                }
             }
         }
+    }
+
+    /** The tap taken while the upload was on the wire is the first point of the run. */
+    private fun replayPending() {
+        val pending = _state.value.pending ?: return
+        _state.value = _state.value.copy(pending = null)
+        addPoint(pending.x, pending.y, pending.foreground)
     }
 
     /**
@@ -154,13 +182,23 @@ class SelectionController(
         openTicket++
         job?.cancel()
         _state.value.session?.let { segmentation.close(it) }
-        _state.value = _state.value.cleared().copy(session = null, preparing = false, busy = false)
+        _state.value = _state.value.cleared()
+            .copy(session = null, preparing = false, waiting = false, pending = null, busy = false)
     }
 
-    /** specs/selection_tool.md §2: tap adds a foreground point, long-press a background one. */
+    /**
+     * specs/selection_tool.md §2: tap adds a foreground point, long-press a background one.
+     * Tapped before the upload has come back, the point is kept and the user now waits on that
+     * upload — so a tap straight on the photo answers as soon as the session can.
+     */
     fun addPoint(x: Float, y: Float, foreground: Boolean) {
         val current = _state.value
-        if (current.session == null) return
+        if (current.session == null) {
+            if (current.preparing) {
+                _state.value = current.copy(pending = PendingPoint(x, y, foreground), waiting = true)
+            }
+            return
+        }
         segment(current.withPoint(PointF(x, y), foreground))
     }
 
@@ -274,14 +312,24 @@ class SelectionController(
         openTicket++
         job?.cancel()
         // Whatever was accumulated stays exactly as it was.
-        _state.value = _state.value.copy(preparing = false, busy = false, phraseBusy = false)
+        _state.value = _state.value.copy(
+            preparing = false,
+            waiting = false,
+            pending = null,
+            busy = false,
+            phraseBusy = false,
+        )
     }
 
-    /** Cancel or Apply closed the sheet. The session survives so re-opening is instant (§6). */
+    /**
+     * Cancel or Apply closed the sheet. The session survives so re-opening is instant (§6), and
+     * so does an upload still on the wire: nobody waits on it now, and the next open finds it
+     * warm rather than starting a second one.
+     */
     fun closeSheet() {
         job?.cancel()
         _state.value = _state.value.cleared()
-            .copy(preparing = false, busy = false, phraseBusy = false, phrase = "")
+            .copy(waiting = false, pending = null, busy = false, phraseBusy = false, phrase = "")
     }
 
     fun saveSettings(baseUrl: String, token: String, geminiApiKey: String, topazApiKey: String) {

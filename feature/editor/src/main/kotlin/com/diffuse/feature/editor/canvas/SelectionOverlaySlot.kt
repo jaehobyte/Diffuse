@@ -14,6 +14,9 @@ fun selectionOverlaySlot(
     mask: Bitmap?,
     points: List<PointF>,
     labels: List<Boolean>,
+    /** The 선택 tool reveals each new mask the way the Photo Editor does; consumers just show it. */
+    reveal: Boolean = false,
+    busy: Boolean = false,
 ): @Composable BoxScope.() -> Unit = {
-    SelectionOverlay(mask = mask, points = points, labels = labels)
+    SelectionOverlay(mask = mask, points = points, labels = labels, reveal = reveal, busy = busy)
 }

@@ -30,6 +30,13 @@ data class SelectionState(
     val inverted: Boolean = false,
     val lowConfidence: Boolean = false,
     val preparing: Boolean = false,
+    /**
+     * Someone is waiting on [preparing]: the open sheet, or a tap kept in [pending]. A session
+     * warmed up when the AI level opens is waited on by nobody, so it earns no overlay.
+     */
+    val waiting: Boolean = false,
+    /** A tap taken before the session was ready, segmented the moment it is. */
+    val pending: PendingPoint? = null,
     val busy: Boolean = false,
     /** specs/prompt_input.md §4: what is typed or dictated, until it is submitted. */
     val phrase: String = "",
@@ -57,8 +64,8 @@ data class SelectionState(
 
     val enabled: Boolean get() = availability is Availability.Ready
 
-    /** DESIGN.md §7: AI work always shows progress and a cancel button. */
-    val working: Boolean get() = preparing || phraseBusy
+    /** DESIGN.md §7: AI work the user is waiting on always shows progress and a cancel button. */
+    val working: Boolean get() = (preparing && waiting) || phraseBusy
 
     val prompt: PointPrompt? get() = if (points.isEmpty()) null else PointPrompt(points, labels)
 
@@ -110,3 +117,6 @@ data class SelectionState(
         const val LOW_CONFIDENCE_SCORE = 0.3f
     }
 }
+
+/** A point tapped on the photo before the session opened, kept until it has. */
+data class PendingPoint(val x: Float, val y: Float, val foreground: Boolean)
