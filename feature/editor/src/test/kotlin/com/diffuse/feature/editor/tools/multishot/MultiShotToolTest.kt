@@ -79,10 +79,11 @@ class MultiShotToolTest {
     @After
     fun tearDown() = Dispatchers.resetMain()
 
+    /** D107: a plan-only tool has no strip item; 멀티샷 is not reachable from the strip at all. */
     @Test
-    fun `the tool is at the AI level`() {
-        assertTrue(StripItem.OfTool(Tool.MultiShot) in stripItems(ToolGroup.Ai))
-        assertFalse(StripItem.OfTool(Tool.MultiShot) in stripItems(ToolGroup.Root))
+    fun `the tool has no strip item`() {
+        assertEquals(ToolGroup.Ai, Tool.MultiShot.group)
+        assertFalse(StripItem.OfTool(Tool.MultiShot) in stripItems())
     }
 
     @Test

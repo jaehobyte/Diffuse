@@ -5,8 +5,6 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.hasTestTag
-import androidx.compose.ui.test.performScrollToNode
 import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -38,7 +36,6 @@ import com.diffuse.feature.editor.EditorViewModel
 import com.diffuse.feature.editor.R
 import com.diffuse.feature.editor.TestDispatchers
 import com.diffuse.feature.editor.Tool
-import com.diffuse.feature.editor.ToolStripTestTag
 import com.diffuse.feature.editor.canvas.CanvasCaptionTestTag
 import com.diffuse.feature.editor.tools.enhance.testTopazSettings
 import com.diffuse.feature.editor.tools.enhance.testTopazStorage
@@ -197,15 +194,11 @@ class DirectDictationTest {
     private fun show(viewModel: EditorViewModel) {
         compose.setContent { EditorRoute(onExport = {}, viewModel = viewModel) }
         compose.waitForIdle()
-        compose.onNodeWithTag(string(R.string.editor_tool_ai)).performClick()
-        compose.waitForIdle()
     }
 
-    /** The strip is a `LazyRow`, and 지시 is its last item: scroll it in before tapping. */
+    /** D107: the strip's AI circle is 지시. */
     private fun tapDirect() {
-        val label = string(R.string.editor_tool_direct)
-        compose.onNodeWithTag(ToolStripTestTag).performScrollToNode(hasTestTag(label))
-        compose.onNodeWithTag(label).performClick()
+        compose.onNodeWithTag(string(R.string.editor_tool_ai)).performClick()
         compose.waitForIdle()
     }
 

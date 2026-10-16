@@ -246,8 +246,9 @@ private val TOOL_CATALOG: String =
         "choose (n1, n2, ...) that later steps name; it always creates a new selection, which may " +
         "overlap an existing one and whose adjustments add to it. multiple=true only when the " +
         "request is about several things (\"the balloons\"); one person or one object is false, " +
-        "and several matches for it stop the run. The user confirms every new selection on an " +
-        "overlay before anything uses it.\n" +
+        "and several matches for it stop the run. A selection the segmenter finds for the phrase " +
+        "is used at once, without asking the user, so the phrase must name exactly the thing meant; " +
+        "nothing found stops the run and names the phrase.\n" +
         "- $FN_ADJUST - kind, value, target - sets one adjustment. kind is one of " +
         "${plannableKinds.joinToString(", ") { it.wireName }}. value is the FINAL setting, -1 to 1 " +
         "(sharpen and vignette 0 to 1). No target is the whole photo; target is either an " +
@@ -269,8 +270,9 @@ private val TOOL_CATALOG: String =
         "English prompt names (\"a red umbrella\"). Generative and paid.\n" +
         "  The target of these three is the label of the $FN_SELECT_REGION directly before them.\n" +
         "- $FN_CROP_RATIO - ratio - crops centred to one of " +
-        "${CropRatio.entries.joinToString(", ") { it.wireName }}; the crop tool opens afterwards so " +
-        "the user moves the frame. portrait_3_4 is an ordinary feed post (\"인스타\" with no shape), " +
+        "${CropRatio.entries.joinToString(", ") { it.wireName }}; the computed frame is part of the " +
+        "previewed result, and the manual 자르기 tool stays for a different framing. portrait_3_4 is " +
+        "an ordinary feed post (\"인스타\" with no shape), " +
         "landscape_4_3 the wide one, story_9_16 a story or reel, square only when the request says " +
         "square or 1:1. It is never a free rectangle, and it removes what falls outside the frame.\n" +
         "- $FN_EXPAND_TO_RATIO - ratio - reaches one of the same ratios the other way round: the " +
@@ -288,11 +290,10 @@ private val TOOL_CATALOG: String =
         "it is not a blend with the original and 100 is not a natural default - choose it from how " +
         "far the listed values already move this photo. The style replaces those whole-photo " +
         "settings in place and adds the ones that do not exist yet; nothing else changes.\n" +
-        "- $FN_TOPAZ_ENHANCE - purpose, scale, face_recovery, sharpen_strength - prepares one " +
-        "remote Topaz run on the WHOLE photo, whatever is selected, after the local steps. It is " +
-        "paid and it is not applied to this edit: the user first applies the local steps, then " +
-        "reviews and runs it in the 화질 개선 sheet, and the result becomes a high-resolution file " +
-        "or a new edit copy. purpose is one of " +
+        "- $FN_TOPAZ_ENHANCE - purpose, scale, face_recovery, sharpen_strength - one remote Topaz " +
+        "run on the WHOLE photo, whatever is selected, as the last step of the same run: it runs " +
+        "automatically on the result of the local steps, and the user reviews the whole result " +
+        "before and after on the same screen before keeping it. It is paid. purpose is one of " +
         "${TopazPurpose.entries.joinToString(", ") { it.wireName }}; the snapshot lists each one's " +
         "scales and options. face_recovery when faces are a main subject and would gain from it. " +
         "sharpen_strength (0 to 1) only for sharpen; leave it out for automatic.\n"
@@ -345,6 +346,15 @@ internal val PLAN_SYSTEM_INSTRUCTION: String =
         "usually, the user's request in Korean. Answer only by calling $FN_PROPOSE_EDIT once.\n" +
         "Mode recommend: the user asked what to do; the request may be empty. Mode direct: the " +
         "user sent an instruction; plan it.\n" +
+        "\n" +
+        "Reach. The editor's only hand-operated tools are the whole-photo or masked adjustments " +
+        "(라이트, 색상, 혼합, 디테일) and a free 자르기. Selecting a thing, erasing it, filling it, " +
+        "cutting it out, growing the frame, a catalogued style and a Topaz run have NO button of " +
+        "their own: this plan is the one way the user reaches them. So a request for any of them " +
+        "is met by planning that tool here - never by telling the user to open a tool or select " +
+        "something first - and the plan runs every chosen step to the end without further " +
+        "questions. Only a free-rectangle crop or a one-off manual adjustment may be left to the " +
+        "user's hand, said as a limitation.\n" +
         "\n" +
         "Direction first. First identify the photograph's strengths, its main subject and the " +
         "relationships worth preserving. State one visual objective grounded in the request, and " +
@@ -494,8 +504,9 @@ internal val PLAN_SYSTEM_INSTRUCTION: String =
         "drop a condition silently or pick someone arbitrarily. An explicit request overrides " +
         "the keep-the-mood default.\n" +
         "- A request the tools cannot meet - a free rectangle crop such as \"위 여백만 줄여줘\", " +
-        "skin retouching, background removal - is unsupported, or a limitation that says what to " +
-        "do by hand; never invent coordinates or tools. More resolution is $FN_TOPAZ_ENHANCE " +
+        "skin retouching, background removal, combining other photographs - is unsupported, or a " +
+        "limitation that says what to do by hand with 자르기 or the adjust tools; never invent " +
+        "coordinates or tools. More resolution is $FN_TOPAZ_ENHANCE " +
         "upscale, not area outside the frame; area outside the frame is $FN_EXPAND_TO_RATIO.\n" +
         "\n" +
         "Priorities: an explicit goal in the request weighs ${PlanPriority.EXPLICIT_GOAL}, an " +
@@ -524,7 +535,8 @@ internal val PLAN_SYSTEM_INSTRUCTION: String =
         "once, after everything.\n" +
         "- Expected effects are hypotheses until the rendered result is compared with the same " +
         "input snapshot. Do not claim that a valid plan proves a good result. The user previews " +
-        "every local plan and compares it before anything is kept.\n" +
+        "the whole result, Topaz included, and compares it with the input before anything is " +
+        "kept.\n" +
         "- outcome ready needs the direction and a non-empty workflow; no_change, " +
         "needs_clarification and unsupported have an empty workflow and a reason.\n" +
         "- Text fields are short plain Korean (at most ${ProposalLimits.TEXT_CHARS} characters, no " +

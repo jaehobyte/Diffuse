@@ -46,6 +46,26 @@ fun PlanProposal.selected(chosen: Set<String>): PlanProposal {
 }
 
 /**
+ * D109: the proposal with the user's own values on its adjustment items, by item id — an `Adjust`
+ * step's value replaced, coerced to the kind's range; every other step, every id and the order
+ * untouched. The proposal itself is never changed; this is what a run is given.
+ */
+fun PlanProposal.withValues(values: Map<String, Float>): PlanProposal {
+    if (values.isEmpty()) return this
+    return copy(
+        workflow = identified.map { step ->
+            val value = values[step.id]
+            val adjust = step.step as? PlanStep.Adjust
+            if (value == null || adjust == null) {
+                step
+            } else {
+                step.copy(step = adjust.copy(value = adjust.kind.coerce(value)))
+            }
+        },
+    )
+}
+
+/**
  * §19: the rules the original proposal passed, run again on [selected] — targets declared before
  * use, erase/cut-out/fill on the selection right before them, the user's explicit constraints and
  * the state simulation. Null when the choice can run. Turning items off never makes a structurally

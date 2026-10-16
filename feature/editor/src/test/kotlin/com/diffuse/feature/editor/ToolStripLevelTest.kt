@@ -1,13 +1,9 @@
 package com.diffuse.feature.editor
 
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertIsEnabled
-import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollToNode
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
 import com.diffuse.core.ui.theme.AppTheme
@@ -20,7 +16,10 @@ import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
-/** specs/tool_groups.md §2, §3, §4, §7. */
+/**
+ * work/decisions.md D107: one strip, one level — the manual tools and the AI circle, which is
+ * 지시. The plan-only tools have no item anywhere.
+ */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 // The strip is a `LazyRow`, so an item past the viewport is not composed at all. Six 64dp items
@@ -31,225 +30,113 @@ class ToolStripLevelTest {
     @get:Rule
     val compose = createComposeRule()
 
-    private val levelState = mutableStateOf(ToolGroup.Root)
-    private val level: ToolGroup get() = levelState.value
     private val clicked = mutableListOf<Tool>()
+    private var aiClicks = 0
 
-    // ---- the lists, without a screenshot ---------------------------------
+    // ---- the list, without a screenshot ----------------------------------
 
-    /** §7: and work/decisions.md D092 — one menu for every photograph, so every tool, once. */
+    /** work/decisions.md D092: one menu for every photograph — every root tool, once, in order. */
     @Test
-    fun `every tool appears at exactly one level`() {
-        val shown = ToolGroup.entries.flatMap { stripItems(it) }
-            .filterIsInstance<StripItem.OfTool>()
-            .map { it.tool }
-
-        assertEquals(Tool.entries.size, shown.size)
-        assertEquals(Tool.entries.toSet(), shown.toSet())
-    }
-
-    /** D092: 디테일 is a root tool for every photograph. */
-    @Test
-    fun `the root level holds the adjust tools in order`() {
-        val root = stripItems(ToolGroup.Root).filterIsInstance<StripItem.OfTool>().map { it.tool }
-
-        assertEquals(listOf(Tool.Light, Tool.Color, Tool.Mix, Tool.Crop, Tool.Detail), root)
-    }
-
-    @Test
-    fun `the root level ends at AI and the AI level starts at back`() {
-        val root = stripItems(ToolGroup.Root)
-        val ai = stripItems(ToolGroup.Ai)
-
-        assertEquals(StripItem.OpenAi, root.last())
-        assertEquals(StripItem.Back, ai.first())
-        assertTrue(root.none { it is StripItem.Back })
-        assertTrue(ai.none { it is StripItem.OpenAi })
-    }
-
-    /**
-     * D097: 자동 is gone and the rest keep their relative order. specs/topaz_enhancement.md §1:
-     * 화질 개선 sits after 확대, and nothing else moves.
-     */
-    @Test
-    fun `the AI level holds the tools that call a provider`() {
-        val ai = stripItems(ToolGroup.Ai).filterIsInstance<StripItem.OfTool>().map { it.tool }
+    fun `the strip holds the manual tools in order and ends at AI`() {
+        val items = stripItems()
 
         assertEquals(
-            listOf(
-                Tool.Erase, Tool.Fill, Tool.Expand, Tool.Enhance, Tool.Style,
-                Tool.MultiShot, Tool.Direct,
-            ),
-            ai,
+            listOf(Tool.Light, Tool.Color, Tool.Mix, Tool.Crop, Tool.Detail),
+            items.filterIsInstance<StripItem.OfTool>().map { it.tool },
         )
-        // 선택 is no longer an item: at this level the photo itself takes the tap.
-        assertEquals(
-            listOf("지우기", "채우기", "확대", "화질 개선", "스타일", "멀티샷", "지시"),
-            ai.map(::labelOf),
-        )
+        assertEquals(StripItem.OpenAi, items.last())
+    }
+
+    /** D107: a tool in the `Ai` group is reached only through a plan — it has no item. */
+    @Test
+    fun `a plan-only tool has no strip item`() {
+        val shown = stripItems().filterIsInstance<StripItem.OfTool>().map { it.tool }.toSet()
+
+        assertEquals(Tool.entries.filter { it.group == ToolGroup.Root }.toSet(), shown)
+        assertTrue(Tool.entries.filter { it.group == ToolGroup.Ai }.none { it in shown })
+        assertTrue(Tool.Direct.group == ToolGroup.Ai)
     }
 
     // ---- the strip -------------------------------------------------------
 
     @Test
-    fun `the root level shows the adjust tools and not the AI ones`() {
+    fun `the strip shows the adjust tools and AI, and none of the plan-only tools`() {
         show()
 
         compose.onNodeWithText("라이트").assertExists()
         compose.onNodeWithText("자르기").assertExists()
-        compose.onNodeWithText("AI").assertExists()
         compose.onNodeWithText("디테일").assertExists()
-        compose.onNodeWithText("지우기").assertDoesNotExist()
-        compose.onNodeWithText("자동").assertDoesNotExist()
-        compose.onNodeWithText("뒤로").assertDoesNotExist()
-        compose.onNodeWithText("피부 보정").assertDoesNotExist()
+        compose.onNodeWithText("AI").assertExists()
+        listOf("뒤로", "지우기", "채우기", "확대", "화질 개선", "스타일", "멀티샷", "지시", "자동", "선택").forEach {
+            compose.onNodeWithText(it).assertDoesNotExist()
+        }
     }
 
-    /** §4: tapping AI is navigation, not a tool — it selects nothing. */
+    /** D107: tapping AI is 지시 — reported to the caller as the AI click, selecting no tool. */
     @Test
-    fun `tapping AI opens the level and selects no tool`() {
+    fun `tapping AI reports the AI click and selects no tool`() {
         show()
 
         compose.onNodeWithText("AI").performClick()
 
-        assertEquals(ToolGroup.Ai, level)
+        assertEquals(1, aiClicks)
         assertEquals(emptyList<Tool>(), clicked)
     }
 
     @Test
-    fun `the AI level shows the AI tools and a way back`() {
-        show(ToolGroup.Ai)
+    fun `a tool tap reaches the tool`() {
+        show()
 
-        compose.onNodeWithText("뒤로").assertExists()
-        compose.onNodeWithText("지우기").assertExists()
-        compose.onNodeWithText("확대").assertExists()
-        compose.onNodeWithText("라이트").assertDoesNotExist()
-        compose.onNodeWithText("디테일").assertDoesNotExist()
-        compose.onNodeWithText("AI").assertDoesNotExist()
-        compose.onNodeWithText("피부 보정").assertDoesNotExist()
-    }
+        compose.onNodeWithText("자르기").performClick()
 
-    /** D092: 멀티샷 and 지시 are reached at the AI level, past the lazy strip's first screen. */
-    @Test
-    fun `the AI level reaches 멀티샷 and 지시`() {
-        show(ToolGroup.Ai)
-
-        listOf("멀티샷", "지시").forEach { label ->
-            compose.onNodeWithTag(ToolStripTestTag).performScrollToNode(hasText(label))
-            compose.onNodeWithText(label).assertExists()
-        }
-    }
-
-    /** D097: the removed 자동 보정 tool leaves no item, greyed or otherwise, at the AI level. */
-    @Test
-    fun `the AI level has no 자동 item anywhere along the strip`() {
-        show(ToolGroup.Ai)
-
-        compose.onNodeWithTag(ToolStripTestTag).performScrollToNode(hasText("지시"))
-        compose.onNodeWithText("자동").assertDoesNotExist()
-        compose.onNodeWithText("자동 보정").assertDoesNotExist()
-    }
-
-    @Test
-    fun `tapping back returns to the root`() {
-        show(ToolGroup.Ai)
-
-        compose.onNodeWithText("뒤로").performClick()
-
-        assertEquals(ToolGroup.Root, level)
-        assertEquals(emptyList<Tool>(), clicked)
-    }
-
-    @Test
-    fun `a child tap reaches the tool, not the level`() {
-        show(ToolGroup.Ai)
-
-        compose.onNodeWithText("지우기").performClick()
-
-        assertEquals(listOf(Tool.Erase), clicked)
-        assertEquals(ToolGroup.Ai, level)
+        assertEquals(listOf(Tool.Crop), clicked)
+        assertEquals(0, aiClicks)
     }
 
     // ---- disabling -------------------------------------------------------
 
-    /** §4: a parent that cannot be tapped hides the reason its children cannot be. */
+    /** The AI circle is never greyed: 지시 explains a missing key itself (specs/vibe_edit.md §10). */
     @Test
-    fun `the AI parent still opens when every child is disabled`() {
+    fun `AI still opens when every tool is disabled`() {
         show(disabled = Tool.entries.toSet())
 
+        compose.onNodeWithText("AI").assertIsEnabled()
         compose.onNodeWithText("AI").performClick()
 
-        assertEquals(ToolGroup.Ai, level)
+        assertEquals(1, aiClicks)
     }
 
-    @Test
-    fun `a disabled child is greyed but still tappable, so it can explain itself`() {
-        show(ToolGroup.Ai, disabled = setOf(Tool.Erase))
-
-        // DESIGN.md §4 greys it; specs/selection_tool.md §1 keeps the click.
-        compose.onNodeWithText("지우기").performClick()
-
-        assertEquals(listOf(Tool.Erase), clicked)
-        assertEquals(ToolGroup.Ai, level)
-    }
-
-    @Test
-    fun `back still works when every child is disabled`() {
-        show(ToolGroup.Ai, disabled = Tool.entries.toSet())
-
-        compose.onNodeWithText("뒤로").performClick()
-
-        assertEquals(ToolGroup.Root, level)
-    }
-
-    @Test
-    fun `an enabled tool is enabled`() {
-        show(ToolGroup.Ai, disabled = setOf(Tool.Erase))
-
-        compose.onNodeWithText("확대").assertIsEnabled()
-        compose.onNodeWithText("지우기").assertIsEnabled()
-    }
-
-    /** The strip greys through colour, not through the click, so this is the alpha's own test. */
+    /** DESIGN.md §4 greys through colour, not through the click, so a tool can explain itself. */
     @Test
     fun `nothing in the strip is ever click-disabled`() {
-        show(ToolGroup.Root, disabled = Tool.entries.toSet())
+        show(disabled = Tool.entries.toSet())
 
-        stripItems(ToolGroup.Root).filterIsInstance<StripItem.OfTool>().forEach {
+        stripItems().filterIsInstance<StripItem.OfTool>().forEach {
             compose.onNodeWithText(labelOf(it.tool)).assertIsEnabled()
+            compose.onNodeWithText(labelOf(it.tool)).performClick()
         }
+
+        assertEquals(stripItems().filterIsInstance<StripItem.OfTool>().map { it.tool }, clicked)
     }
 
-    // One branch per tool, so it grows with the enum by design.
-    @Suppress("CyclomaticComplexMethod")
     private fun labelOf(tool: Tool): String = when (tool) {
         Tool.Light -> "라이트"
         Tool.Color -> "색상"
         Tool.Mix -> "혼합"
         Tool.Crop -> "자르기"
         Tool.Detail -> "디테일"
-        Tool.Erase -> "지우기"
-        Tool.Fill -> "채우기"
-        Tool.Expand -> "확대"
-        Tool.Enhance -> "화질 개선"
-        Tool.Style -> "스타일"
-        Tool.MultiShot -> "멀티샷"
-        Tool.Direct -> "지시"
+        Tool.Erase, Tool.Fill, Tool.Expand, Tool.Enhance, Tool.Style, Tool.MultiShot, Tool.Direct ->
+            error("$tool has no strip item")
     }
 
-    private fun show(
-        start: ToolGroup = ToolGroup.Root,
-        disabled: Set<Tool> = emptySet(),
-    ) {
-        levelState.value = start
+    private fun show(disabled: Set<Tool> = emptySet()) {
         compose.setContent {
             AppTheme(ThemeMode.Edit) {
                 EditorToolStrip(
                     selectedTool = null,
                     onToolClick = { clicked += it },
                     disabledTools = disabled,
-                    level = levelState.value,
-                    onLevelChange = { levelState.value = it },
+                    onAiClick = { aiClicks++ },
                 )
             }
         }

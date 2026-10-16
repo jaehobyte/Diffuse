@@ -13,6 +13,7 @@ import com.diffuse.core.ai.selectionProblem
 import com.diffuse.core.ai.topaz.TopazFailure
 import com.diffuse.core.ai.topaz.TopazPurpose
 import com.diffuse.core.ai.topazBlock
+import com.diffuse.core.ai.withValues
 import com.diffuse.core.imaging.model.AdjustKind
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -46,6 +47,21 @@ class GeminiPlanSelectionTest {
             {"tool":"adjust","goal_id":"g3","args":{"kind":"temperature","value":0.05}}
           ]}""",
     )
+
+    /** D109: a slider's value lands on its own adjustment item and nowhere else. */
+    @Test
+    fun `the user's values replace only the adjustment items they name, within the kind's range`() {
+        val tuned = portrait.withValues(mapOf("s2" to 0.5f, "s7" to 0.9f, "s9" to 3f))
+        val steps = tuned.workflow.associate { it.id to it.step }
+
+        assertEquals(0.5f, (steps["s2"] as PlanStep.Adjust).value)
+        assertEquals("the proposal's own value stays", 0.1f, (steps["s3"] as PlanStep.Adjust).value)
+        assertEquals("an erase is not an adjustment", PlanStep.Erase("n2"), steps["s7"])
+        assertEquals(AdjustKind.Temperature.range.endInclusive, (steps["s9"] as PlanStep.Adjust).value)
+        assertEquals(portrait.items.map { it.id }, tuned.items.map { it.id })
+        assertEquals("the proposal itself is untouched", 0.2f, (portrait.workflow[1].step as PlanStep.Adjust).value)
+        assertEquals(portrait, portrait.withValues(emptyMap()))
+    }
 
     @Test
     fun `every step but a selection is its own item, with the selections it needs`() {

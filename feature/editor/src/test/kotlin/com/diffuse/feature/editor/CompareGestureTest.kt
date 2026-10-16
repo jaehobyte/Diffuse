@@ -8,6 +8,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performTouchInput
+import com.diffuse.feature.editor.canvas.EditorCanvasTestTag
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.diffuse.core.imaging.model.AdjustKind
@@ -83,6 +84,51 @@ class CompareGestureTest {
         assertShowing(R.string.editor_canvas_edited)
     }
 
+    /** D108: holding a finger on the photo is the same hold as the bar's ◐. */
+    @Test
+    fun `holding the photo shows the source and releasing returns to the preview`() {
+        showShell()
+        val canvas = compose.onNodeWithTag(EditorCanvasTestTag)
+
+        canvas.performTouchInput { down(center) }
+        compose.mainClock.advanceTimeBy(HOLD_MS)
+        compose.waitForIdle()
+        assertShowing(R.string.editor_canvas_source)
+
+        canvas.performTouchInput { up() }
+        compose.waitForIdle()
+        assertShowing(R.string.editor_canvas_edited)
+    }
+
+    /** A tap, or a press shorter than the long-press timeout, is not a hold. */
+    @Test
+    fun `a short press on the photo keeps the preview`() {
+        showShell()
+        val canvas = compose.onNodeWithTag(EditorCanvasTestTag)
+
+        canvas.performTouchInput { down(center) }
+        compose.waitForIdle()
+        assertShowing(R.string.editor_canvas_edited)
+
+        canvas.performTouchInput { up() }
+        compose.mainClock.advanceTimeBy(HOLD_MS)
+        compose.waitForIdle()
+        assertShowing(R.string.editor_canvas_edited)
+    }
+
+    @Test
+    fun `holding the photo does nothing when the document has no operations`() {
+        showShell(canCompare = false)
+        val canvas = compose.onNodeWithTag(EditorCanvasTestTag)
+
+        canvas.performTouchInput { down(center) }
+        compose.mainClock.advanceTimeBy(HOLD_MS)
+        compose.waitForIdle()
+
+        assertShowing(R.string.editor_canvas_edited)
+        canvas.performTouchInput { up() }
+    }
+
     @Test
     fun `compare does nothing when the document has no operations`() {
         showShell(canCompare = false)
@@ -115,5 +161,10 @@ class CompareGestureTest {
         compose.onNodeWithTag(CompareTestTag).assertExists()
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         compose.onNodeWithTag(context.getString(R.string.editor_undo)).assertIsNotEnabled()
+    }
+
+    private companion object {
+        /** Past `ViewConfiguration.longPressTimeoutMillis` (400 ms on Android), with room. */
+        const val HOLD_MS = 1_000L
     }
 }

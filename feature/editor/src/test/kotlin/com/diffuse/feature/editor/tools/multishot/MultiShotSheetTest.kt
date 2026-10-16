@@ -2,7 +2,6 @@ package com.diffuse.feature.editor.tools.multishot
 
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
@@ -20,7 +19,6 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollTo
-import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextReplacement
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -35,9 +33,6 @@ import com.diffuse.core.ui.components.PromptFieldTestTag
 import com.diffuse.feature.editor.EditorScreen
 import com.diffuse.feature.editor.R
 import com.diffuse.feature.editor.Tool
-import com.diffuse.feature.editor.ToolGroup
-import com.diffuse.feature.editor.ToolLevelState
-import com.diffuse.feature.editor.ToolStripTestTag
 import com.diffuse.feature.editor.canvas.testImage
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
 import org.junit.Assert.assertEquals
@@ -333,14 +328,14 @@ class MultiShotSheetTest {
         assertEquals(listOf("afterimage"), calls)
     }
 
+    /** D107: 멀티샷 has no strip item; the shell hosts its sheet only when it is the selected tool. */
     @Test
-    fun `멀티샷 opens from the AI level`() {
+    fun `멀티샷 has no strip item and shows its sheet only when selected`() {
         showEditor()
         compose.onNodeWithTag(EditSheetTestTag).assertDoesNotExist()
+        compose.onNodeWithTag(string(Tool.MultiShot.labelRes)).assertDoesNotExist()
 
-        // The strip is lazy: bring the item in before tapping it, as a thumb would.
-        compose.onNodeWithTag(ToolStripTestTag).performScrollToNode(hasTestTag(string(Tool.MultiShot.labelRes)))
-        compose.onNodeWithTag(string(Tool.MultiShot.labelRes)).performClick()
+        selected.value = Tool.MultiShot
         compose.waitForIdle()
 
         compose.onNodeWithTag(MultiShotSheetTestTag).assertExists()
@@ -447,13 +442,14 @@ class MultiShotSheetTest {
         compose.waitForIdle()
     }
 
+    private val selected = mutableStateOf<Tool?>(null)
+
     private fun showEditor() {
         compose.setContent {
-            var selected by remember { mutableStateOf<Tool?>(null) }
             EditorScreen(
                 preview = testImage(),
-                selectedTool = selected,
-                onToolClick = { selected = if (selected == it) null else it },
+                selectedTool = selected.value,
+                onToolClick = { selected.value = if (selected.value == it) null else it },
                 canUndo = false,
                 canRedo = false,
                 canCompare = false,
@@ -461,8 +457,9 @@ class MultiShotSheetTest {
                 onRedo = {},
                 onCompareChange = {},
                 onExport = {},
-                toolLevel = ToolLevelState(level = ToolGroup.Ai),
-                sheet = { if (selected == Tool.MultiShot) MultiShotSheet(MultiShotState(open = true), actions()) },
+                sheet = {
+                    if (selected.value == Tool.MultiShot) MultiShotSheet(MultiShotState(open = true), actions())
+                },
             )
         }
         compose.waitForIdle()

@@ -15,6 +15,7 @@ import com.diffuse.core.ai.PlanTarget
 import com.diffuse.core.ai.TopazBlock
 import com.diffuse.core.ai.items
 import com.diffuse.core.ai.selected
+import com.diffuse.core.ai.withValues
 import com.diffuse.core.ai.selectionProblem
 import com.diffuse.core.ai.topaz.TopazFailure
 import com.diffuse.core.ai.topaz.TopazJob
@@ -135,6 +136,11 @@ data class DirectState(
     val chosen: Set<String> = emptySet(),
     /** §19: why an item cannot run now, by item id — shown on its row; on, it blocks the primary. */
     val blocks: Map<String, TopazBlock> = emptyMap(),
+    /**
+     * D109: the user's own values for the proposal's adjustment items, by item id, from the sliders
+     * on their rows. The proposal is never changed; the plan runs with these.
+     */
+    val values: Map<String, Float> = emptyMap(),
 ) {
 
     val enabled: Boolean get() = availability is Availability.Ready
@@ -142,6 +148,9 @@ data class DirectState(
     val phase: ProposalPhase get() = proposals.phase
 
     val proposal: PlanProposal? get() = proposals.proposal
+
+    /** D109: the proposal as the user tuned it — the one the items, the choice and the run see. */
+    private val tuned: PlanProposal? get() = proposal?.withValues(values)
 
     /** §18, §19: the local steps, their checks or the Topaz step are running. */
     val running: Boolean
@@ -161,10 +170,24 @@ data class DirectState(
     val working: Boolean get() = planning || running || keeping
 
     /** §19: the ready proposal's toggleable items, in workflow order. */
-    val items: List<PlanItem> get() = proposal?.takeIf { phase == ProposalPhase.Ready }?.items.orEmpty()
+    val items: List<PlanItem> get() = tuned?.takeIf { phase == ProposalPhase.Ready }?.items.orEmpty()
 
     /** §19: the reviewed proposal with only the chosen items (and the selections they need). */
-    val selection: PlanProposal? get() = proposal?.takeIf { phase == ProposalPhase.Ready }?.selected(chosen)
+    val selection: PlanProposal? get() = tuned?.takeIf { phase == ProposalPhase.Ready }?.selected(chosen)
+
+    /**
+     * D109: what an adjustment item's slider and line show — the complete candidate's actual
+     * setting (강도 줄이기 may have moved it), else the value the run will be given.
+     */
+    fun valueOf(item: PlanItem): Float {
+        val step = item.step as? PlanStep.Adjust
+        val reviewed = candidate?.takeIf { complete && item.id in it.masks }
+        return when {
+            step == null -> 0f
+            reviewed?.document == null -> step.value
+            else -> reviewed.document.adjustValue(step.kind, reviewed.masks[item.id])
+        }
+    }
 
     /**
      * The plan waiting for 선택한 보정 실행 — what the user chose of a ready proposal, Topaz
@@ -198,6 +221,23 @@ data class DirectState(
 
     /** §18, §19: the local candidate the canvas draws — only a complete result's, else the input. */
     val shownDocument: EditDocument? get() = candidate?.document?.takeIf { complete }
+
+    /**
+     * D110: what the canvas draws over [document] — a complete result's candidate, else the
+     * document with the adjustment items the user has moved set on it, live, before anything
+     * runs. An item on a selection the run has yet to find ([PlanTarget.New]) has no mask to be
+     * set on, so it shows once the run has made one. The AI steps show only after 선택한 보정 실행.
+     */
+    fun drawn(document: EditDocument): EditDocument = shownDocument ?: items
+        .filter { it.id in chosen && it.id in values }
+        .fold(document) { draft, item ->
+            val step = item.step as? PlanStep.Adjust ?: return@fold draft
+            when (val target = step.target) {
+                null -> draft.withAdjust(step.kind, step.value)
+                is PlanTarget.Existing -> draft.withAdjust(step.kind, step.value, target.maskId)
+                is PlanTarget.New -> draft
+            }
+        }
 
     /** §19: the Topaz item is on and has no result for this candidate — it must run (again). */
     val needsTopaz: Boolean
@@ -262,7 +302,9 @@ data class DirectState(
  * save or copy reading one is done — except the ones the applied document references.
  */
 // One public function per thing the sheet can ask for; §18 added the candidate's five, §19 toggle.
-@Suppress("TooManyFunctions", "LongParameterList")
+// specs/vibe_edit.md §3: one controller owns the sheet, its proposal, its candidate and its session;
+// D109's sliders took it past detekt's 600 lines. Splitting the owner is a refactor of its own.
+@Suppress("TooManyFunctions", "LongParameterList", "LargeClass")
 class DirectController(
     provider: EditPlanProvider,
     private val runner: PlanRunner,
@@ -384,6 +426,8 @@ class DirectController(
             proposals = proposals,
             chosen = items.map { it.id }.filterNot { it in blocks }.toSet(),
             blocks = blocks,
+            // D109: the sliders belong to the proposal they were moved on.
+            values = emptyMap(),
         )
     }
 
@@ -495,6 +539,44 @@ class DirectController(
     }
 
     /**
+     * D109: the slider on an adjustment item. The value is kept for the run — and drawn on the
+     * input at once (D110, [DirectState.drawn]); under a complete candidate it is also written
+     * straight into the candidate's document — a setting on a mask the run already made — so the
+     * canvas shows it as the finger moves, with no call and no rebuild. The checks and 강도 줄이기's
+     * condition follow in [commitValue], once the drag ends. Locked exactly when the toggles are.
+     */
+    // Not an adjustment, locked, no candidate to move, none built: each is its own way out.
+    @Suppress("ReturnCount")
+    fun setValue(id: String, value: Float) {
+        val state = _state.value
+        val step = state.items.firstOrNull { it.id == id }?.step as? PlanStep.Adjust ?: return
+        if (!state.canToggle) return
+        val coerced = step.kind.coerce(value)
+        _state.value = state.copy(values = state.values + (id to coerced), message = null)
+        val candidate = state.candidate?.takeIf { state.complete && id in it.masks } ?: return
+        val document = candidate.document ?: return
+        setCandidate(
+            candidate.copy(
+                document = document.withAdjust(step.kind, coerced, candidate.masks[id]),
+                comparing = false,
+                topaz = state.topazStep?.let { cachedTopaz(document, it) },
+                topazFailure = null,
+                saved = false,
+            ),
+        )
+    }
+
+    /** D109: the drag ended — the candidate the slider moved is checked as a halved one is. */
+    // No candidate under review, no input, nothing built: each is its own way out.
+    @Suppress("ReturnCount")
+    fun commitValue() {
+        val candidate = _state.value.candidate?.takeIf { it.phase == CandidatePhase.Review } ?: return
+        val input = base?.document ?: return
+        val document = candidate.document ?: return
+        recheck(candidate, input, document, reduced = candidate.reduced)
+    }
+
+    /**
      * §18, §19 선택한 보정 실행: runs the reviewed plan — never a new one — as the user chose it, to
      * the end: the local steps into a candidate, then the chosen Topaz step on it, while the
      * document, the text, the settings and the session notes it was asked from still hold. Nothing
@@ -549,6 +631,9 @@ class DirectController(
         val mine = ++runSeq
         val chosen = _state.value.localChosen
         val steps = plan.steps.size + if (_state.value.topazStep != null) 1 else 0
+        // D109: the item each local step is, so a slider can find the mask its step acted on.
+        val ids = _state.value.selection?.workflow?.filterNot { it.step is PlanStep.Topaz }?.map { it.id }.orEmpty()
+        val masks = mutableMapOf<String, String?>()
         setCandidate(CandidateState(CandidatePhase.Running, steps = steps, chosen = chosen))
         run = scope.launch {
             // The runner works on IO; the overlay's question touches this controller's state, so it
@@ -575,6 +660,7 @@ class DirectController(
                     is RunEvent.Started ->
                         if (mine == runSeq) setCandidate(_state.value.candidate?.copy(step = event.index))
                     is RunEvent.Committed -> {
+                        masks.record(plan, ids, event.index, built, event.document)
                         built = event.document
                         // §19: the session owns every file, kept for reuse until it ends.
                         sessionFiles += createdFiles(canvas.document, built)
@@ -587,7 +673,7 @@ class DirectController(
             runChecks += found
             val failed = error
             when {
-                failed == null -> review(mine, canvas.document, built, chosen, online = !offline)
+                failed == null -> review(mine, canvas.document, built, chosen, online = !offline, masks = masks)
                 (failed as? AppError.Invalid)?.detail == PlanRunner.NEEDS_PREVIEW ->
                     setCandidate(CandidateState(CandidatePhase.Stale, chosen = chosen))
                 else -> endCandidate(messageOf(failed))
@@ -619,12 +705,15 @@ class DirectController(
      * on a run ([online]), runs on it straight away unless that check or a protected change stops
      * it. A rebuild shows this session's result for the same candidate, or none.
      */
+    // The run's five facts and D109's masks.
+    @Suppress("LongParameterList")
     private suspend fun review(
         mine: Int,
         input: EditDocument,
         candidate: EditDocument,
         chosen: Set<String>,
         online: Boolean,
+        masks: Map<String, String?>,
     ) {
         setCandidate(_state.value.candidate?.copy(phase = CandidatePhase.Checking))
         val before = host.render(input)
@@ -643,6 +732,7 @@ class DirectController(
             topaz = step?.let { cachedTopaz(candidate, it) },
             resolved = runChecks.filter { candidate.mask(it.maskId) != null && input.mask(it.maskId) == null }
                 .mapNotNull { it.phrase },
+            masks = masks,
         )
         _state.value = _state.value.copy(candidate = reviewed, blocks = topazBlocks)
         if (!online || step == null || reviewed.topaz != null) return
@@ -933,20 +1023,29 @@ class DirectController(
             showMessage(R.string.direct_reduced_to_nothing)
             return
         }
+        recheck(candidate, input, reduced, reduced = true)
+    }
+
+    /**
+     * §18, D109: [document] — the candidate halved, or with a slider's value — takes the
+     * candidate's place once the local checks have run on it. With the Topaz item on it is a new
+     * Topaz input: this session's result for it, or none until 선택한 보정 다시 실행.
+     */
+    private fun recheck(candidate: CandidateState, input: EditDocument, document: EditDocument, reduced: Boolean) {
         val mine = ++runSeq
         setCandidate(candidate.copy(phase = CandidatePhase.Checking))
         run = scope.launch {
-            val findings = findings(input, reduced)
+            val findings = findings(input, document)
             if (mine != runSeq) return@launch
             setCandidate(
                 candidate.copy(
                     phase = CandidatePhase.Review,
-                    document = reduced,
-                    reducible = hasNumericChange(input, reduced),
+                    document = document,
+                    reducible = hasNumericChange(input, document),
                     findings = findings,
                     comparing = false,
-                    reduced = true,
-                    topaz = _state.value.topazStep?.let { cachedTopaz(reduced, it) },
+                    reduced = reduced,
+                    topaz = _state.value.topazStep?.let { cachedTopaz(document, it) },
                     topazFailure = null,
                     saved = false,
                 ),

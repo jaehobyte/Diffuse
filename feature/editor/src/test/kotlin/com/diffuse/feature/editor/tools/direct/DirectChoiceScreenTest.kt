@@ -90,6 +90,26 @@ class DirectChoiceScreenTest {
         assertEquals(0f, document.adjustValue(AdjustKind.Temperature), TOLERANCE)
     }
 
+    /** D109: an adjustment item that is on carries a slider; one that is off, or not an adjustment, none. */
+    @Test
+    fun `an adjustment item shows its slider while on, and dragging it tunes the plan`() {
+        val harness = DirectHarness()
+        val viewModel = harness.opened()
+        harness.planner.next(WARM_AND_BRIGHT)
+        viewModel.direct.submit("따뜻하고 밝게")
+        compose.setContent { EditorRoute(onExport = {}, viewModel = viewModel) }
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(directItemSliderTag("s1")).performScrollTo().assertExists()
+        compose.onNodeWithTag(directItemTag("s2")).performScrollTo().performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag(directItemSliderTag("s2")).assertDoesNotExist()
+
+        viewModel.direct.setValue("s1", 0.25f)
+        compose.waitForIdle()
+        compose.onNodeWithText("노출 25").performScrollTo().assertExists()
+    }
+
     /** On a neutral grey source: temperature moves red against blue, exposure moves both up. */
     @Test
     fun `the real renderer shows only the chosen effects`() {

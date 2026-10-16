@@ -1,6 +1,9 @@
 package com.diffuse.feature.editor.tools.direct
 
 import android.graphics.Bitmap
+import com.diffuse.core.ai.EditPlan
+import com.diffuse.core.ai.PlanStep
+import com.diffuse.core.ai.PlanTarget
 import com.diffuse.core.ai.topaz.TopazFailure
 import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.core.imaging.model.Operation
@@ -92,9 +95,38 @@ data class CandidateState(
     val saved: Boolean = false,
     /** §19: the phrases this run found selections for without asking, said in the review. */
     val resolved: List<String> = emptyList(),
+    /**
+     * D109: the mask each adjustment item of this candidate acted on, by item id — null for the
+     * whole photo. What a slider under the review writes its value to.
+     */
+    val masks: Map<String, String?> = emptyMap(),
 ) {
     val canAdopt: Boolean
         get() = phase == CandidatePhase.Review && document != null && CandidateFinding.ProtectedChanged !in findings
+}
+
+/**
+ * D109: after the run committed step [index] of [plan], the mask that step acted on if it was an
+ * adjustment — none, the existing one it names, or the one the run made for its label: the
+ * adjustment [after] carries that [before] did not, else the selection the run left active (a
+ * value the input already had writes no new operation). [ids] are the steps' item ids.
+ */
+internal fun MutableMap<String, String?>.record(
+    plan: EditPlan,
+    ids: List<String>,
+    index: Int,
+    before: EditDocument,
+    after: EditDocument,
+) {
+    val step = plan.steps.getOrNull(index) as? PlanStep.Adjust ?: return
+    val id = ids.getOrNull(index) ?: return
+    this[id] = when (val target = step.target) {
+        null -> null
+        is PlanTarget.Existing -> target.maskId
+        is PlanTarget.New -> after.operations.filterIsInstance<Operation.Adjust>()
+            .firstOrNull { it.kind == step.kind && it.maskId != null && it !in before.operations }
+            ?.maskId ?: after.activeMaskId
+    }
 }
 
 /**

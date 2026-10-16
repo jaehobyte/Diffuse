@@ -3,14 +3,11 @@ package com.diffuse.feature.editor.tools.select
 import android.graphics.Bitmap
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.performTouchInput
 import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.diffuse.core.ai.Availability
 import com.diffuse.core.ai.FakeEraseProvider
 import com.diffuse.core.ai.FakeFillProvider
 import com.diffuse.core.ai.FakeMatchStyleProvider
@@ -21,7 +18,6 @@ import com.diffuse.core.ai.FakeTopazProvider
 import com.diffuse.core.ai.gemini.GeminiSettings
 import com.diffuse.core.ai.sam3.Sam3Settings
 import com.diffuse.core.ai.speech.FakeSpeechInput
-import com.diffuse.core.common.AppError
 import com.diffuse.core.common.Result
 import com.diffuse.core.data.ProjectRepository
 import com.diffuse.core.data.ProjectSummary
@@ -29,15 +25,11 @@ import com.diffuse.core.data.SkinRetouchFiles
 import com.diffuse.core.imaging.load.SourceImage
 import com.diffuse.core.imaging.model.EditDocument
 import com.diffuse.core.imaging.model.ImageRef
-import com.diffuse.core.imaging.model.Operation
 import com.diffuse.core.imaging.render.Renderer
 import com.diffuse.feature.editor.EditorAi
 import com.diffuse.feature.editor.EditorRoute
 import com.diffuse.feature.editor.EditorViewModel
-import com.diffuse.feature.editor.R
 import com.diffuse.feature.editor.TestDispatchers
-import com.diffuse.feature.editor.Tool
-import com.diffuse.core.ui.components.EditSheetTestTag
 import com.diffuse.feature.editor.canvas.CanvasCaptionTestTag
 import com.diffuse.feature.editor.canvas.EditorCanvasTestTag
 import com.diffuse.feature.editor.tools.enhance.testTopazSettings
@@ -51,7 +43,6 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -62,8 +53,8 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * Selecting straight from the preview: at the AI level of the strip the photo itself takes the
- * tap, no sheet opens, and the mask the tap makes is committed to the document as it lands.
+ * work/decisions.md D107: with no AI level, the photo itself takes no tap — a selection is made by
+ * a plan's `select_region`. What is left of D104's canvas selection is that a tap still pans.
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -90,45 +81,7 @@ class CanvasSelectionTest {
     fun tearDown() = Dispatchers.resetMain()
 
     @Test
-    fun `opening the AI level sends nothing to the backend and says what a tap does`() {
-        val viewModel = viewModel()
-        compose.setContent { EditorRoute(onExport = {}, viewModel = viewModel) }
-        compose.waitForIdle()
-        compose.onNodeWithTag(CanvasCaptionTestTag).assertDoesNotExist()
-
-        compose.onNodeWithTag(string(R.string.editor_tool_ai)).performClick()
-        compose.waitForIdle()
-
-        assertEquals("no upload until the user taps or speaks", 0, provider.openCount)
-        assertNull("opening the level selects no tool", viewModel.uiState.value.selectedTool)
-        compose.onNodeWithTag(CanvasCaptionTestTag).assertExists()
-        compose.onNodeWithText(string(R.string.select_hint)).assertExists()
-    }
-
-    @Test
-    fun `a tap on the photo at the AI level commits that selection without a sheet`() {
-        val viewModel = viewModel()
-        compose.setContent { EditorRoute(onExport = {}, viewModel = viewModel) }
-        compose.waitForIdle()
-        compose.onNodeWithTag(string(R.string.editor_tool_ai)).performClick()
-        compose.waitForIdle()
-
-        tapCanvas()
-
-        val state = viewModel.uiState.value
-        assertNull("no sheet opens", state.selectedTool)
-        compose.onNodeWithTag(EditSheetTestTag).assertDoesNotExist()
-        assertEquals(listOf(true), state.selection.labels)
-        assertNotNull(state.selection.mask)
-        assertEquals(1, state.document!!.operations.filterIsInstance<Operation.Mask>().size)
-        assertNotNull(state.document.activeMaskId)
-        assertEquals("the tap opened the session", 1, provider.openCount)
-        compose.onNodeWithTag(SelectionOverlayTestTag).assertExists()
-        compose.onNodeWithTag(CanvasCaptionTestTag).assertDoesNotExist()
-    }
-
-    @Test
-    fun `a tap on the photo at the root level still pans and selects nothing`() {
+    fun `a tap on the photo selects nothing and sends nothing`() {
         val viewModel = viewModel()
         compose.setContent { EditorRoute(onExport = {}, viewModel = viewModel) }
         compose.waitForIdle()
@@ -138,23 +91,8 @@ class CanvasSelectionTest {
         assertNull(viewModel.uiState.value.selectedTool)
         assertTrue(viewModel.uiState.value.selection.points.isEmpty())
         assertTrue(viewModel.uiState.value.document!!.operations.isEmpty())
-    }
-
-    @Test
-    fun `a tap on the photo with no server explains itself instead of selecting`() {
-        provider.setAvailability(Availability.Unavailable(AppError.Invalid("not configured")))
-        val viewModel = viewModel()
-        compose.setContent { EditorRoute(onExport = {}, viewModel = viewModel) }
-        compose.waitForIdle()
-        compose.onNodeWithTag(string(R.string.editor_tool_ai)).performClick()
-        compose.waitForIdle()
-
-        tapCanvas()
-
-        val state = viewModel.uiState.value
-        assertNull(state.selectedTool)
-        assertTrue(state.selection.showSettings)
         assertEquals(0, provider.openCount)
+        compose.onNodeWithTag(CanvasCaptionTestTag).assertDoesNotExist()
     }
 
     // ---- fixtures --------------------------------------------------------
@@ -165,9 +103,6 @@ class CanvasSelectionTest {
         compose.mainClock.advanceTimeBy(DOUBLE_TAP_WINDOW_MS)
         compose.waitForIdle()
     }
-
-    private fun string(res: Int) =
-        ApplicationProvider.getApplicationContext<android.content.Context>().getString(res)
 
     private fun viewModel() = EditorViewModel(
         context = ApplicationProvider.getApplicationContext(),

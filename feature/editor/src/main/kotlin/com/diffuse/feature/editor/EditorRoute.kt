@@ -4,7 +4,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,7 +40,6 @@ import com.diffuse.feature.editor.tools.expand.ExpandSheet
 import com.diffuse.feature.editor.tools.fill.FillSheet
 import com.diffuse.feature.editor.tools.prompt.VoicePromptBar
 import com.diffuse.feature.editor.tools.select.Sam3SettingsSheet
-import com.diffuse.feature.editor.tools.select.SelectionOverlay
 import com.diffuse.feature.editor.canvas.CanvasCaption
 import com.diffuse.feature.editor.tools.direct.Dictation
 import com.diffuse.feature.editor.tools.direct.rememberDictation
@@ -70,40 +68,23 @@ fun EditorRoute(
     // specs/persistence.md: the app going to the background saves now, not 2s later.
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.onStop() }
 
-    // specs/tool_groups.md §3: the open level is UI state, not document state, and it resets to
-    // `Root` on every entry to the screen — a user coming back to a photo sees the whole app.
-    var toolLevel by rememberSaveable { mutableStateOf(ToolGroup.Root) }
-
-    // §4: committing or cancelling a sheet returns to the root, because the next thing a user does
-    // is usually not another AI call. Keyed on the sheet **closing**, so opening one does not, and
-    // so a disabled child — which opens nothing — leaves the level alone.
-    val selectedTool = state.selectedTool
-    LaunchedEffect(selectedTool) {
-        if (selectedTool == null) toolLevel = ToolGroup.Root
-    }
-
-    // §4: system back closes the level before it leaves the screen.
-    BackHandler(enabled = toolLevel != ToolGroup.Root) { toolLevel = ToolGroup.Root }
-
-    // specs/vibe_edit.md §3, as it stands: 지시 listens first and opens its sheet on what it
-    // heard. Declared after the level's BackHandler, so back stops the listening before it
-    // closes the level.
+    // specs/vibe_edit.md §3, as it stands (D104): 지시 listens first and opens its sheet on what
+    // it heard. Back stops the listening before it leaves the screen.
     val dictation = rememberDictation(viewModel)
     BackHandler(enabled = dictation.listening) { dictation.stop() }
 
-    val pointTaps = pointTaps(state, viewModel, toolLevel)
+    val pointTaps = pointTaps(state, viewModel)
     Box(modifier = modifier.fillMaxSize()) {
         EditorScreen(
             preview = shownPreview(state),
             source = state.source,
-            // The strip's yellow marks what is active: while 지시 listens, 지시.
-            selectedTool = state.selectedTool ?: Tool.Direct.takeIf { dictation.listening },
-            onToolClick = { tool ->
-                if (tool == Tool.Direct && dictation.takesTap(state)) {
-                    dictation.toggle()
-                } else {
-                    viewModel.onToolClick(tool)
-                }
+            selectedTool = state.selectedTool,
+            onToolClick = viewModel::onToolClick,
+            // D107: the AI circle *is* 지시 — it listens, or opens the sheet, exactly as the 지시
+            // item did; its label is yellow while either is going on.
+            aiActive = state.selectedTool == Tool.Direct || dictation.listening,
+            onAiClick = {
+                if (dictation.takesTap(state)) dictation.toggle() else viewModel.onToolClick(Tool.Direct)
             },
             canUndo = state.canUndo,
             canRedo = state.canRedo,
@@ -116,7 +97,6 @@ fun EditorRoute(
             onExport = onExport,
             overlayTransform = overlayTransform(state),
             disabledTools = disabledTools(state),
-            toolLevel = ToolLevelState(toolLevel) { toolLevel = it },
             gestureMode = if (pointTaps != null) CanvasGestureMode.SelectPoint else CanvasGestureMode.Pan,
             pointTaps = pointTaps,
             // specs/selection_tool.md §5: while `busy` the previous mask stays; only the
@@ -126,7 +106,7 @@ fun EditorRoute(
             onCancelWork = { cancelWork(viewModel) },
             message = message(state),
             onMessageShown = { clearMessages(viewModel) },
-            canvasOverlay = canvasOverlay(state, viewModel, toolLevel, dictation),
+            canvasOverlay = canvasOverlay(state, viewModel, dictation),
             sheet = sheetFor(state, document, viewModel),
         )
     }
@@ -162,15 +142,11 @@ private fun topazFrame(state: EditorUiState) = state.topaz.result
     ?.let { result -> if (state.topaz.comparing) state.topaz.input?.before else result.after }
 
 /**
- * specs/selection_tool.md §2 and multishot.md §2: who claims a single-finger tap on the photo —
- * the photo itself at the AI level with nothing open, and 멀티샷 while an added photo's selection
- * is being refined.
+ * specs/multishot.md §2: who claims a single-finger tap on the photo — 멀티샷 while an added
+ * photo's selection is being refined. D107: with no AI level, the photo itself takes no tap; a
+ * plan's `select_region` is how a selection is made.
  */
-private fun pointTaps(state: EditorUiState, viewModel: EditorViewModel, level: ToolGroup): CanvasPointTaps? = when {
-    state.selectedTool == null && level == ToolGroup.Ai && !state.selection.showSettings -> CanvasPointTaps(
-        onForeground = { viewModel.selectOnCanvas(it.x, it.y, foreground = true) },
-        onBackground = { viewModel.selectOnCanvas(it.x, it.y, foreground = false) },
-    )
+private fun pointTaps(state: EditorUiState, viewModel: EditorViewModel): CanvasPointTaps? = when {
     state.selectedTool == Tool.MultiShot && state.multiShot.selected?.status ==
         ShotStatus.Selecting -> CanvasPointTaps(
         onForeground = { viewModel.multiShot.addPoint(it.x, it.y, include = true) },
@@ -214,7 +190,8 @@ private fun disabledTools(state: EditorUiState): Set<Tool> = buildSet {
     if (!state.fill.enabled || state.document?.activeMaskId == null) add(Tool.Fill)
     // specs/outpaint.md §6: the key, and the document's own mask-op guard.
     if (!state.expand.enabled || state.document?.canOutpaint == false) add(Tool.Expand)
-    // specs/vibe_edit.md §10: the key alone. A plan with no `Select` needs no SAM 3 server.
+    // specs/vibe_edit.md §10: the key alone. A plan with no `Select` needs no SAM 3 server. D107:
+    // 지시 has no item of its own, and the AI circle is never greyed — it opens 서버 설정 instead.
     if (!state.direct.enabled) add(Tool.Direct)
 }
 
@@ -255,7 +232,6 @@ private fun message(state: EditorUiState): String? {
 private fun canvasOverlay(
     state: EditorUiState,
     viewModel: EditorViewModel,
-    level: ToolGroup,
     dictation: Dictation,
 ): (@Composable androidx.compose.foundation.layout.BoxScope.() -> Unit)? = when (state.selectedTool) {
     Tool.Crop -> cropOverlaySlot(
@@ -279,42 +255,21 @@ private fun canvasOverlay(
             )
         }
     }
+    // D104: what 지시 is hearing, over the photo, while nothing is open.
+    null -> listeningOverlay(dictation)
     // specs/selection_tool.md §8.1: while a masked adjustment is being made, the scrim shows
     // where it will land. Toggle off and it disappears.
-    null -> aiLevelOverlay(state, level, dictation)
     else -> state.activeMask
         ?.takeIf { state.maskedAdjust }
         ?.let { selectionOverlaySlot(mask = it, points = emptyList(), labels = emptyList()) }
 }
 
-/**
- * The AI level with nothing open: the selection a tap on the photo is building — the run's own
- * mask while it has one, the document's active mask otherwise — and one line saying what a tap
- * does, or what 지시 is hearing. The reveal plays for the run's masks only; a mask that comes
- * back by undo simply appears.
- */
-private fun aiLevelOverlay(
-    state: EditorUiState,
-    level: ToolGroup,
+/** Nothing open and 지시 listening: the partial text, or that it is listening, as a caption. */
+private fun listeningOverlay(
     dictation: Dictation,
 ): (@Composable androidx.compose.foundation.layout.BoxScope.() -> Unit)? {
-    if (level != ToolGroup.Ai) return null
-    val selection = state.selection
-    val mask = selection.mask ?: state.activeMask
-    return {
-        SelectionOverlay(
-            mask = mask,
-            points = selection.points,
-            labels = selection.labels,
-            reveal = selection.mask != null,
-            busy = selection.busy,
-        )
-        when {
-            dictation.listening ->
-                CanvasCaption(dictation.partial.ifBlank { stringResource(R.string.direct_listening) })
-            mask == null && selection.points.isEmpty() -> CanvasCaption(stringResource(R.string.select_hint))
-        }
-    }
+    if (!dictation.listening) return null
+    return { CanvasCaption(dictation.partial.ifBlank { stringResource(R.string.direct_listening) }) }
 }
 
 @Composable
@@ -369,7 +324,7 @@ private fun sheetFor(
                     onValueChangeFinished = viewModel::onAdjustFinished,
                     onCancel = viewModel::cancelSheet,
                     onApply = viewModel::applySheet,
-                    onAiShortcut = { group -> viewModel.openTopaz(group) },
+                    // D107: no 화질 개선 shortcut — Topaz runs only as a plan's last step.
                 )
             }
         }
@@ -590,6 +545,8 @@ private fun DirectToolSheet(state: EditorUiState, viewModel: EditorViewModel) {
         onReduce = viewModel.direct::reduce,
         onToggle = viewModel.direct::toggle,
         onSave = viewModel.direct::save,
+        onValueChange = viewModel.direct::setValue,
+        onValueFinished = viewModel.direct::commitValue,
         promptBar = {
             VoicePromptBar(
                 value = state.direct.request,

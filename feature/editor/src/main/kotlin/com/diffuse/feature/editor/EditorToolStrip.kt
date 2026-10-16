@@ -47,9 +47,9 @@ const val ToolStripTestTag = "EditorToolStrip"
 private val AiCircleBrush = Brush.linearGradient(listOf(Tokens.aiGradientStart, Tokens.aiGradientEnd))
 
 /**
- * specs/tool_groups.md §2. One strip, two levels: [level] decides which list is bound to it.
- * Height, item size and scrolling are the same at both — no second row appears, so the strip is
- * still one surface (DESIGN.md §1).
+ * DESIGN.md §4, work/decisions.md D107. One strip, one level: the manual tools and, last, the AI
+ * circle that opens 지시. The plan-only tools have no item here, so the strip is one surface and
+ * never changes its list (DESIGN.md §1).
  */
 @Composable
 fun EditorToolStrip(
@@ -61,8 +61,9 @@ fun EditorToolStrip(
      * tappable so it can explain itself in a snackbar.
      */
     disabledTools: Set<Tool> = emptySet(),
-    level: ToolGroup = ToolGroup.Root,
-    onLevelChange: (ToolGroup) -> Unit = {},
+    /** D107: 지시 is open or listening, so the AI circle's label is the yellow of a selected tool. */
+    aiActive: Boolean = false,
+    onAiClick: () -> Unit = {},
 ) {
     val colors = LocalAppColors.current
     LazyRow(
@@ -74,18 +75,20 @@ fun EditorToolStrip(
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        items(stripItems(level)) { item ->
+        items(stripItems()) { item ->
             StripItemView(
                 item = item,
-                selected = item is StripItem.OfTool && item.tool == selectedTool,
-                // §4: the AI parent is never itself disabled, even when every child is — a parent
-                // that cannot be tapped hides the reason its children cannot be.
+                selected = when (item) {
+                    is StripItem.OfTool -> item.tool == selectedTool
+                    StripItem.OpenAi -> aiActive
+                },
+                // The AI circle is never greyed: 지시 explains a missing key itself, with the
+                // 서버 설정 sheet (specs/vibe_edit.md §10).
                 enabled = item !is StripItem.OfTool || item.tool !in disabledTools,
                 onClick = {
                     when (item) {
                         is StripItem.OfTool -> onToolClick(item.tool)
-                        StripItem.OpenAi -> onLevelChange(ToolGroup.Ai)
-                        StripItem.Back -> onLevelChange(ToolGroup.Root)
+                        StripItem.OpenAi -> onAiClick()
                     }
                 },
             )
@@ -103,7 +106,7 @@ private fun StripItemView(
     val colors = LocalAppColors.current
     val alpha = if (enabled) 1f else DISABLED_ALPHA
     // DESIGN.md §4: the selected tool is yellow, icon and label; the rest are white icons over
-    // secondary labels. ← is a tool-shaped item so the row stays one rhythm.
+    // secondary labels. The AI circle keeps its white glyph and shows its state on the label.
     val iconTint = (if (selected) colors.accent else colors.ink).copy(alpha = alpha)
     val labelTint = (if (selected) colors.accent else colors.inkSecondary).copy(alpha = alpha)
     val label = stringResource(item.labelRes())

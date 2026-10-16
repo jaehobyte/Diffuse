@@ -8,6 +8,96 @@ most of these are the second attempt, not the first.
 
 ## Decisions
 
+## D110 - A plan's slider is drawn on the photo before the run; the AI steps wait for 실행
+
+Status: Accepted (2026-10-16, interactive request "적용 누르기 전까지는 슬라이더 바 움직여도 렌더링이 안되는데
+슬라이더의 경우는 움직이면 실시간 렌더링 되게 … ai 기능들은 적용 누르면 실행되는게 맞는 거 같아"). Extends
+D109 and specs/vibe_edit.md §18's "the input is shown until a candidate exists"; the spec is protected
+and not edited.
+
+- **What is drawn.** `DirectState.drawn(document)`: a complete candidate as before, else the input
+  with the adjustment items the user has *moved* (`values`) and has on set on it — a whole-photo
+  item on the photo, an existing-selection item on its mask. Nothing the user has not touched is
+  drawn early: the proposal landing does not change the canvas, and dragging 노출 does not make
+  대비 appear with it. An item on a selection the run has yet to find (`PlanTarget.New`) has no
+  mask before the run, so its slider only sets the value and its hint says so
+  (`direct_item_slider_hint_later`); under a complete candidate D109's in-place write covers it.
+- **The run's frame is the photo's.** The segmentation session and the eraser work on the frame
+  handed to the run; with a draft on screen, `uiState.preview` is that draft, and an adjustment
+  baked into an erased patch would be applied again by the plan's own step. `EditorViewModel`
+  keeps `documentFrame`, the last frame rendered from the document itself, and `DirectHost.canvas()`
+  hands out only that — null while it is stale, as before a first render.
+- **The collector.** The §18 collector maps to `drawn(document)` rather than `shownDocument`, so a
+  moved value, a toggle or a new proposal re-renders without a call from each of them.
+
+## D109 - A slider on every adjustment item of a plan: the user's own value, previewed in place
+
+Status: Accepted (2026-10-16, interactive request "보정 추천 중 비파괴 편집이 있으면 해당 건은 슬라이더도 같이
+보여줘서 사용자가 미리 적용해보고 수치를 개인적으로 컨트롤"). Extends specs/vibe_edit.md §19's rows and §18's
+candidate; the spec is protected and not edited.
+
+- **Which items.** Every `PlanStep.Adjust` item (whole photo, an existing selection or one the run
+  finds) gets the adjust sheets' ruler (`AdjustSlider`, −100…100) under its row while it is on.
+  Styles, crops, erases, fills, 확대 and Topaz get none: a style is many settings at once (강도 줄이기
+  already halves it), the rest are not numeric.
+- **One value, two moments.** `DirectState.values` (item id → value) is the user's; `items`,
+  `selection` and so the plan are read from the proposal with those values on
+  (`PlanProposal.withValues`, coerced to the kind's range). Before a run, moving a slider only sets
+  what 선택한 보정 실행 will apply. Under a complete candidate, `setValue` also writes the value
+  straight into the candidate's document on the mask that item's step acted on
+  (`CandidateState.masks`, taken from the run's `Committed` events), so the canvas follows the
+  finger with no call and no rebuild; `commitValue` on release re-runs the local checks exactly as
+  강도 줄이기 does (`recheck`). With the Topaz item on, a moved value is a new Topaz input, as after
+  강도 줄이기.
+- **What the row reads.** The line and the slider show `valueOf(item)`: the candidate's actual
+  setting once it exists (so 강도 줄이기 is visible on the ruler), else the value the run will get.
+  The proposal is never changed; a new proposal resets `values` with `chosen`.
+- **Locked with the toggles** (`canToggle`): nothing moves while a run, a confirmation or a check
+  is in progress. The slider sits outside the `toggleable` row, so a drag never flips the item.
+
+## D108 - Holding a finger on the photo compares it with the original
+
+Status: Accepted (2026-10-16, interactive request "프리뷰 이미지 꾹 롱프레스 누르고 있으면 편집 전 이미지
+보이게"). Adds a gesture to specs/canvas.md's table and a second way into specs/editor_shell.md's
+compare; both protected, not edited. DESIGN.md §7 already says the comparison is "누르고 있는 동안만".
+
+- **Same hold, same image.** `EditorCanvas` takes `onHoldChange`; past the long-press timeout it
+  reports `true`, and `false` when the press ends (release, or the pan that took the finger). The
+  screen wires it to the one `comparing` state the bar's ◐ sets, so the canvas shows `source` —
+  the photo before every edit — not merely the state before the last sheet. Gated like ◐: only
+  while the document has operations.
+- **The select sheet keeps its long press.** In `SelectPoint` mode the long press is still the
+  background point (specs/selection_tool.md §2), so the hold is off there.
+- No new string: the canvas keeps announcing `editor_canvas_source` while held.
+
+## D107 - The AI circle is 지시; every other AI tool is a plan step with no button
+
+Status: Accepted (2026-10-15, interactive request "ai버튼을 누르면 여러 기능 들이 뜨는게 아니라 바로 지시가
+실행되게… 다른 기능들은 다 숨기고 툴로 만들어서 사용자 요청에 따라서 불릴 수 있게"). Contradicts
+specs/tool_groups.md (the two-level strip, 선택/지우기/채우기/확대/화질 개선/스타일/멀티샷/지시 items),
+specs/vibe_edit.md §3 (지시 as a strip item), specs/topaz_enhancement.md §1 (the 화질 개선 item and the
+라이트·색상·디테일 shortcuts), specs/multishot.md §2 and DESIGN.md §4's "AI 단계"; protected, not edited.
+Extends D104 (지시 listens first) and D101/D105 (one run to the end, applied in place).
+
+- **One strip level.** `stripItems()` is the five manual tools plus the AI circle. Tapping the circle
+  does exactly what the 지시 item did: listen (D104), or open the 지시 sheet, or open 서버 설정 for a
+  missing key. Its label is yellow while 지시 is open or listening. `ToolLevelState`, `StripItem.Back`,
+  the level `BackHandler` and the `editor_tool_back` string are gone.
+- **`ToolGroup.Ai` now means "no strip item".** The enum entries stay, because the sheets and
+  controllers they key still exist (`selectedTool`), but nothing in the UI selects them: 지우기,
+  채우기, 확대, 화질 개선 and 스타일 run only as steps of a plan (`erase_selection`, `fill_selection`,
+  `expand_to_ratio`, `topaz_enhance`, `apply_style`), which already share the manual tools' commits.
+- **No canvas tap-to-select** (D104's AI-level tap) and no `select_hint`: a selection is made by a
+  plan's `select_region`. `EditorViewModel.selectOnCanvas` stays as the controller's API.
+- **No Topaz shortcut** on the 라이트·색상·디테일 sheets; `openTopaz` stays for the controller.
+- **The prompt says so.** `PLAN_SYSTEM_INSTRUCTION` gains a "Reach" paragraph: these tools have no
+  button, so a request for any of them is met by planning it, never by sending the user to a tool.
+  The catalog's stale lines (overlay confirmation of every selection, 자르기 opening after a plan,
+  Topaz run from the 화질 개선 sheet) now describe D101's single run previewed in place.
+- **Unreachable, deliberately:** 멀티샷 and 스타일's 컬러 매칭 need other photographs, which words
+  alone cannot supply; their code is kept and nothing in the UI opens them. Removing them is a
+  separate cleanup.
+
 ## D106 - 확대 in a plan: `expand_to_ratio`, chosen against `crop_ratio` from the photo
 
 Status: Accepted (2026-10-15, interactive request "넣어줘볼래? 프롬프트에는 이미지를 보고 크롭이 나을지 확대가

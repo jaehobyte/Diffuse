@@ -1,5 +1,6 @@
 package com.diffuse.feature.editor.tools.direct
 
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.diffuse.core.ai.CropRatio
 import com.diffuse.core.ai.EditPlan
@@ -400,6 +401,110 @@ class DirectChoiceTest {
         assertEquals(written, repository.discarded.toSet())
     }
 
+    // ---- D109: sliders on the adjustment items --------------------------------
+
+    @Test
+    fun `a slider moved before the run is what the run applies, and the row reads it`() = runTest {
+        val viewModel = planned(TWO_ADJUSTS)
+        viewModel.direct.setValue("s1", 0.1f)
+        viewModel.direct.setValue("s9", 0.1f)
+        val exposure = direct(viewModel).items.first { it.id == "s1" }
+
+        assertEquals(0.1f, direct(viewModel).valueOf(exposure), TOLERANCE)
+        assertNull(direct(viewModel).candidate)
+        reachReview(viewModel)
+
+        assertEquals(0.1f, candidate(viewModel).adjustValue(AdjustKind.Exposure), TOLERANCE)
+        val temperature = candidate(viewModel).adjustValue(AdjustKind.Temperature)
+        assertEquals("the other keeps its value", 0.2f, temperature, TOLERANCE)
+    }
+
+    /** D110: before the run the canvas follows the slider; the run itself starts from the photo without it. */
+    @Test
+    fun `a slider moved before the run is drawn at once, and the run is given the photo without it`() = runTest {
+        val viewModel = planned(PORTRAIT)
+        val document = viewModel.uiState.value.document!!
+        assertEquals(PLAIN, viewModel.uiState.value.preview!!.asAndroidBitmap().getPixel(0, 0))
+
+        viewModel.direct.setValue("s6", -0.3f)
+        assertEquals(-0.3f, direct(viewModel).drawn(document).adjustValue(AdjustKind.Temperature), TOLERANCE)
+        assertEquals("drawn as it moves", ADJUSTED, viewModel.uiState.value.preview!!.asAndroidBitmap().getPixel(0, 0))
+        assertNull(direct(viewModel).candidate)
+        assertEquals(emptyList<Operation>(), document.operations)
+
+        viewModel.direct.setValue("s2", 0.6f)
+        val masked = direct(viewModel).drawn(document).operations.filterIsInstance<Operation.Adjust>()
+        assertEquals("the face is not selected yet, so its exposure waits for the run", 1, masked.size)
+        viewModel.direct.toggle("s6")
+        assertEquals("off, it is not drawn", document, direct(viewModel).drawn(document))
+        assertEquals(PLAIN, viewModel.uiState.value.preview!!.asAndroidBitmap().getPixel(0, 0))
+        viewModel.direct.toggle("s6")
+
+        reachReview(viewModel)
+
+        assertEquals("the eraser works on the photo, not the draft", PLAIN, eraser.lastImage!!.getPixel(0, 0))
+        assertEquals(-0.3f, candidate(viewModel).adjustValue(AdjustKind.Temperature), TOLERANCE)
+        val face = candidate(viewModel).operations.filterIsInstance<Operation.Mask>().first().id
+        assertEquals(0.6f, candidate(viewModel).adjustValue(AdjustKind.Exposure, face), TOLERANCE)
+    }
+
+    @Test
+    fun `a slider under the review moves the candidate at once, on its own mask, and calls nothing`() = runTest {
+        val viewModel = planned(PORTRAIT)
+        reachReview(viewModel)
+        val face = candidate(viewModel).operations.filterIsInstance<Operation.Mask>().first().id
+
+        viewModel.direct.setValue("s2", 0.6f)
+        assertEquals(CandidatePhase.Review, direct(viewModel).candidate?.phase)
+        assertEquals(0.6f, candidate(viewModel).adjustValue(AdjustKind.Exposure, face), TOLERANCE)
+        viewModel.direct.setValue("s6", -0.3f)
+        assertEquals(-0.3f, candidate(viewModel).adjustValue(AdjustKind.Temperature), TOLERANCE)
+        viewModel.direct.commitValue()
+
+        assertEquals(CandidatePhase.Review, direct(viewModel).candidate?.phase)
+        assertTrue(direct(viewModel).candidate!!.reducible)
+        val erases = candidate(viewModel).operations.count { it is Operation.GenerativeErase }
+        assertEquals("the sign's erase is kept", 1, erases)
+        assertEquals(2, segmentation.textCount)
+        assertEquals(1, eraser.eraseCount)
+        assertEquals(1, planner.planCount)
+        assertEquals(emptyList<Operation>(), viewModel.uiState.value.document!!.operations)
+    }
+
+    @Test
+    fun `적용 commits the slider's value, and the line follows 강도 줄이기`() = runTest {
+        val viewModel = planned(TWO_ADJUSTS)
+        reachReview(viewModel)
+        viewModel.direct.reduce()
+        val exposure = direct(viewModel).items.first { it.id == "s1" }
+        assertEquals(EXPOSURE / 2, direct(viewModel).valueOf(exposure), TOLERANCE)
+
+        viewModel.direct.setValue("s1", 0.9f)
+        viewModel.direct.commitValue()
+        viewModel.applySheet()
+
+        assertEquals(0.9f, viewModel.uiState.value.document!!.adjustValue(AdjustKind.Exposure), TOLERANCE)
+        assertEquals(0.1f, viewModel.uiState.value.document!!.adjustValue(AdjustKind.Temperature), TOLERANCE)
+        assertTrue(viewModel.uiState.value.canUndo)
+    }
+
+    @Test
+    fun `a slider is locked while the candidate is checked`() = runTest {
+        val viewModel = planned(TWO_ADJUSTS)
+        val gate = CompletableDeferred<Unit>()
+        harness.renderer.gate = gate
+        viewModel.applySheet()
+        assertEquals(CandidatePhase.Checking, direct(viewModel).candidate?.phase)
+
+        viewModel.direct.setValue("s1", 0.9f)
+
+        assertTrue(direct(viewModel).values.isEmpty())
+        harness.renderer.gate = null
+        gate.complete(Unit)
+        assertEquals(CandidatePhase.Review, direct(viewModel).candidate?.phase)
+        assertEquals(EXPOSURE, candidate(viewModel).adjustValue(AdjustKind.Exposure), TOLERANCE)
+    }
+
     // ---- fixtures ----------------------------------------------------------------
 
     private fun planned(plan: EditPlan): EditorViewModel {
@@ -464,6 +569,8 @@ class DirectChoiceTest {
         const val TOLERANCE = 1e-4f
         const val EXPOSURE = 0.4f
         const val EXISTING = 0.3f
+        val PLAIN = DirectFakeRenderer.PLAIN
+        val ADJUSTED = DirectFakeRenderer.ADJUSTED
 
         /** s1 face, s2 s3 on it; s4 sign, s5 its erase; s6 a whole-photo temperature. */
         val PORTRAIT = EditPlan(

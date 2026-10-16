@@ -15,7 +15,7 @@ class StyleCatalogTest {
     private val presets = StyleCatalog.load(RuntimeEnvironment.getApplication().assets)
 
     @Test
-    fun `every preset parses, and the catalog is the twelve styles decided on`() {
+    fun `every preset parses, and the catalog is the styles decided on`() {
         assertEquals(EXPECTED_IDS, presets.map { it.id })
         assertTrue(presets.all { it.variants.isNotEmpty() })
     }
@@ -85,6 +85,22 @@ class StyleCatalogTest {
             "golden-glow",
             "urban-hip",
             "bw-classic",
+            "retro-seventies",
+            "blue-hour",
+            "cross-process",
+            "dreamy-haze",
+            "vintage-slide",
+            "nordic-minimal",
+            "tropical-vivid",
+            "autumn-rust",
+            "neon-night",
+            "soft-portrait",
+            "earthy-muted",
+            "hdr-detail",
+            "lomo-toy",
+            "sepia-vintage",
+            "dark-academia",
+            "spring-fresh",
         )
     }
 }

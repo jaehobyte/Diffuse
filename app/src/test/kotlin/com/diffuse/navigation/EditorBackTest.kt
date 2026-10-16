@@ -55,8 +55,8 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * specs/tool_groups.md §4 and specs/editor_shell.md, through the real wrapper: the export and
- * tool-sheet handlers outrank the AI level, the AI level outranks leaving, and leaving comes last.
+ * specs/editor_shell.md and work/decisions.md D107, through the real wrapper: the export and
+ * tool-sheet handlers outrank leaving, and the AI circle's 지시 sheet is a tool sheet like any.
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -70,9 +70,6 @@ class EditorBackTest {
     private var leftCount = 0
 
     private val aiTag get() = compose.activity.getString(EditorR.string.editor_tool_ai)
-
-    /** The top bar's back shares the strip's label, so the AI level is told by its first tool. */
-    private val aiLevelTag get() = compose.activity.getString(EditorR.string.editor_tool_erase)
 
     @Before
     fun setUp() {
@@ -90,16 +87,18 @@ class EditorBackTest {
         compose.waitForIdle()
     }
 
+    /** D107: AI opens 지시 (no recogniser in the fake, so the sheet); back closes it, then leaves. */
     @Test
-    fun `back closes the AI level first and leaves the editor on the next press`() {
+    fun `back closes the 지시 sheet the AI circle opened and leaves on the next press`() {
         compose.onNodeWithTag(aiTag).performClick()
-        compose.onNodeWithTag(aiLevelTag).assertExists()
+        compose.waitForIdle()
+        assertEquals(Tool.Direct, viewModel.uiState.value.selectedTool)
 
         pressBack()
 
         assertEquals(0, leftCount)
+        assertNull(viewModel.uiState.value.selectedTool)
         compose.onNodeWithTag(aiTag).assertExists()
-        compose.onNodeWithTag(aiLevelTag).assertDoesNotExist()
 
         pressBack()
 
@@ -107,8 +106,7 @@ class EditorBackTest {
     }
 
     @Test
-    fun `back cancels an open tool before it closes the AI level`() {
-        compose.onNodeWithTag(aiTag).performClick()
+    fun `back cancels an open tool before it leaves`() {
         compose.runOnIdle { viewModel.onToolClick(Tool.Light) }
         compose.waitForIdle()
 
@@ -123,20 +121,21 @@ class EditorBackTest {
     }
 
     @Test
-    fun `back closes the export sheet before the AI level`() {
+    fun `back closes the export sheet before the 지시 sheet`() {
         compose.onNodeWithTag(aiTag).performClick()
+        compose.waitForIdle()
         compose.onNodeWithTag(ExportTestTag).performClick()
         compose.onNodeWithTag(ExportSheetTestTag).assertExists()
 
         pressBack()
 
         compose.onNodeWithTag(ExportSheetTestTag).assertDoesNotExist()
-        compose.onNodeWithTag(aiLevelTag).assertExists()
+        assertEquals(Tool.Direct, viewModel.uiState.value.selectedTool)
         assertEquals(0, leftCount)
 
         pressBack()
 
-        compose.onNodeWithTag(aiLevelTag).assertDoesNotExist()
+        assertNull(viewModel.uiState.value.selectedTool)
         assertEquals(0, leftCount)
 
         pressBack()
@@ -153,6 +152,8 @@ class EditorBackTest {
 
     private fun editorViewModel(): EditorViewModel {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        // D107: the AI circle plans with a key, and with no recogniser it opens the sheet at once.
+        val geminiSettings = GeminiSettings(context).apply { update("test-key") }
         return EditorViewModel(
             context = context,
             repository = StubRepository(),
@@ -163,9 +164,9 @@ class EditorBackTest {
                 FakeFillProvider(),
                 FakeOutpaintProvider(),
                 FakePlanProvider(),
-                FakeSpeechInput(),
+                FakeSpeechInput(isAvailable = false),
                 Sam3Settings(context),
-                GeminiSettings(context),
+                geminiSettings,
                 FakeMatchStyleProvider(),
                 com.diffuse.core.ai.FakeTopazProvider(),
                 com.diffuse.core.ai.topaz.TopazSettings(context),

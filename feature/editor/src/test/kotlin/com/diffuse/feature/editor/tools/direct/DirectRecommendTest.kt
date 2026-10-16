@@ -106,7 +106,7 @@ class DirectRecommendTest {
         assertEquals(emptyList<Any>(), context.adjustments + context.targets + context.operations)
         assertEquals(DirectFakeRenderer.SIZE, request.context.imageWidth)
         // §15: the catalog's own values for every style, and Topaz as configured — no key text.
-        assertEquals(12, request.context.styles.size)
+        assertEquals(28, request.context.styles.size)
         assertFalse(request.context.topaz!!.hasAlpha)
         val state = viewModel.uiState.value
         assertEquals(ProposalPhase.Ready, state.direct.phase)

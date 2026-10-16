@@ -2,7 +2,6 @@ package com.diffuse.feature.editor
 
 import androidx.annotation.StringRes
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.AutoAwesomeMosaic
 import androidx.compose.material.icons.rounded.AutoAwesomeMotion
@@ -18,11 +17,10 @@ import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.ui.graphics.vector.ImageVector
 
 /**
- * specs/tool_groups.md §3. Which level of the strip a tool appears at.
- *
- * It replaces `Tool.isAi`, which existed only to drive the 6dp accent dot. §2 moved that dot up
- * to the AI parent — inside the AI level every tool is an AI tool, so the dot marks nothing there
- * — and two spellings of one fact is how the two come to disagree.
+ * work/decisions.md D107. Whether a tool has a strip item. [Root] tools are the manual ones on
+ * the strip; an [Ai] tool has **no item** — the strip's AI circle opens 지시, and these tools run
+ * only as steps of the plan 지시 asks for (specs/vibe_edit.md §4). The enum stays so the sheets
+ * and controllers these tools still own have a `selectedTool` to be keyed on.
  */
 enum class ToolGroup { Root, Ai }
 
@@ -41,9 +39,8 @@ enum class Tool(
     Detail(R.string.editor_tool_detail, Icons.Rounded.Tune),
 
     /**
-     * 선택 is no longer an item: at the AI level the photo itself takes the tap, and the mask
-     * it makes is committed as it lands (EditorViewModel.selectOnCanvas). 지우기 is therefore
-     * the first child.
+     * D107: from here on, no strip item. 선택 went first (D104); now 지우기, 채우기, 확대, 화질 개선,
+     * 스타일 and 멀티샷 are reached only as plan steps, or not at all.
      */
     Erase(R.string.editor_tool_erase, Icons.Rounded.AutoFixHigh, ToolGroup.Ai),
 
@@ -72,59 +69,38 @@ enum class Tool(
      */
     MultiShot(R.string.editor_tool_multishot, Icons.Rounded.BurstMode, ToolGroup.Ai),
 
-    /** specs/vibe_edit.md §3: last in the strip, because it can reach any of the others. */
+    /** specs/vibe_edit.md §3, D107: what the strip's AI circle opens; it can reach the others. */
     Direct(R.string.editor_tool_direct, Icons.Rounded.AutoAwesome, ToolGroup.Ai),
 }
 
 /**
- * specs/tool_groups.md §3. Which level the strip is bound to, and how to change it. One parameter
- * rather than two, the shape `MaskOption` and `CanvasPointTaps` already use — `EditorScreen` is at
- * detekt's method-length limit and every line of its signature counts against it.
- */
-data class ToolLevelState(
-    val level: ToolGroup = ToolGroup.Root,
-    val onChange: (ToolGroup) -> Unit = {},
-)
-
-/**
- * specs/tool_groups.md §2. What the strip shows at one level: its tools, plus the one item that
- * moves between levels. Neither of those two is a `Tool` — tapping them selects nothing.
+ * What the strip shows: the manual tools, then the one item that is not a `Tool` — the AI circle,
+ * which opens 지시 (D107). Tapping it selects no tool of its own.
  */
 sealed interface StripItem {
     data class OfTool(val tool: Tool) : StripItem
 
-    /** The AI parent, at the end of the root level. Carries the 6dp accent dot (§2). */
+    /** The AI circle, at the end of the strip. DESIGN.md §4: the gradient circle, white glyph. */
     data object OpenAi : StripItem
-
-    /** The ← item, at the head of the AI level. `editInk`, not accent. */
-    data object Back : StripItem
 }
 
 /**
- * §3: the strip binds one level's tools, so adding a tool is still one enum entry.
- *
- * Pure, so §7's "every `Tool` appears at exactly one level" is a test and not a screenshot.
+ * The strip binds the root tools, so adding a manual tool is still one enum entry. Pure, so "a
+ * plan-only tool has no item" is a test and not a screenshot.
  *
  * work/decisions.md D092: one menu for every photograph — no portrait profile reorders or filters
  * it, so the enum's order is the only order.
  */
-fun stripItems(level: ToolGroup): List<StripItem> {
-    val tools = Tool.entries.filter { it.group == level }.map(StripItem::OfTool)
-    return when (level) {
-        ToolGroup.Root -> tools + StripItem.OpenAi
-        ToolGroup.Ai -> listOf(StripItem.Back) + tools
-    }
-}
+fun stripItems(): List<StripItem> =
+    Tool.entries.filter { it.group == ToolGroup.Root }.map(StripItem::OfTool) + StripItem.OpenAi
 
 @StringRes
 internal fun StripItem.labelRes(): Int = when (this) {
     is StripItem.OfTool -> tool.labelRes
     StripItem.OpenAi -> R.string.editor_tool_ai
-    StripItem.Back -> R.string.editor_tool_back
 }
 
 internal fun StripItem.icon(): ImageVector = when (this) {
     is StripItem.OfTool -> tool.icon
     StripItem.OpenAi -> Icons.Rounded.AutoAwesome
-    StripItem.Back -> Icons.AutoMirrored.Rounded.ArrowBack
 }

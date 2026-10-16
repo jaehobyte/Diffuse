@@ -22,13 +22,13 @@ class EditorShellGoldenTest {
     val compose = createComposeRule()
 
     @Test
-    fun editorShellDefault() = shell("editor_shell_default", Tool.Light, ToolGroup.Root)
+    fun editorShellDefault() = shell("editor_shell_default", Tool.Light)
 
-    /** specs/tool_groups.md §7: the second level, which is the whole point of T78. */
+    /** D107: the AI circle is 지시 itself, and its label goes yellow while 지시 is open or listening. */
     @Test
-    fun editorShellAiOpen() = shell("editor_shell_ai_open", null, ToolGroup.Ai)
+    fun editorShellAiActive() = shell("editor_shell_ai_active", null, aiActive = true)
 
-    private fun shell(name: String, selected: Tool?, level: ToolGroup) {
+    private fun shell(name: String, selected: Tool?, aiActive: Boolean = false) {
         compose.setContent {
             EditorScreen(
                 preview = testImage(),
@@ -42,7 +42,7 @@ class EditorShellGoldenTest {
                 onRedo = {},
                 onCompareChange = {},
                 onExport = {},
-                toolLevel = ToolLevelState(level),
+                aiActive = aiActive,
             )
         }
         compose.waitForIdle()

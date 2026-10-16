@@ -203,6 +203,13 @@ class EditorViewModel @Inject constructor(
     private var previewJob: Job? = null
 
     /**
+     * D110: the last frame rendered from the document itself, for a 지시 run. `uiState.preview` may
+     * be a draft — a slider moved before the run — and the segmentation and the eraser must work
+     * on the photo as it is, or an adjustment would be baked into a patch and then applied again.
+     */
+    private var documentFrame: Pair<EditDocument, Bitmap>? = null
+
+    /**
      * specs/selection_tool.md: the session and the point run a tap on the photo refines (see
      * [selectOnCanvas]). Every mask a run produces is committed here the moment it lands — §6
      * as it stands without a sheet: the mask becomes a file and one history entry, so 지우기,
@@ -350,7 +357,8 @@ class EditorViewModel @Inject constructor(
             override fun canvas(): DirectCanvas? {
                 val state = _uiState.value
                 val document = state.document
-                val preview = state.preview?.asAndroidBitmap()
+                // D110: the run's frame is the document's own, never the draft a slider drew over it.
+                val preview = documentFrame?.takeIf { it.first == document }?.second
                 return if (document == null || preview == null) {
                     null
                 } else {
@@ -510,8 +518,9 @@ class EditorViewModel @Inject constructor(
         // specs/vibe_edit.md §18: the candidate changing (built, halved, dropped) changes what the
         // canvas shows without changing the document — T77's collector shape again. §19: only a
         // complete result's candidate is drawn; a local + Topaz choice waiting for Topaz shows the input.
+        // D110: before a run, a moved slider is drawn on the input the same way.
         viewModelScope.launch {
-            _uiState.map { if (it.selectedTool == Tool.Direct) it.direct.shownDocument else null }
+            _uiState.map { state -> state.document?.takeIf { state.selectedTool == Tool.Direct }?.let(state.direct::drawn) }
                 .distinctUntilChanged()
                 .collect { _uiState.value.document?.let(::requestPreview) }
         }
@@ -593,8 +602,9 @@ class EditorViewModel @Inject constructor(
             Tool.MultiShot -> (multiShot.draftDocument() ?: document).let { draft ->
                 draft.copy(operations = draft.operations.filterNot { it is Operation.Crop })
             }
-            // specs/vibe_edit.md §18: the candidate under review is drawn, never committed.
-            Tool.Direct -> _uiState.value.direct.shownDocument ?: document
+            // specs/vibe_edit.md §18: the candidate under review is drawn, never committed; D110:
+            // so is a slider moved before the run.
+            Tool.Direct -> _uiState.value.direct.drawn(document)
             else -> document
         }
         previewJob = viewModelScope.launch {
@@ -603,6 +613,7 @@ class EditorViewModel @Inject constructor(
             // place that already knows the document changed.
             val mask = document.activeMaskId?.let { renderer.resolveMask(document, it) }
             val frame = (rendered as? Result.Success)?.value
+            if (frame != null && shown == document) documentFrame = document to frame
             _uiState.value = _uiState.value.copy(
                 preview = frame?.asImageBitmap() ?: _uiState.value.preview,
                 renderedDocument = shown.takeIf { frame != null },
@@ -832,10 +843,11 @@ class EditorViewModel @Inject constructor(
     }
 
     /**
-     * The Photo Editor's way in: at the AI level, tapping the thing to select *is* selecting
-     * it (specs/selection_tool.md §2, with no sheet in between). The session is opened if the
-     * warm-up has not already, and the point is added — kept until the session is ready. A tap
-     * the backend cannot serve explains itself instead.
+     * Selecting by tapping the thing itself (specs/selection_tool.md §2, with no sheet in
+     * between). The session is opened if it is not already, and the point is added — kept until
+     * the session is ready. A tap the backend cannot serve explains itself instead. D107: no UI
+     * reaches this any more (the AI level that took the tap is gone); it stays as the
+     * controller's API, exercised by the tests.
      */
     fun selectOnCanvas(x: Float, y: Float, foreground: Boolean) {
         if (!selection.onPhotoTapped()) return

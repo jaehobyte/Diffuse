@@ -75,7 +75,9 @@ fun EditorScreen(
     overlayTransform: OverlayTransform = OverlayTransform.None,
     /** specs/selection_tool.md §1: a tool with no working provider is greyed but still tappable. */
     disabledTools: Set<Tool> = emptySet(),
-    toolLevel: ToolLevelState = ToolLevelState(),
+    /** D107: the strip's AI circle opens 지시; [aiActive] marks it while 지시 is open or listening. */
+    aiActive: Boolean = false,
+    onAiClick: () -> Unit = {},
     /** specs/selection_tool.md §2: the select sheet claims the single finger while it is open. */
     gestureMode: CanvasGestureMode = CanvasGestureMode.Pan,
     pointTaps: CanvasPointTaps? = null,
@@ -89,11 +91,13 @@ fun EditorScreen(
 ) {
     // DESIGN.md §1: one black palette for the bar, the canvas surround and the strip.
     AppTheme(mode = ThemeMode.Edit) {
-        var viewport by rememberSaveable(stateSaver = ViewportSaver) {
-            mutableStateOf(CanvasViewport())
-        }
-        // DESIGN.md §7: hold to compare with the original is the single comparison gesture.
+        var viewport by rememberSaveable(stateSaver = ViewportSaver) { mutableStateOf(CanvasViewport()) }
+        // DESIGN.md §7: hold to compare with the original is the one comparison gesture: ◐, or the photo (D108).
         var comparing by remember { mutableStateOf(false) }
+        val setComparing: (Boolean) -> Unit = {
+            comparing = it
+            onCompareChange(it)
+        }
         var sheetHeightPx by remember { mutableIntStateOf(0) }
         val snackbarHost = remember { SnackbarHostState() }
         ShowMessage(message, snackbarHost, onMessageShown)
@@ -110,10 +114,7 @@ fun EditorScreen(
                     viewport = CanvasViewport()
                     onReset()
                 },
-                onCompareChange = {
-                    comparing = it
-                    onCompareChange(it)
-                },
+                onCompareChange = setComparing,
                 onExport = onExport,
             )
         }
@@ -127,7 +128,8 @@ fun EditorScreen(
                 selectedTool = selectedTool,
                 onToolClick = onToolClick,
                 disabledTools = disabledTools,
-                toolLevel = toolLevel,
+                aiActive = aiActive,
+                onAiClick = onAiClick,
                 topBar = topBar,
                 viewport = viewport,
                 onViewportChange = { viewport = it },
@@ -135,6 +137,7 @@ fun EditorScreen(
                 overlayTransform = overlayTransform,
                 gestureMode = gestureMode,
                 pointTaps = pointTaps,
+                onHoldCompare = if (canCompare) setComparing else null,
                 canvasOverlay = canvasOverlay,
                 onToolStripHeight = { toolStripHeightPx = it },
             )
@@ -185,7 +188,8 @@ private fun EditorBody(
     selectedTool: Tool?,
     onToolClick: (Tool) -> Unit,
     disabledTools: Set<Tool>,
-    toolLevel: ToolLevelState,
+    aiActive: Boolean,
+    onAiClick: () -> Unit,
     topBar: @Composable () -> Unit,
     viewport: CanvasViewport,
     onViewportChange: (CanvasViewport) -> Unit,
@@ -193,6 +197,7 @@ private fun EditorBody(
     overlayTransform: OverlayTransform,
     gestureMode: CanvasGestureMode,
     pointTaps: CanvasPointTaps?,
+    onHoldCompare: ((Boolean) -> Unit)?,
     canvasOverlay: (@Composable BoxScope.() -> Unit)?,
     onToolStripHeight: (Int) -> Unit,
 ) {
@@ -209,14 +214,15 @@ private fun EditorBody(
             overlayTransform = overlayTransform,
             gestureMode = gestureMode,
             pointTaps = pointTaps,
+            onHoldChange = onHoldCompare,
             overlay = canvasOverlay,
         )
         EditorToolStrip(
             selectedTool = selectedTool,
             onToolClick = onToolClick,
             disabledTools = disabledTools,
-            level = toolLevel.level,
-            onLevelChange = toolLevel.onChange,
+            aiActive = aiActive,
+            onAiClick = onAiClick,
             // DESIGN.md §8: the strip's black runs under the transparent navigation bar.
             modifier = Modifier
                 .background(LocalAppColors.current.surface)

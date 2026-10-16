@@ -996,6 +996,1585 @@
      }
     }
    ]
+  },
+  {
+   "id": "retro-seventies",
+   "name": "레트로 70s",
+   "desc": "노란빛이 감도는 바랜 70년대 인화 느낌",
+   "axes": {
+    "warmth": 0.6,
+    "hardness": -0.2
+   },
+   "params": {
+    "temperature": 10,
+    "tint": 4,
+    "contrast": -12,
+    "fade": 28,
+    "vignette": -20,
+    "hsl": {
+     "yellow": {
+      "sat": 30,
+      "lum": 5
+     },
+     "orange": {
+      "sat": 30
+     },
+     "blue": {
+      "sat": -30
+     }
+    }
+   },
+   "variants": [
+    {
+     "name": "빈티지 옐로",
+     "desc": "노랗게 바랜 인화지",
+     "params": {
+      "temperature": 28,
+      "tint": 8,
+      "exposure": 0.1,
+      "contrast": -8,
+      "fade": 22,
+      "saturation": -10,
+      "vignette": -15,
+      "hsl": {
+       "yellow": {
+        "sat": 30,
+        "lum": 8
+       },
+       "blue": {
+        "sat": -30
+       }
+      }
+     }
+    },
+    {
+     "name": "디스코 레드",
+     "desc": "빨강과 주황을 살린 쨍한 레트로",
+     "params": {
+      "temperature": 18,
+      "tint": 12,
+      "exposure": 0.05,
+      "contrast": 4,
+      "fade": 12,
+      "saturation": 8,
+      "hsl": {
+       "red": {
+        "sat": 22
+       },
+       "orange": {
+        "sat": 15
+       },
+       "blue": {
+        "sat": -20
+       }
+      }
+     }
+    },
+    {
+     "name": "폴라로이드 페이드",
+     "desc": "즉석 사진처럼 밝고 흐린 색",
+     "params": {
+      "temperature": 15,
+      "tint": -4,
+      "exposure": 0.2,
+      "contrast": -12,
+      "fade": 28,
+      "whites": 10,
+      "saturation": -12,
+      "vignette": -20
+     }
+    }
+   ]
+  },
+  {
+   "id": "blue-hour",
+   "name": "블루 아워",
+   "desc": "해 진 직후의 푸른 공기와 깊은 그림자",
+   "axes": {
+    "warmth": -0.8,
+    "hardness": -0.1
+   },
+   "params": {
+    "temperature": -28,
+    "tint": 6,
+    "exposure": -0.1,
+    "contrast": 6,
+    "highlights": -15,
+    "shadows": 10,
+    "saturation": 5,
+    "hsl": {
+     "blue": {
+      "sat": 25,
+      "lum": -5
+     },
+     "purple": {
+      "sat": 15
+     },
+     "orange": {
+      "sat": -15
+     }
+    }
+   },
+   "variants": [
+    {
+     "name": "트와일라잇 퍼플",
+     "desc": "보라가 섞인 황혼",
+     "params": {
+      "temperature": -25,
+      "tint": 14,
+      "exposure": -0.1,
+      "contrast": 6,
+      "highlights": -15,
+      "saturation": 8,
+      "hsl": {
+       "blue": {
+        "sat": 20
+       },
+       "purple": {
+        "sat": 30
+       },
+       "magenta": {
+        "sat": 15
+       },
+       "orange": {
+        "sat": -15
+       }
+      }
+     }
+    },
+    {
+     "name": "아이스 블루",
+     "desc": "차갑고 맑은 새벽",
+     "params": {
+      "temperature": -35,
+      "tint": -2,
+      "exposure": 0.05,
+      "contrast": 4,
+      "highlights": -10,
+      "saturation": -5,
+      "hsl": {
+       "blue": {
+        "sat": 30,
+        "lum": 5
+       },
+       "aqua": {
+        "sat": 15
+       },
+       "orange": {
+        "sat": -25
+       }
+      }
+     }
+    },
+    {
+     "name": "도시의 밤",
+     "desc": "푸른 밤하늘 아래 창문의 불빛",
+     "params": {
+      "temperature": -22,
+      "tint": 4,
+      "exposure": -0.25,
+      "contrast": 14,
+      "highlights": -20,
+      "blacks": -10,
+      "saturation": 10,
+      "vignette": -20,
+      "hsl": {
+       "blue": {
+        "sat": 25
+       },
+       "orange": {
+        "sat": 10
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "cross-process",
+   "name": "크로스 프로세스",
+   "desc": "초록 틴트와 뒤틀린 색의 강한 대비",
+   "axes": {
+    "warmth": -0.1,
+    "hardness": 0.7
+   },
+   "params": {
+    "contrast": 24,
+    "s_curve": 12,
+    "blacks": -8,
+    "saturation": 26,
+    "hsl": {
+     "yellow": {
+      "sat": 20,
+      "lum": 5
+     },
+     "orange": {
+      "sat": 15
+     },
+     "aqua": {
+      "sat": 15
+     },
+     "blue": {
+      "sat": -25
+     }
+    }
+   },
+   "variants": [
+    {
+     "name": "그린 슬라이드",
+     "desc": "초록이 짙게 깔린 슬라이드",
+     "params": {
+      "contrast": 25,
+      "s_curve": 20,
+      "tint": -28,
+      "temperature": 4,
+      "saturation": 18,
+      "blacks": -12,
+      "hsl": {
+       "green": {
+        "sat": 30,
+        "hue": 8
+       },
+       "yellow": {
+        "sat": 20
+       },
+       "blue": {
+        "hue": -15,
+        "sat": 10
+       }
+      }
+     }
+    },
+    {
+     "name": "시안 섀도",
+     "desc": "그림자가 청록으로 기우는 결",
+     "params": {
+      "contrast": 22,
+      "s_curve": 18,
+      "tint": -10,
+      "temperature": -8,
+      "saturation": 22,
+      "blacks": -15,
+      "hsl": {
+       "aqua": {
+        "sat": 25
+       },
+       "blue": {
+        "hue": -20,
+        "sat": 20
+       },
+       "red": {
+        "sat": 12
+       }
+      }
+     }
+    },
+    {
+     "name": "옐로 번",
+     "desc": "하이라이트가 노랗게 타는 결",
+     "params": {
+      "contrast": 28,
+      "s_curve": 22,
+      "tint": -12,
+      "temperature": 15,
+      "saturation": 25,
+      "blacks": -10,
+      "highlights": 15,
+      "whites": 10,
+      "hsl": {
+       "yellow": {
+        "sat": 30,
+        "lum": 10
+       },
+       "red": {
+        "sat": 15
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "dreamy-haze",
+   "name": "드리미 헤이즈",
+   "desc": "안개 낀 듯 밝고 부드럽게 번지는 빛",
+   "axes": {
+    "warmth": 0.4,
+    "hardness": -1.0
+   },
+   "params": {
+    "exposure": 0.45,
+    "contrast": -30,
+    "clarity": -30,
+    "highlights": -30,
+    "fade": 28,
+    "saturation": 25,
+    "vibrance": 15,
+    "temperature": 14
+   },
+   "variants": [
+    {
+     "name": "모닝 미스트",
+     "desc": "이른 아침 안개",
+     "params": {
+      "exposure": 0.35,
+      "contrast": -25,
+      "clarity": -35,
+      "highlights": -25,
+      "fade": 38,
+      "saturation": -12,
+      "temperature": 6
+     }
+    },
+    {
+     "name": "글로우 블룸",
+     "desc": "하이라이트가 번지는 따뜻한 빛",
+     "params": {
+      "exposure": 0.4,
+      "contrast": -15,
+      "clarity": -25,
+      "highlights": -10,
+      "whites": 20,
+      "fade": 22,
+      "temperature": 14,
+      "tint": 6
+     }
+    },
+    {
+     "name": "라벤더 헤이즈",
+     "desc": "보랏빛이 감도는 흐림",
+     "params": {
+      "exposure": 0.25,
+      "contrast": -20,
+      "clarity": -28,
+      "fade": 30,
+      "saturation": -4,
+      "temperature": 2,
+      "tint": 14,
+      "hsl": {
+       "purple": {
+        "sat": 20
+       },
+       "magenta": {
+        "sat": 12
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "vintage-slide",
+   "name": "빈티지 슬라이드",
+   "desc": "진한 빨강과 깊은 블랙의 옛 슬라이드 필름",
+   "axes": {
+    "warmth": 0.5,
+    "hardness": 0.5
+   },
+   "params": {
+    "contrast": 24,
+    "s_curve": 12,
+    "blacks": -14,
+    "whites": 6,
+    "saturation": 28,
+    "vibrance": 10,
+    "temperature": 12,
+    "tint": 4,
+    "hsl": {
+     "red": {
+      "sat": 25,
+      "hue": 5
+     },
+     "orange": {
+      "sat": 10
+     },
+     "blue": {
+      "lum": -8
+     },
+     "green": {
+      "hue": 10,
+      "sat": -5
+     }
+    }
+   },
+   "variants": [
+    {
+     "name": "코다크롬 레드",
+     "desc": "빨강이 앞서는 클래식 슬라이드",
+     "params": {
+      "contrast": 20,
+      "s_curve": 14,
+      "blacks": -16,
+      "saturation": 25,
+      "temperature": 12,
+      "tint": 8,
+      "hsl": {
+       "red": {
+        "sat": 30,
+        "hue": 6
+       },
+       "orange": {
+        "sat": 10
+       },
+       "blue": {
+        "sat": -12,
+        "lum": -10
+       },
+       "green": {
+        "hue": 12,
+        "sat": -8
+       }
+      }
+     }
+    },
+    {
+     "name": "엑타크롬 블루",
+     "desc": "파랑이 맑은 슬라이드",
+     "params": {
+      "contrast": 16,
+      "s_curve": 10,
+      "blacks": -12,
+      "saturation": 20,
+      "vibrance": 12,
+      "temperature": 2,
+      "tint": -2,
+      "hsl": {
+       "blue": {
+        "sat": 20,
+        "lum": -5
+       },
+       "aqua": {
+        "sat": 15
+       },
+       "red": {
+        "sat": 12
+       }
+      }
+     }
+    },
+    {
+     "name": "벨비아 비비드",
+     "desc": "모든 색을 끝까지 밀어붙인 슬라이드",
+     "params": {
+      "contrast": 22,
+      "s_curve": 16,
+      "blacks": -14,
+      "saturation": 35,
+      "vibrance": 15,
+      "temperature": 10,
+      "hsl": {
+       "red": {
+        "sat": 25
+       },
+       "green": {
+        "sat": 20
+       },
+       "blue": {
+        "sat": 15
+       },
+       "magenta": {
+        "sat": 15
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "nordic-minimal",
+   "name": "노르딕 미니멀",
+   "desc": "밝고 차갑게 비운 북유럽 인테리어 톤",
+   "axes": {
+    "warmth": -0.5,
+    "hardness": -0.6
+   },
+   "params": {
+    "exposure": 0.45,
+    "contrast": -18,
+    "highlights": -12,
+    "whites": 12,
+    "fade": 16,
+    "saturation": -30,
+    "vibrance": -5,
+    "temperature": -20,
+    "tint": 2,
+    "clarity": -4,
+    "hsl": {
+     "blue": {
+      "sat": -5
+     },
+     "orange": {
+      "sat": -20
+     }
+    }
+   },
+   "variants": [
+    {
+     "name": "화이트 룸",
+     "desc": "하얗게 비운 공간",
+     "params": {
+      "exposure": 0.4,
+      "contrast": -14,
+      "highlights": -15,
+      "whites": 18,
+      "fade": 12,
+      "saturation": -28,
+      "temperature": -10
+     }
+    },
+    {
+     "name": "스톤 그레이",
+     "desc": "회색 돌 같은 차분함",
+     "params": {
+      "exposure": 0.15,
+      "contrast": -8,
+      "fade": 14,
+      "saturation": -32,
+      "temperature": -8,
+      "tint": 4,
+      "clarity": 6
+     }
+    },
+    {
+     "name": "린넨 베이지",
+     "desc": "살짝 따뜻한 미니멀",
+     "params": {
+      "exposure": 0.3,
+      "contrast": -12,
+      "fade": 10,
+      "saturation": -18,
+      "temperature": 4,
+      "tint": 2,
+      "hsl": {
+       "orange": {
+        "sat": -10,
+        "lum": 8
+       },
+       "blue": {
+        "sat": -20
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "tropical-vivid",
+   "name": "트로피컬",
+   "desc": "청록 바다와 초록 숲을 살린 여행 사진 톤",
+   "axes": {
+    "warmth": 0.4,
+    "hardness": 0.3
+   },
+   "params": {
+    "exposure": 0.15,
+    "contrast": 10,
+    "vibrance": 35,
+    "saturation": 12,
+    "temperature": 10,
+    "highlights": -10,
+    "shadows": 10,
+    "clarity": 10,
+    "hsl": {
+     "aqua": {
+      "sat": 35,
+      "lum": 5
+     },
+     "green": {
+      "sat": 25,
+      "lum": 5
+     },
+     "yellow": {
+      "sat": 20
+     },
+     "orange": {
+      "sat": 15
+     },
+     "blue": {
+      "sat": 20
+     }
+    }
+   },
+   "variants": [
+    {
+     "name": "터쿼이즈 라군",
+     "desc": "청록 바다",
+     "params": {
+      "exposure": 0.15,
+      "contrast": 8,
+      "vibrance": 30,
+      "saturation": 10,
+      "temperature": 4,
+      "hsl": {
+       "aqua": {
+        "sat": 45,
+        "lum": 8
+       },
+       "blue": {
+        "hue": -10,
+        "sat": 25
+       },
+       "green": {
+        "sat": 15
+       }
+      }
+     }
+    },
+    {
+     "name": "정글 그린",
+     "desc": "초록 숲",
+     "params": {
+      "exposure": 0.1,
+      "contrast": 12,
+      "vibrance": 30,
+      "saturation": 10,
+      "temperature": 8,
+      "hsl": {
+       "green": {
+        "sat": 40,
+        "lum": 5
+       },
+       "yellow": {
+        "sat": 25,
+        "hue": -5
+       },
+       "aqua": {
+        "sat": 15
+       }
+      }
+     }
+    },
+    {
+     "name": "선셋 비치",
+     "desc": "해 질 녘 바닷가",
+     "params": {
+      "exposure": 0.2,
+      "contrast": 10,
+      "vibrance": 35,
+      "saturation": 15,
+      "temperature": 20,
+      "tint": 6,
+      "highlights": -15,
+      "hsl": {
+       "orange": {
+        "sat": 25
+       },
+       "red": {
+        "sat": 15
+       },
+       "magenta": {
+        "sat": 15
+       },
+       "aqua": {
+        "sat": 20
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "autumn-rust",
+   "name": "오텀 러스트",
+   "desc": "단풍처럼 붉고 노란, 초록을 걷어낸 가을 톤",
+   "axes": {
+    "warmth": 0.8,
+    "hardness": 0.2
+   },
+   "params": {
+    "temperature": 24,
+    "tint": 14,
+    "exposure": -0.25,
+    "contrast": 20,
+    "shadows": -8,
+    "hsl": {
+     "orange": {
+      "sat": 35,
+      "lum": 5
+     },
+     "red": {
+      "sat": 20
+     },
+     "yellow": {
+      "hue": -15,
+      "sat": 15
+     },
+     "green": {
+      "hue": -25,
+      "sat": -15,
+      "lum": -5
+     },
+     "blue": {
+      "sat": -50
+     }
+    }
+   },
+   "variants": [
+    {
+     "name": "메이플 레드",
+     "desc": "빨간 단풍",
+     "params": {
+      "temperature": 20,
+      "tint": 10,
+      "contrast": 14,
+      "shadows": -8,
+      "saturation": 12,
+      "hsl": {
+       "red": {
+        "sat": 30,
+        "lum": -3
+       },
+       "orange": {
+        "sat": 25,
+        "hue": -5
+       },
+       "yellow": {
+        "hue": -20
+       },
+       "green": {
+        "hue": -25,
+        "sat": -20
+       },
+       "blue": {
+        "sat": -30
+       }
+      }
+     }
+    },
+    {
+     "name": "하베스트 골드",
+     "desc": "황금빛 들판",
+     "params": {
+      "temperature": 30,
+      "tint": 2,
+      "exposure": 0.05,
+      "contrast": 10,
+      "saturation": 8,
+      "hsl": {
+       "yellow": {
+        "sat": 30,
+        "lum": 8
+       },
+       "orange": {
+        "sat": 25,
+        "lum": 5
+       },
+       "green": {
+        "hue": -30,
+        "sat": -10
+       },
+       "blue": {
+        "sat": -25
+       }
+      }
+     }
+    },
+    {
+     "name": "포그 오브 오텀",
+     "desc": "안개 낀 가을 아침",
+     "params": {
+      "temperature": 18,
+      "tint": 4,
+      "exposure": 0.05,
+      "contrast": -4,
+      "fade": 18,
+      "hsl": {
+       "orange": {
+        "sat": 20
+       },
+       "yellow": {
+        "hue": -12,
+        "sat": 10
+       },
+       "green": {
+        "hue": -20,
+        "sat": -20
+       },
+       "blue": {
+        "sat": -30
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "neon-night",
+   "name": "네온 나이트",
+   "desc": "어두운 밤 위에 파랑과 마젠타 네온이 타는 톤",
+   "axes": {
+    "warmth": -0.7,
+    "hardness": 0.9
+   },
+   "params": {
+    "exposure": -0.3,
+    "contrast": 14,
+    "blacks": -8,
+    "highlights": -10,
+    "saturation": 40,
+    "temperature": -10,
+    "tint": 28,
+    "clarity": 12,
+    "vignette": -20,
+    "hsl": {
+     "blue": {
+      "sat": 40,
+      "lum": -5
+     },
+     "magenta": {
+      "sat": 25
+     },
+     "purple": {
+      "sat": 20
+     },
+     "aqua": {
+      "sat": 15
+     },
+     "orange": {
+      "sat": 20
+     }
+    }
+   },
+   "variants": [
+    {
+     "name": "사이버 마젠타",
+     "desc": "마젠타가 앞서는 네온",
+     "params": {
+      "exposure": -0.3,
+      "contrast": 28,
+      "blacks": -15,
+      "saturation": 28,
+      "temperature": -18,
+      "tint": 24,
+      "vignette": -20,
+      "hsl": {
+       "magenta": {
+        "sat": 45
+       },
+       "purple": {
+        "sat": 35
+       },
+       "blue": {
+        "hue": 10,
+        "sat": 25
+       },
+       "aqua": {
+        "sat": 20
+       }
+      }
+     }
+    },
+    {
+     "name": "일렉트릭 블루",
+     "desc": "파랑이 앞서는 네온",
+     "params": {
+      "exposure": -0.35,
+      "contrast": 30,
+      "blacks": -18,
+      "saturation": 22,
+      "temperature": -32,
+      "tint": 4,
+      "vignette": -20,
+      "hsl": {
+       "blue": {
+        "sat": 45,
+        "lum": 5
+       },
+       "aqua": {
+        "sat": 35
+       },
+       "purple": {
+        "sat": 20
+       },
+       "orange": {
+        "sat": -20
+       }
+      }
+     }
+    },
+    {
+     "name": "시티 라이트",
+     "desc": "가로등과 간판의 밤거리",
+     "params": {
+      "exposure": -0.2,
+      "contrast": 22,
+      "blacks": -10,
+      "highlights": -20,
+      "saturation": 22,
+      "temperature": -15,
+      "tint": 8,
+      "vignette": -25,
+      "hsl": {
+       "blue": {
+        "sat": 30
+       },
+       "orange": {
+        "sat": 20,
+        "lum": 5
+       },
+       "yellow": {
+        "sat": 15
+       },
+       "magenta": {
+        "sat": 20
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "soft-portrait",
+   "name": "소프트 포트레이트",
+   "desc": "피부 결을 누그러뜨리고 살결을 밝힌 인물 톤",
+   "axes": {
+    "warmth": 0.3,
+    "hardness": -0.6
+   },
+   "params": {
+    "exposure": 0.35,
+    "contrast": -12,
+    "clarity": -18,
+    "highlights": -14,
+    "shadows": 12,
+    "saturation": -6,
+    "vibrance": 6,
+    "temperature": 8,
+    "tint": 16,
+    "hsl": {
+     "orange": {
+      "sat": -10,
+      "lum": 10
+     },
+     "red": {
+      "sat": -8,
+      "lum": 5
+     },
+     "green": {
+      "sat": -10
+     },
+     "yellow": {
+      "sat": -8
+     },
+     "blue": {
+      "sat": -15
+     }
+    }
+   },
+   "variants": [
+    {
+     "name": "밀키 스킨",
+     "desc": "우윳빛 살결",
+     "params": {
+      "exposure": 0.18,
+      "contrast": -12,
+      "clarity": -25,
+      "highlights": -18,
+      "shadows": 15,
+      "saturation": -8,
+      "temperature": 4,
+      "hsl": {
+       "orange": {
+        "sat": -18,
+        "lum": 15
+       },
+       "red": {
+        "sat": -12,
+        "lum": 8
+       }
+      }
+     }
+    },
+    {
+     "name": "웜 글로우 스킨",
+     "desc": "따뜻하게 빛나는 살결",
+     "params": {
+      "exposure": 0.12,
+      "contrast": -6,
+      "clarity": -15,
+      "highlights": -12,
+      "shadows": 10,
+      "vibrance": 10,
+      "temperature": 14,
+      "tint": 4,
+      "hsl": {
+       "orange": {
+        "sat": -5,
+        "lum": 10
+       },
+       "red": {
+        "lum": 5
+       },
+       "green": {
+        "sat": -15
+       }
+      }
+     }
+    },
+    {
+     "name": "스튜디오 클린",
+     "desc": "배경을 비운 깔끔한 인물",
+     "params": {
+      "exposure": 0.1,
+      "contrast": 4,
+      "clarity": -10,
+      "highlights": -10,
+      "shadows": 8,
+      "saturation": -6,
+      "tint": -2,
+      "whites": 10,
+      "hsl": {
+       "orange": {
+        "sat": -10,
+        "lum": 8
+       },
+       "blue": {
+        "sat": -10
+       },
+       "green": {
+        "sat": -15
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "earthy-muted",
+   "name": "어시 뮤트",
+   "desc": "흙과 모래의 색만 남긴 차분한 톤",
+   "axes": {
+    "warmth": 0.4,
+    "hardness": -0.4
+   },
+   "params": {
+    "exposure": -0.15,
+    "contrast": -6,
+    "fade": 16,
+    "saturation": -32,
+    "vibrance": 5,
+    "temperature": 6,
+    "tint": 4,
+    "shadows": 6,
+    "hsl": {
+     "orange": {
+      "sat": 10,
+      "lum": 5
+     },
+     "yellow": {
+      "hue": -10,
+      "sat": -10
+     },
+     "green": {
+      "hue": -15,
+      "sat": -25,
+      "lum": -5
+     },
+     "blue": {
+      "sat": -30,
+      "lum": -5
+     },
+     "aqua": {
+      "sat": -25
+     }
+    }
+   },
+   "variants": [
+    {
+     "name": "테라코타",
+     "desc": "붉은 흙빛",
+     "params": {
+      "exposure": -0.05,
+      "contrast": -4,
+      "fade": 14,
+      "saturation": -20,
+      "temperature": 18,
+      "tint": 8,
+      "hsl": {
+       "orange": {
+        "sat": 20,
+        "lum": 3
+       },
+       "red": {
+        "sat": 10
+       },
+       "green": {
+        "hue": -20,
+        "sat": -30
+       },
+       "blue": {
+        "sat": -35
+       }
+      }
+     }
+    },
+    {
+     "name": "올리브 그린",
+     "desc": "올리브빛 초록",
+     "params": {
+      "exposure": -0.05,
+      "contrast": -6,
+      "fade": 18,
+      "saturation": -22,
+      "temperature": 8,
+      "tint": -8,
+      "hsl": {
+       "green": {
+        "hue": -10,
+        "sat": -10
+       },
+       "yellow": {
+        "hue": -15,
+        "sat": 5
+       },
+       "blue": {
+        "sat": -30
+       },
+       "orange": {
+        "sat": -5
+       }
+      }
+     }
+    },
+    {
+     "name": "샌드 스톤",
+     "desc": "밝은 모래빛",
+     "params": {
+      "exposure": 0.08,
+      "contrast": -10,
+      "fade": 20,
+      "whites": 8,
+      "saturation": -28,
+      "temperature": 14,
+      "tint": 2,
+      "hsl": {
+       "orange": {
+        "sat": 5,
+        "lum": 10
+       },
+       "yellow": {
+        "lum": 8
+       },
+       "blue": {
+        "sat": -35
+       },
+       "green": {
+        "sat": -30
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "hdr-detail",
+   "name": "HDR 디테일",
+   "desc": "그림자와 하이라이트를 모두 살린 디테일 강조",
+   "axes": {
+    "warmth": 0.0,
+    "hardness": 0.6
+   },
+   "params": {
+    "shadows": 45,
+    "highlights": -45,
+    "blacks": 5,
+    "whites": -5,
+    "clarity": 45,
+    "contrast": -5,
+    "sharpen": 40,
+    "vibrance": 25,
+    "saturation": 5,
+    "s_curve": 8
+   },
+   "variants": [
+    {
+     "name": "드라마틱 HDR",
+     "desc": "끝까지 밀어붙인 HDR",
+     "params": {
+      "shadows": 55,
+      "highlights": -55,
+      "clarity": 60,
+      "contrast": 5,
+      "sharpen": 45,
+      "vibrance": 30,
+      "saturation": 10,
+      "s_curve": 15,
+      "vignette": -15
+     }
+    },
+    {
+     "name": "내추럴 HDR",
+     "desc": "티 나지 않게 살린 디테일",
+     "params": {
+      "shadows": 35,
+      "highlights": -35,
+      "clarity": 30,
+      "contrast": -4,
+      "sharpen": 30,
+      "vibrance": 18
+     }
+    },
+    {
+     "name": "아키텍처 디테일",
+     "desc": "건물의 선을 세운 디테일",
+     "params": {
+      "shadows": 40,
+      "highlights": -40,
+      "clarity": 50,
+      "sharpen": 50,
+      "vibrance": 10,
+      "saturation": -5,
+      "temperature": -4
+     }
+    }
+   ]
+  },
+  {
+   "id": "lomo-toy",
+   "name": "로모 토이",
+   "desc": "진한 비네팅과 과장된 색의 토이 카메라",
+   "axes": {
+    "warmth": 0.0,
+    "hardness": 0.6
+   },
+   "params": {
+    "vignette": -45,
+    "contrast": 15,
+    "s_curve": 10,
+    "saturation": 36,
+    "exposure": -0.3,
+    "blacks": -4,
+    "hsl": {
+     "red": {
+      "sat": 15
+     },
+     "yellow": {
+      "sat": 10
+     }
+    },
+    "temperature": -4
+   },
+   "variants": [
+    {
+     "name": "레드스케일",
+     "desc": "필름을 뒤집어 넣은 붉은 결",
+     "params": {
+      "vignette": -50,
+      "contrast": 20,
+      "saturation": 20,
+      "temperature": 35,
+      "tint": 10,
+      "hsl": {
+       "red": {
+        "sat": 25
+       },
+       "orange": {
+        "sat": 25
+       },
+       "blue": {
+        "sat": -40
+       },
+       "green": {
+        "hue": -30,
+        "sat": -20
+       }
+      }
+     }
+    },
+    {
+     "name": "터널 비네트",
+     "desc": "가장자리를 더 어둡게",
+     "params": {
+      "vignette": -75,
+      "contrast": 25,
+      "s_curve": 18,
+      "saturation": 30,
+      "exposure": 0.1,
+      "blacks": -10,
+      "temperature": -6,
+      "tint": -8
+     }
+    },
+    {
+     "name": "홀가 소프트",
+     "desc": "흐린 플라스틱 렌즈",
+     "params": {
+      "vignette": -55,
+      "contrast": 10,
+      "clarity": -15,
+      "fade": 12,
+      "saturation": 22,
+      "temperature": 2,
+      "tint": -4
+     }
+    }
+   ]
+  },
+  {
+   "id": "sepia-vintage",
+   "name": "세피아 빈티지",
+   "desc": "갈색으로 바랜 옛 사진",
+   "axes": {
+    "warmth": 0.7,
+    "hardness": 0.1
+   },
+   "params": {
+    "saturation": -70,
+    "temperature": 32,
+    "tint": 10,
+    "contrast": 8,
+    "fade": 14,
+    "exposure": 0.05,
+    "vignette": -20
+   },
+   "variants": [
+    {
+     "name": "올드 프린트",
+     "desc": "낡은 인화지",
+     "params": {
+      "saturation": -80,
+      "temperature": 36,
+      "tint": 12,
+      "contrast": 4,
+      "fade": 24,
+      "exposure": 0.1,
+      "vignette": -25,
+      "clarity": -8
+     }
+    },
+    {
+     "name": "앤틱 브라운",
+     "desc": "진한 갈색 토닝",
+     "params": {
+      "saturation": -60,
+      "temperature": 28,
+      "tint": 14,
+      "contrast": 14,
+      "blacks": -10,
+      "fade": 8,
+      "vignette": -20
+     }
+    },
+    {
+     "name": "티 스테인",
+     "desc": "홍차에 담갔다 꺼낸 듯한 연한 갈색",
+     "params": {
+      "saturation": -55,
+      "temperature": 24,
+      "tint": 4,
+      "contrast": 2,
+      "fade": 20,
+      "exposure": 0.15,
+      "whites": 8,
+      "vignette": -12
+     }
+    }
+   ]
+  },
+  {
+   "id": "dark-academia",
+   "name": "다크 아카데미아",
+   "desc": "어둡고 따뜻한 갈색 그림자의 서재 톤",
+   "axes": {
+    "warmth": 0.5,
+    "hardness": 0.6
+   },
+   "params": {
+    "exposure": -0.25,
+    "contrast": 15,
+    "highlights": -15,
+    "blacks": -10,
+    "saturation": -15,
+    "temperature": 18,
+    "tint": 6,
+    "vignette": -25,
+    "hsl": {
+     "orange": {
+      "sat": 10
+     },
+     "green": {
+      "hue": -15,
+      "sat": -25
+     },
+     "blue": {
+      "sat": -30
+     }
+    }
+   },
+   "variants": [
+    {
+     "name": "라이브러리 브라운",
+     "desc": "오래된 책장의 갈색",
+     "params": {
+      "exposure": -0.3,
+      "contrast": 18,
+      "highlights": -15,
+      "blacks": -12,
+      "saturation": -20,
+      "temperature": 22,
+      "tint": 8,
+      "vignette": -25,
+      "hsl": {
+       "green": {
+        "hue": -20,
+        "sat": -30
+       },
+       "blue": {
+        "sat": -35
+       }
+      }
+     }
+    },
+    {
+     "name": "캔들라이트",
+     "desc": "촛불 아래의 따뜻한 어둠",
+     "params": {
+      "exposure": -0.2,
+      "contrast": 10,
+      "highlights": -25,
+      "shadows": 8,
+      "saturation": -8,
+      "temperature": 28,
+      "tint": 10,
+      "vignette": -30,
+      "hsl": {
+       "orange": {
+        "sat": 15,
+        "lum": 5
+       },
+       "blue": {
+        "sat": -30
+       }
+      }
+     }
+    },
+    {
+     "name": "빈티지 느와르",
+     "desc": "색을 거의 걷어낸 어두운 결",
+     "params": {
+      "exposure": -0.35,
+      "contrast": 22,
+      "blacks": -15,
+      "saturation": -30,
+      "temperature": 12,
+      "tint": 4,
+      "vignette": -30,
+      "clarity": 10
+     }
+    }
+   ]
+  },
+  {
+   "id": "spring-fresh",
+   "name": "스프링 프레시",
+   "desc": "연초록과 분홍이 밝게 피는 봄 톤",
+   "axes": {
+    "warmth": 0.2,
+    "hardness": -0.5
+   },
+   "params": {
+    "exposure": 0.4,
+    "contrast": -8,
+    "vibrance": 25,
+    "saturation": 4,
+    "temperature": 4,
+    "tint": 14,
+    "highlights": -8,
+    "hsl": {
+     "green": {
+      "sat": 15,
+      "lum": 10,
+      "hue": 5
+     },
+     "yellow": {
+      "lum": 10
+     },
+     "magenta": {
+      "sat": 15,
+      "lum": 5
+     },
+     "red": {
+      "lum": 5
+     }
+    }
+   },
+   "variants": [
+    {
+     "name": "체리 블로섬",
+     "desc": "분홍 꽃잎",
+     "params": {
+      "exposure": 0.25,
+      "contrast": -6,
+      "vibrance": 18,
+      "temperature": 6,
+      "tint": 14,
+      "highlights": -10,
+      "hsl": {
+       "magenta": {
+        "sat": 25,
+        "lum": 8
+       },
+       "red": {
+        "sat": 10,
+        "lum": 5
+       },
+       "green": {
+        "sat": 5,
+        "lum": 8
+       }
+      }
+     }
+    },
+    {
+     "name": "뉴 리프",
+     "desc": "새잎의 연초록",
+     "params": {
+      "exposure": 0.2,
+      "contrast": -2,
+      "vibrance": 22,
+      "tint": 2,
+      "hsl": {
+       "green": {
+        "sat": 30,
+        "lum": 12,
+        "hue": 5
+       },
+       "yellow": {
+        "sat": 15,
+        "lum": 10
+       },
+       "aqua": {
+        "sat": 10
+       }
+      }
+     }
+    },
+    {
+     "name": "피크닉",
+     "desc": "맑은 날 잔디밭",
+     "params": {
+      "exposure": 0.3,
+      "contrast": 2,
+      "vibrance": 25,
+      "saturation": 6,
+      "temperature": 8,
+      "tint": 6,
+      "whites": 10,
+      "hsl": {
+       "green": {
+        "sat": 15,
+        "lum": 8
+       },
+       "blue": {
+        "sat": 15
+       },
+       "yellow": {
+        "sat": 10
+       }
+      }
+     }
+    }
+   ]
   }
  ]
 }

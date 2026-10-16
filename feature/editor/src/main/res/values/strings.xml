@@ -21,7 +21,6 @@
     <string name="editor_tool_direct">지시</string>
     <!-- specs/tool_groups.md §6: two Latin letters on purpose — 인공지능 is longer than 64dp -->
     <string name="editor_tool_ai">AI</string>
-    <string name="editor_tool_back">뒤로</string>
 
     <!-- specs/generative_erase.md §5 -->
     <string name="erase_working">지우는 중</string>
@@ -173,6 +172,8 @@
     <string name="direct_choice_restrength">선택을 바꿔 제안한 원래 강도로 다시 만들었어요</string>
     <string name="direct_choice_invalid">선택한 조합으로는 실행할 수 없어요. 항목을 다시 골라주세요</string>
     <string name="direct_item_on">적용함</string>
+    <string name="direct_item_slider_hint">눈금을 끌면 사진에 바로 보여요 · AI 보정은 실행을 누르면 돌아요</string>
+    <string name="direct_item_slider_hint_later">눈금을 끌어 강도를 정해요 · 대상을 찾는 실행 뒤에 보여요</string>
     <string name="direct_item_off">적용 안 함</string>
     <string name="direct_item_target">대상: %1$s</string>
     <string name="direct_item_whole_photo">사진 전체</string>
@@ -186,7 +187,6 @@
 
     <!-- specs/selection_tool.md -->
     <string name="select_preparing">이미지를 분석하는 중</string>
-    <string name="select_hint">사진을 탭해 영역을 선택하세요. 길게 누르면 제외돼요.</string>
     <string name="select_unavailable_not_configured">서버 주소를 먼저 설정해주세요</string>
     <string name="select_unavailable_offline">서버에 연결할 수 없어요</string>
     <string name="select_failed">영역을 선택하지 못했어요</string>
@@ -282,6 +282,22 @@
     <string name="style_name_golden_glow">골든 글로우</string>
     <string name="style_name_urban_hip">어반 힙</string>
     <string name="style_name_bw_classic">클래식 모노</string>
+    <string name="style_name_retro_seventies">레트로 70s</string>
+    <string name="style_name_blue_hour">블루 아워</string>
+    <string name="style_name_cross_process">크로스 프로세스</string>
+    <string name="style_name_dreamy_haze">드리미 헤이즈</string>
+    <string name="style_name_vintage_slide">빈티지 슬라이드</string>
+    <string name="style_name_nordic_minimal">노르딕 미니멀</string>
+    <string name="style_name_tropical_vivid">트로피컬</string>
+    <string name="style_name_autumn_rust">오텀 러스트</string>
+    <string name="style_name_neon_night">네온 나이트</string>
+    <string name="style_name_soft_portrait">소프트 포트레이트</string>
+    <string name="style_name_earthy_muted">어시 뮤트</string>
+    <string name="style_name_hdr_detail">HDR 디테일</string>
+    <string name="style_name_lomo_toy">로모 토이</string>
+    <string name="style_name_sepia_vintage">세피아 빈티지</string>
+    <string name="style_name_dark_academia">다크 아카데미아</string>
+    <string name="style_name_spring_fresh">스프링 프레시</string>
 
     <!-- §3: a variant is the same shape with its own params, so it is named the same
          way — here, joined by the derived id. -->
@@ -326,6 +342,54 @@
     <string name="style_variant_bw_classic_5">아크로스 계조</string>
     <string name="style_variant_bw_classic_6">세피아 회고</string>
     <string name="style_variant_bw_classic_7">셀레늄 결</string>
+    <string name="style_variant_retro_seventies_1">빈티지 옐로</string>
+    <string name="style_variant_retro_seventies_2">디스코 레드</string>
+    <string name="style_variant_retro_seventies_3">폴라로이드 페이드</string>
+    <string name="style_variant_blue_hour_1">트와일라잇 퍼플</string>
+    <string name="style_variant_blue_hour_2">아이스 블루</string>
+    <string name="style_variant_blue_hour_3">도시의 밤</string>
+    <string name="style_variant_cross_process_1">그린 슬라이드</string>
+    <string name="style_variant_cross_process_2">시안 섀도</string>
+    <string name="style_variant_cross_process_3">옐로 번</string>
+    <string name="style_variant_dreamy_haze_1">모닝 미스트</string>
+    <string name="style_variant_dreamy_haze_2">글로우 블룸</string>
+    <string name="style_variant_dreamy_haze_3">라벤더 헤이즈</string>
+    <string name="style_variant_vintage_slide_1">코다크롬 레드</string>
+    <string name="style_variant_vintage_slide_2">엑타크롬 블루</string>
+    <string name="style_variant_vintage_slide_3">벨비아 비비드</string>
+    <string name="style_variant_nordic_minimal_1">화이트 룸</string>
+    <string name="style_variant_nordic_minimal_2">스톤 그레이</string>
+    <string name="style_variant_nordic_minimal_3">린넨 베이지</string>
+    <string name="style_variant_tropical_vivid_1">터쿼이즈 라군</string>
+    <string name="style_variant_tropical_vivid_2">정글 그린</string>
+    <string name="style_variant_tropical_vivid_3">선셋 비치</string>
+    <string name="style_variant_autumn_rust_1">메이플 레드</string>
+    <string name="style_variant_autumn_rust_2">하베스트 골드</string>
+    <string name="style_variant_autumn_rust_3">포그 오브 오텀</string>
+    <string name="style_variant_neon_night_1">사이버 마젠타</string>
+    <string name="style_variant_neon_night_2">일렉트릭 블루</string>
+    <string name="style_variant_neon_night_3">시티 라이트</string>
+    <string name="style_variant_soft_portrait_1">밀키 스킨</string>
+    <string name="style_variant_soft_portrait_2">웜 글로우 스킨</string>
+    <string name="style_variant_soft_portrait_3">스튜디오 클린</string>
+    <string name="style_variant_earthy_muted_1">테라코타</string>
+    <string name="style_variant_earthy_muted_2">올리브 그린</string>
+    <string name="style_variant_earthy_muted_3">샌드 스톤</string>
+    <string name="style_variant_hdr_detail_1">드라마틱 HDR</string>
+    <string name="style_variant_hdr_detail_2">내추럴 HDR</string>
+    <string name="style_variant_hdr_detail_3">아키텍처 디테일</string>
+    <string name="style_variant_lomo_toy_1">레드스케일</string>
+    <string name="style_variant_lomo_toy_2">터널 비네트</string>
+    <string name="style_variant_lomo_toy_3">홀가 소프트</string>
+    <string name="style_variant_sepia_vintage_1">올드 프린트</string>
+    <string name="style_variant_sepia_vintage_2">앤틱 브라운</string>
+    <string name="style_variant_sepia_vintage_3">티 스테인</string>
+    <string name="style_variant_dark_academia_1">라이브러리 브라운</string>
+    <string name="style_variant_dark_academia_2">캔들라이트</string>
+    <string name="style_variant_dark_academia_3">빈티지 느와르</string>
+    <string name="style_variant_spring_fresh_1">체리 블로섬</string>
+    <string name="style_variant_spring_fresh_2">뉴 리프</string>
+    <string name="style_variant_spring_fresh_3">피크닉</string>
 
     <!-- specs/multishot.md §2 -->
     <string name="editor_tool_multishot">멀티샷</string>

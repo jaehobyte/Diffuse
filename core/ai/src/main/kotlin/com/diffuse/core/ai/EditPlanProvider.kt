@@ -72,7 +72,7 @@ sealed interface PlanStep {
 
     /**
      * specs/style_match.md §6. The model names a **look**, never numbers: [style] is one of the
-     * catalog's twelve ids and [intensity] is how much of it, 0…100 — a multiplier on the preset,
+     * catalog's ids and [intensity] is how much of it, 0…100 — a multiplier on the preset,
      * not a blend with the photo. The id resolves to a preset at the `feature:editor` boundary.
      */
     data class Style(val style: StyleId, val intensity: Int) : PlanStep
@@ -86,7 +86,7 @@ sealed interface PlanStep {
 }
 
 /**
- * specs/style_match.md §6's closed enum: `styles.json`'s twelve ids, mirrored here because the
+ * specs/style_match.md §6's closed enum: `styles.json`'s ids, mirrored here because the
  * function declaration has to name them and the catalog is an asset `core:ai` cannot read.
  *
  * [StyleId.id] is the join, and it is the catalog's own string — dashes and all — so a preset and
@@ -106,6 +106,22 @@ enum class StyleId(val id: String) {
     GoldenGlow("golden-glow"),
     UrbanHip("urban-hip"),
     BwClassic("bw-classic"),
+    RetroSeventies("retro-seventies"),
+    BlueHour("blue-hour"),
+    CrossProcess("cross-process"),
+    DreamyHaze("dreamy-haze"),
+    VintageSlide("vintage-slide"),
+    NordicMinimal("nordic-minimal"),
+    TropicalVivid("tropical-vivid"),
+    AutumnRust("autumn-rust"),
+    NeonNight("neon-night"),
+    SoftPortrait("soft-portrait"),
+    EarthyMuted("earthy-muted"),
+    HdrDetail("hdr-detail"),
+    LomoToy("lomo-toy"),
+    SepiaVintage("sepia-vintage"),
+    DarkAcademia("dark-academia"),
+    SpringFresh("spring-fresh"),
 }
 
 /**

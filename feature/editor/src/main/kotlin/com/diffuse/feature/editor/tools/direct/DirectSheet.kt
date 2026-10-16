@@ -32,9 +32,11 @@ import com.diffuse.core.ai.PlanProposal
 import com.diffuse.core.ai.PlanStep
 import com.diffuse.core.ai.PlanTarget
 import com.diffuse.core.ai.TopazBlock
+import com.diffuse.core.ui.components.AdjustSlider
 import com.diffuse.core.ui.components.EditSheet
 import com.diffuse.core.ui.components.HoldPill
 import com.diffuse.core.ui.components.SecondaryPill
+import com.diffuse.core.ui.components.percentFormat
 import com.diffuse.core.ui.theme.LocalAppColors
 import com.diffuse.core.ui.theme.Typography
 import com.diffuse.feature.editor.R
@@ -44,6 +46,7 @@ import com.diffuse.feature.editor.tools.crop.presetLabelRes
 import com.diffuse.feature.editor.tools.enhance.TopazPhase
 import com.diffuse.feature.editor.tools.enhance.labelRes
 import com.diffuse.feature.editor.tools.enhance.messageFor
+import com.diffuse.feature.editor.tools.isZeroCentered
 import com.diffuse.feature.editor.tools.stepLabel
 import kotlin.math.roundToInt
 
@@ -68,6 +71,9 @@ const val DirectRunNoteTestTag = "DirectRunNote"
 
 /** §19: one toggle row, by the item's stable id. */
 fun directItemTag(id: String) = "DirectItem:$id"
+
+/** D109: the slider under an adjustment item that is on, by the item's id. */
+fun directItemSliderTag(id: String) = "DirectItemSlider:$id"
 
 /** DESIGN.md §5: a toggle row is at least one touch target tall. */
 private val MIN_TOUCH = 48.dp
@@ -101,6 +107,9 @@ fun DirectSheet(
     onToggle: (String) -> Unit = {},
     /** §19, D098: 고해상도 저장 of the reviewed Topaz result. */
     onSave: () -> Unit = {},
+    /** D109: an adjustment item's slider, by item id — the value as it moves, and the drag's end. */
+    onValueChange: (String, Float) -> Unit = { _, _ -> },
+    onValueFinished: () -> Unit = {},
 ) {
     val colors = LocalAppColors.current
     val candidate = state.candidate
@@ -123,7 +132,7 @@ fun DirectSheet(
         } else {
             CandidateSection(candidate, state, onCompare, onReduce, onSave)
         }
-        state.proposal?.let { Review(it, state, onToggle) }
+        state.proposal?.let { Review(it, state, onToggle, onValueChange, onValueFinished) }
         // §10: the one thing that is a hint rather than a snackbar.
         if (state.notUnderstood) {
             Text(
@@ -142,7 +151,13 @@ fun DirectSheet(
  * are the model's short plain text, set as [Text] and nothing else; the step lines are local.
  */
 @Composable
-private fun Review(proposal: PlanProposal, state: DirectState, onToggle: (String) -> Unit) {
+private fun Review(
+    proposal: PlanProposal,
+    state: DirectState,
+    onToggle: (String) -> Unit,
+    onValueChange: (String, Float) -> Unit,
+    onValueFinished: () -> Unit,
+) {
     val phase = state.phase
     Column(
         modifier = Modifier.testTag(DirectReviewTestTag),
@@ -189,7 +204,7 @@ private fun Review(proposal: PlanProposal, state: DirectState, onToggle: (String
             }
             kept.forEach { Line(colorLine(it)) }
         }
-        if (phase == ProposalPhase.Ready) Steps(proposal, state, onToggle)
+        if (phase == ProposalPhase.Ready) Steps(proposal, state, onToggle, onValueChange, onValueFinished)
         Section(R.string.direct_review_checks, DirectChecksTestTag, proposal.limitations.isNotEmpty()) {
             proposal.limitations.forEach { Line(it) }
         }
@@ -243,7 +258,13 @@ private fun Direction(direction: PlanDirection) {
  * are on; with none, 미리보기 and 적용 are off and the sheet says to choose one.
  */
 @Composable
-private fun Steps(proposal: PlanProposal, state: DirectState, onToggle: (String) -> Unit) {
+private fun Steps(
+    proposal: PlanProposal,
+    state: DirectState,
+    onToggle: (String) -> Unit,
+    onValueChange: (String, Float) -> Unit,
+    onValueFinished: () -> Unit,
+) {
     val items = state.items
     val phrases = proposal.workflow.mapNotNull { it.step as? PlanStep.Select }.associate { it.label to it.phrase }
     Section(R.string.direct_review_steps, DirectStepsTestTag, visible = true) {
@@ -257,17 +278,33 @@ private fun Steps(proposal: PlanProposal, state: DirectState, onToggle: (String)
             Modifier.testTag(DirectChoiceTestTag),
         )
         items.forEach { item ->
+            val on = item.id in state.chosen
             ItemRow(
                 item = item,
                 proposal = proposal,
                 phrases = phrases,
-                on = item.id in state.chosen,
+                value = state.valueOf(item),
+                on = on,
                 block = state.blocks[item.id],
                 addition = state.proposals.mode == PlanMode.Direct &&
                     proposal.goal(item.item.goalId)?.source == GoalSource.Default,
                 enabled = state.canToggle,
                 onToggle = { onToggle(item.id) },
             )
+            // D109: a non-destructive step the user can tune — the ruler the adjust sheets use,
+            // under the row, while the item is on. Outside the row so a drag never toggles it.
+            (item.step as? PlanStep.Adjust)?.takeIf { on }?.let { step ->
+                ItemSlider(
+                    id = item.id,
+                    step = step,
+                    value = state.valueOf(item),
+                    // D110: drawn as it moves, unless its selection has yet to be made by a run.
+                    live = step.target !is PlanTarget.New || state.shownDocument != null,
+                    enabled = state.canToggle,
+                    onValueChange = onValueChange,
+                    onValueFinished = onValueFinished,
+                )
+            }
         }
         if (items.any { it.item.effect != null }) Secondary(stringResource(R.string.direct_review_prediction))
         // §16, §18, §19: what costs money, said before anything runs — and that one 실행 reaches it.
@@ -292,6 +329,7 @@ private fun ItemRow(
     item: PlanItem,
     proposal: PlanProposal,
     phrases: Map<String, String>,
+    value: Float,
     on: Boolean,
     block: TopazBlock?,
     addition: Boolean,
@@ -311,7 +349,7 @@ private fun ItemRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Line(itemLine(item.step, goal, phrases))
+            Line(itemLine(item.step, goal, phrases, value))
             Secondary(
                 stringResource(
                     R.string.direct_item_target,
@@ -326,6 +364,36 @@ private fun ItemRow(
             Secondary(stateText)
         }
         Switch(checked = on, onCheckedChange = null, enabled = enabled)
+    }
+}
+
+/**
+ * D109: the slider for one adjustment item — the kind's own range and centre, read as −100…100
+ * like the adjust sheets. The value is hoisted, so a locked row moves nothing.
+ */
+// One slider shows one item's value and reports two events; grouping them would only rename it.
+@Suppress("LongParameterList")
+@Composable
+private fun ItemSlider(
+    id: String,
+    step: PlanStep.Adjust,
+    value: Float,
+    live: Boolean,
+    enabled: Boolean,
+    onValueChange: (String, Float) -> Unit,
+    onValueFinished: () -> Unit,
+) {
+    val zeroCentered = step.kind.isZeroCentered()
+    Column(modifier = Modifier.testTag(directItemSliderTag(id)), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        AdjustSlider(
+            value = value,
+            range = step.kind.range,
+            zeroCentered = zeroCentered,
+            onChange = { if (enabled) onValueChange(id, it) },
+            onChangeFinished = { if (enabled) onValueFinished() },
+            format = percentFormat(zeroCentered),
+        )
+        Secondary(stringResource(if (live) R.string.direct_item_slider_hint else R.string.direct_item_slider_hint_later))
     }
 }
 
@@ -576,11 +644,12 @@ private fun Confidence.labelRes(): Int = when (this) {
  * existing one as such, since updating it in place and adding a new one are different edits.
  */
 @Composable
-private fun itemLine(step: PlanStep, goal: PlanGoal?, phrases: Map<String, String>): String {
+private fun itemLine(step: PlanStep, goal: PlanGoal?, phrases: Map<String, String>, value: Float): String {
     val target = targetName(step, goal, phrases)
     return when (step) {
         is PlanStep.Select -> stringResource(R.string.direct_step_select_new, step.phrase)
-        is PlanStep.Adjust -> adjustLine(step, target)
+        // D109: the value the slider holds, which 강도 줄이기 or the user may have moved.
+        is PlanStep.Adjust -> adjustLine(step, target, value)
         // §19: "표지판 지우기", the correction itself, rather than the tool's category.
         is PlanStep.Erase -> target?.let { stringResource(R.string.direct_item_erase, it) }
             ?: stringResource(R.string.direct_step_erase)
@@ -624,9 +693,9 @@ private fun topazLine(step: PlanStep.Topaz): String =
         )
 
 @Composable
-private fun adjustLine(step: PlanStep.Adjust, name: String?): String {
+private fun adjustLine(step: PlanStep.Adjust, name: String?, current: Float): String {
     val label = step.kind.stepLabel()
-    val value = (step.value * PERCENT_SCALE).roundToInt()
+    val value = (current * PERCENT_SCALE).roundToInt()
     return when (val target = step.target) {
         null -> stringResource(R.string.direct_step_adjust, label, value)
         is PlanTarget.Existing -> stringResource(R.string.direct_step_adjust_existing, label, value)

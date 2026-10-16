@@ -64,6 +64,12 @@ fun EditorCanvas(
     /** specs/selection_tool.md §2: while the select sheet is open, one finger belongs to it. */
     gestureMode: CanvasGestureMode = CanvasGestureMode.Pan,
     pointTaps: CanvasPointTaps? = null,
+    /**
+     * work/decisions.md D108: holding a finger on the photo compares it with the original, the
+     * same hold the top bar's ◐ makes. `true` once the press has lasted the long-press timeout,
+     * `false` when it ends; null when there is nothing to compare or the finger belongs to a tool.
+     */
+    onHoldChange: ((Boolean) -> Unit)? = null,
     overlay: (@Composable BoxScope.() -> Unit)? = null,
 ) {
     val density = LocalDensity.current
@@ -92,7 +98,7 @@ fun EditorCanvas(
             .fillMaxSize()
             .onSizeChanged { canvasSize = Size(it.width.toFloat(), it.height.toFloat()) }
             .semantics { contentDescription?.let { this.contentDescription = it } }
-            .canvasGestures(bounds, viewport, onViewportChange, gestureMode, pointTaps, transform),
+            .canvasGestures(bounds, viewport, onViewportChange, gestureMode, pointTaps, onHoldChange, transform),
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             drawRect(color = Tokens.editBackground, size = size)
@@ -140,26 +146,51 @@ private fun Modifier.canvasGestures(
     onViewportChange: (CanvasViewport) -> Unit,
     gestureMode: CanvasGestureMode,
     pointTaps: CanvasPointTaps?,
+    onHoldChange: ((Boolean) -> Unit)?,
     transform: CanvasTransform,
 ): Modifier {
     val current by rememberUpdatedState(viewport)
     val currentBounds by rememberUpdatedState(bounds)
     val onChange by rememberUpdatedState(onViewportChange)
     val currentTaps by rememberUpdatedState(pointTaps)
+    val currentHold by rememberUpdatedState(onHoldChange)
     val currentTransform by rememberUpdatedState(transform)
     val selecting = gestureMode == CanvasGestureMode.SelectPoint && pointTaps != null
+    // D108: the select sheet owns the long press (background point); otherwise it is the hold.
+    val holding = !selecting && onHoldChange != null
     return this
-        .pointerInput(selecting) {
+        .pointerInput(selecting, holding) {
+            var held = false
             detectTapGestures(
                 onDoubleTap = { tap ->
                     onChange(CanvasMath.onDoubleTap(current, currentBounds, tap))
+                },
+                // A hold ends with the press: release, or the pan that took the finger.
+                onPress = if (!holding) {
+                    {}
+                } else {
+                    {
+                        held = false
+                        try {
+                            tryAwaitRelease()
+                        } finally {
+                            if (held) currentHold?.invoke(false)
+                        }
+                    }
                 },
                 // specs/selection_tool.md §2: a tap outside the image rect is ignored.
                 onTap = if (!selecting) null else { tap ->
                     currentTransform.normalizedPoint(tap)?.let { currentTaps?.onForeground?.invoke(it) }
                 },
-                onLongPress = if (!selecting) null else { tap ->
-                    currentTransform.normalizedPoint(tap)?.let { currentTaps?.onBackground?.invoke(it) }
+                onLongPress = when {
+                    selecting -> { tap ->
+                        currentTransform.normalizedPoint(tap)?.let { currentTaps?.onBackground?.invoke(it) }
+                    }
+                    holding -> { _ ->
+                        held = true
+                        currentHold?.invoke(true)
+                    }
+                    else -> null
                 },
             )
         }

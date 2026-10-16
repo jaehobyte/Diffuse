@@ -86,36 +86,23 @@ class EditorShellTest {
         showShell()
 
         compose.onNodeWithTag(TopBarTestTag).assertExists()
-        assertToolsReachable(ToolGroup.Root)
+        assertToolsReachable()
     }
 
-    /** specs/tool_groups.md §2: the strip has two levels, and a tool is reachable at exactly one. */
+    /** D107: the plan-only tools have no strip item, whatever is selected. */
     @Test
-    fun `the AI level shows the AI tools`() {
-        compose.setContent {
-            EditorScreen(
-                preview = testImage(),
-                selectedTool = null,
-                onToolClick = { toolClicks += it },
-                canUndo = false,
-                canRedo = false,
-                canCompare = false,
-                onUndo = {},
-                onRedo = {},
-                onCompareChange = {},
-                onExport = {},
-                toolLevel = ToolLevelState(ToolGroup.Ai),
-            )
-        }
-        compose.waitForIdle()
+    fun `the strip never shows a plan-only tool`() {
+        showShell()
 
-        assertToolsReachable(ToolGroup.Ai)
+        Tool.entries.filter { it.group == ToolGroup.Ai }.forEach { tool ->
+            compose.onNodeWithTag(labelOf(tool)).assertDoesNotExist()
+        }
     }
 
     /** The strip's own list, not the enum's: 피부 보정 is not in the general menu these bind. */
-    private fun assertToolsReachable(level: ToolGroup) {
+    private fun assertToolsReachable() {
         compose.onNodeWithTag(ToolStripTestTag).assertExists()
-        stripItems(level).filterIsInstance<StripItem.OfTool>().map { it.tool }.forEach { tool ->
+        stripItems().filterIsInstance<StripItem.OfTool>().map { it.tool }.forEach { tool ->
             // The strip is a LazyRow (DESIGN.md §4: horizontally scrollable), so a tool past the
             // viewport is only composed once scrolled to.
             compose.onNodeWithTag(ToolStripTestTag)
